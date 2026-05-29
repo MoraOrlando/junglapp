@@ -1,0 +1,22 @@
+node_modules
+.turbo
+dist
+.env
+.env.local
+.env*.local
+*.log
+.DS_Store
+
+# Expo
+.expo
+apps/mobile/dist
+apps/mobile/.expo
+
+# Next.js
+apps/web/.next
+apps/web/out
+
+# Firebase
+.firebase
+firebase-debug.log
+firestore-debug.log

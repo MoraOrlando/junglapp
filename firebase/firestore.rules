@@ -1,0 +1,131 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    function getRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isSupport() {
+      return isAuth() && getRole() == 'support';
+    }
+
+    // Users collection
+    match /users/{uid} {
+      allow read: if isAuth();
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid) || isSupport();
+      allow delete: if isSupport();
+    }
+
+    // Pets
+    match /pets/{petId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isAuth() && (
+        resource.data.ownerId == request.auth.uid || isSupport()
+      );
+    }
+
+    // Veterinarians
+    match /veterinarians/{vetId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuth() && (
+        resource.data.userId == request.auth.uid || isSupport()
+      );
+      allow delete: if isSupport();
+    }
+
+    // Stores
+    match /stores/{storeId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuth() && (
+        resource.data.userId == request.auth.uid || isSupport()
+      );
+      allow delete: if isSupport();
+    }
+
+    // Products
+    match /products/{productId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update, delete: if isAuth() && (
+        get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.userId == request.auth.uid
+        || isSupport()
+      );
+    }
+
+    // Appointments
+    match /appointments/{apptId} {
+      allow read: if isAuth() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.vetId == request.auth.uid ||
+        isSupport()
+      );
+      allow create: if isAuth();
+      allow update: if isAuth() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.vetId == request.auth.uid ||
+        isSupport()
+      );
+      allow delete: if isAuth() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Matches
+    match /matches/{matchId} {
+      allow read: if isAuth() && (
+        resource.data.owner1Id == request.auth.uid ||
+        resource.data.owner2Id == request.auth.uid
+      );
+      allow create: if isAuth();
+      allow update: if isAuth() && (
+        resource.data.owner1Id == request.auth.uid ||
+        resource.data.owner2Id == request.auth.uid
+      );
+    }
+
+    // Chats
+    match /chats/{chatId} {
+      allow read, write: if isAuth() && request.auth.uid in resource.data.participants;
+      allow create: if isAuth();
+
+      match /msgs/{msgId} {
+        allow read: if isAuth() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        allow create: if isAuth() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+      }
+    }
+
+    // Lost pets
+    match /lostPets/{lostPetId} {
+      allow read: if true; // Public
+      allow create: if isAuth();
+      allow update, delete: if isAuth() && (
+        resource.data.ownerId == request.auth.uid || isSupport()
+      );
+    }
+
+    // Orders
+    match /orders/{orderId} {
+      allow read: if isAuth() && (
+        resource.data.buyerId == request.auth.uid ||
+        get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.userId == request.auth.uid ||
+        isSupport()
+      );
+      allow create: if isAuth() && request.resource.data.buyerId == request.auth.uid;
+      allow update: if isAuth() && (
+        get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.userId == request.auth.uid ||
+        isSupport()
+      );
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "junglapp",
+  "version": "0.0.1",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "mobile": "cd apps/mobile && npx expo start",
+    "web": "cd apps/web && npm run dev"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
+  },
+  "packageManager": "npm@10.9.7",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
