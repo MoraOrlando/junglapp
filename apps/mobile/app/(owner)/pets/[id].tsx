@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import type { Pet } from '@junglapp/types';
 
@@ -13,6 +13,7 @@ export default function PetDetailScreen() {
   const router = useRouter();
   const [pet, setPet] = useState<Pet | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isLost, setIsLost] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -20,6 +21,12 @@ export default function PetDetailScreen() {
       if (snap.exists()) setPet({ id: snap.id, ...snap.data() } as Pet);
       setLoading(false);
     });
+    // Check if already reported lost
+    getDocs(query(
+      collection(db, COLLECTIONS.LOST_PETS),
+      where('petId', '==', id),
+      where('isFound', '==', false)
+    )).then((snap) => setIsLost(!snap.empty));
   }, [id]);
 
   async function toggleLookingForPartner() {
@@ -27,6 +34,35 @@ export default function PetDetailScreen() {
     const newValue = !pet.lookingForPartner;
     await updateDoc(doc(db, COLLECTIONS.PETS, id), { lookingForPartner: newValue });
     setPet({ ...pet, lookingForPartner: newValue });
+  }
+
+  function handleLostReport() {
+    if (isLost) {
+      Alert.alert(
+        '🔍 Ya reportada',
+        `${pet?.name} ya está publicada como extraviada. ¿Deseas cancelar el reporte?`,
+        [
+          { text: 'Mantener reporte', style: 'cancel' },
+          {
+            text: 'Cancelar reporte', style: 'destructive',
+            onPress: async () => {
+              // Mark as found internally (cancel report)
+              const snap = await getDocs(query(
+                collection(db, COLLECTIONS.LOST_PETS),
+                where('petId', '==', id),
+                where('isFound', '==', false)
+              ));
+              for (const d of snap.docs) {
+                await updateDoc(doc(db, COLLECTIONS.LOST_PETS, d.id), { isFound: true });
+              }
+              setIsLost(false);
+            },
+          },
+        ]
+      );
+    } else {
+      router.push(`/(owner)/lost/report?petId=${id}` as any);
+    }
   }
 
   if (loading) return (
@@ -44,12 +80,16 @@ export default function PetDetailScreen() {
   return (
     <SafeAreaView className="flex-1 bg-background">
       <ScrollView className="flex-1">
-        {/* Header photo */}
-        <View className="bg-primary-500 h-48 items-center justify-center">
+        {/* Header */}
+        <View className={`h-48 items-center justify-center ${isLost ? 'bg-red-400' : 'bg-primary-500'}`}>
           <Text className="text-8xl">{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
+          {isLost && (
+            <View className="absolute bottom-4 bg-red-600 px-4 py-1.5 rounded-full">
+              <Text className="text-white text-xs font-bold">🔍 EXTRAVIADA — Publicada</Text>
+            </View>
+          )}
         </View>
 
-        {/* Back button */}
         <TouchableOpacity
           className="absolute top-10 left-4 bg-white/80 rounded-full p-2"
           onPress={() => router.back()}
@@ -82,6 +122,23 @@ export default function PetDetailScreen() {
             </View>
           </View>
 
+          {/* Lost pet action button */}
+          <TouchableOpacity
+            className={`rounded-2xl py-4 px-5 mb-4 flex-row items-center gap-3 ${isLost ? 'bg-red-50 border-2 border-red-300' : 'bg-orange-50 border-2 border-orange-200'}`}
+            onPress={handleLostReport}
+          >
+            <Text className="text-3xl">{isLost ? '🔍' : '🚨'}</Text>
+            <View className="flex-1">
+              <Text className={`font-bold text-base ${isLost ? 'text-red-600' : 'text-orange-600'}`}>
+                {isLost ? 'Extraviada — Publicada' : 'Reportar como Extraviada'}
+              </Text>
+              <Text className={`text-xs mt-0.5 ${isLost ? 'text-red-400' : 'text-orange-400'}`}>
+                {isLost ? 'Toca para cancelar el reporte' : 'Notifica a usuarios cercanos'}
+              </Text>
+            </View>
+            <Text className={isLost ? 'text-red-400' : 'text-orange-400'}>›</Text>
+          </TouchableOpacity>
+
           {/* Info grid */}
           <View className="flex-row gap-3 mb-4">
             <View className="flex-1 bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
@@ -108,9 +165,8 @@ export default function PetDetailScreen() {
             </View>
           )}
 
-          {/* Medical record section */}
+          {/* Medical record */}
           <Text className="text-gray-700 font-semibold text-base mb-3">Ficha Médica 🏥</Text>
-
           <View className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100">
             <Text className="text-gray-400 text-xs mb-2">Vacunas</Text>
             {pet.medicalRecord.vaccinations.length === 0 ? (

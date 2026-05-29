@@ -153,17 +153,28 @@ export interface LostPet {
   id: string;
   petId: string;
   ownerId: string;
+  ownerName: string;
+  petName: string;
+  petSpecies: string;
+  petBreed: string;
+  petColor: string;
+  petPhotos: string[];
+  chipNumber?: string;
   region: string;
   state: string;
   description: string;
+  characteristics?: string;
   lastSeenDate: string;
   lastSeenLocation: string;
   contactPhone: string;
   contactEmail: string;
-  photos: string[];
   isFound: boolean;
+  foundBy?: string;
+  foundAt?: string;
   reportedAt: string;
 }
+
+export type ChatType = 'match' | 'found_pet';
 
 export interface Order {
   id: string;

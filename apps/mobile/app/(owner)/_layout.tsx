@@ -52,6 +52,13 @@ export default function OwnerLayout() {
         }}
       />
       <Tabs.Screen
+        name="lost"
+        options={{
+          title: 'Extraviadas',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🔍" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
         name="vets"
         options={{
           title: 'Veterinarios',

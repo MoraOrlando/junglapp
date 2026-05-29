@@ -28,6 +28,10 @@ export default function ChatRoomScreen() {
     return otherId ? (chat.participantNames[otherId] || 'Usuario') : 'Usuario';
   }
 
+  const chatType = (chat as any)?.chatType;
+  const headerEmoji = chatType === 'found_pet' ? '🐾' : '💚';
+  const headerColor = chatType === 'found_pet' ? 'bg-green-100' : 'bg-primary-100';
+
   useEffect(() => {
     if (!id) return;
     getDoc(doc(db, COLLECTIONS.CHATS, id)).then((snap) => {
@@ -78,10 +82,15 @@ export default function ChatRoomScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <Text className="text-primary-500 text-base">←</Text>
         </TouchableOpacity>
-        <View className="bg-primary-100 rounded-full w-10 h-10 items-center justify-center">
-          <Text className="text-xl">🐾</Text>
+        <View className={`${headerColor} rounded-full w-10 h-10 items-center justify-center`}>
+          <Text className="text-xl">{headerEmoji}</Text>
         </View>
-        <Text className="font-semibold text-gray-800 text-base flex-1">{getOtherName()}</Text>
+        <View className="flex-1">
+          <Text className="font-semibold text-gray-800 text-base">{getOtherName()}</Text>
+          {chatType === 'found_pet' && (
+            <Text className="text-green-600 text-xs">🐾 Chat de mascota encontrada</Text>
+          )}
+        </View>
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">

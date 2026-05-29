@@ -41,6 +41,46 @@ export default function ChatListScreen() {
     return otherId ? (chat.participantNames[otherId] || 'Usuario') : 'Usuario';
   }
 
+  function getChatMeta(chat: any): { emoji: string; label: string; color: string } {
+    if (chat.chatType === 'found_pet') return { emoji: '🐾', label: 'Mascota encontrada', color: 'bg-green-100' };
+    if (chat.matchId) return { emoji: '💚', label: 'Match', color: 'bg-pink-100' };
+    return { emoji: '💬', label: 'Mensaje', color: 'bg-primary-100' };
+  }
+
+  const matchChats = chats.filter((c: any) => c.matchId && c.chatType !== 'found_pet');
+  const foundChats = chats.filter((c: any) => c.chatType === 'found_pet');
+
+  function renderChat(chat: Chat) {
+    const meta = getChatMeta(chat);
+    return (
+      <TouchableOpacity
+        key={chat.id}
+        className="bg-white rounded-2xl p-4 flex-row items-center gap-3 shadow-sm border border-gray-100 mb-2"
+        onPress={() => router.push(`/(owner)/chat/${chat.id}` as any)}
+      >
+        <View className={`${meta.color} rounded-full w-12 h-12 items-center justify-center`}>
+          <Text className="text-2xl">{meta.emoji}</Text>
+        </View>
+        <View className="flex-1">
+          <View className="flex-row items-center gap-2">
+            <Text className="font-semibold text-gray-800">{getOtherName(chat)}</Text>
+            <View className="bg-gray-100 rounded-full px-2 py-0.5">
+              <Text className="text-gray-400 text-xs">{meta.label}</Text>
+            </View>
+          </View>
+          <Text className="text-gray-400 text-sm mt-0.5" numberOfLines={1}>
+            {chat.lastMessage || 'Sin mensajes'}
+          </Text>
+        </View>
+        {chat.updatedAt && (
+          <Text className="text-gray-300 text-xs">
+            {new Date(chat.updatedAt).toLocaleDateString('es-CL', { month: 'short', day: 'numeric' })}
+          </Text>
+        )}
+      </TouchableOpacity>
+    );
+  }
+
   return (
     <SafeAreaView className="flex-1 bg-background">
       <View className="px-6 pt-4 pb-2">
@@ -56,31 +96,25 @@ export default function ChatListScreen() {
             <Text className="text-6xl mb-4">💬</Text>
             <Text className="text-gray-600 font-semibold">Sin conversaciones aún</Text>
             <Text className="text-gray-400 text-sm mt-2 text-center">
-              Realiza un match con otra mascota para poder chatear
+              Realiza un match o ayuda a encontrar una mascota extraviada para chatear
             </Text>
           </View>
         ) : (
-          <View className="gap-2 pb-6 mt-2">
-            {chats.map((chat) => (
-              <TouchableOpacity
-                key={chat.id}
-                className="bg-white rounded-2xl p-4 flex-row items-center gap-3 shadow-sm border border-gray-100"
-                onPress={() => router.push(`/(owner)/chat/${chat.id}` as any)}
-              >
-                <View className="bg-primary-100 rounded-full w-12 h-12 items-center justify-center">
-                  <Text className="text-2xl">🐾</Text>
-                </View>
-                <View className="flex-1">
-                  <Text className="font-semibold text-gray-800">{getOtherName(chat)}</Text>
-                  <Text className="text-gray-400 text-sm" numberOfLines={1}>{chat.lastMessage || 'Sin mensajes'}</Text>
-                </View>
-                {chat.updatedAt && (
-                  <Text className="text-gray-300 text-xs">
-                    {new Date(chat.updatedAt).toLocaleDateString('es-CL', { month: 'short', day: 'numeric' })}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            ))}
+          <View className="pb-6 mt-2">
+            {/* Found pet chats first — they're urgent */}
+            {foundChats.length > 0 && (
+              <>
+                <Text className="text-sm font-semibold text-green-700 mb-2 mt-2">🐾 Mascotas encontradas</Text>
+                {foundChats.map(renderChat)}
+              </>
+            )}
+
+            {matchChats.length > 0 && (
+              <>
+                <Text className="text-sm font-semibold text-gray-500 mb-2 mt-3">💚 Match</Text>
+                {matchChats.map(renderChat)}
+              </>
+            )}
           </View>
         )}
       </ScrollView>
