@@ -9,12 +9,11 @@ import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { collection, addDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import * as ImagePicker from 'expo-image-picker';
-import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
+import { initFirebase, COLLECTIONS, uploadImages } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 
-const { db, storage } = initFirebase();
+const { db } = initFirebase();
 
 const schema = z.object({
   name: z.string().min(1, 'Nombre requerido'),
@@ -55,15 +54,7 @@ export default function AddPetScreen() {
     if (!user) return;
     setLoading(true);
     try {
-      // Upload photos
-      const photoUrls: string[] = [];
-      for (const photoUri of photos) {
-        const photoRef = ref(storage, `pets/${user.uid}/${Date.now()}_${Math.random().toString(36).slice(2)}`);
-        const response = await fetch(photoUri);
-        const blob = await response.blob();
-        await uploadBytes(photoRef, blob);
-        photoUrls.push(await getDownloadURL(photoRef));
-      }
+      const photoUrls = await uploadImages(photos);
 
       await addDoc(collection(db, COLLECTIONS.PETS), {
         ownerId: user.uid,

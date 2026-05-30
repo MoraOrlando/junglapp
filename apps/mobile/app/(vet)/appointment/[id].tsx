@@ -7,12 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
+import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import type { Appointment, Pet } from '@junglapp/types';
 
-const { db, storage } = initFirebase();
+const { db } = initFirebase();
 
 export default function AppointmentDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -72,12 +71,8 @@ export default function AppointmentDetailScreen() {
     setSaving(true);
     try {
       let prescriptionImageUrl: string | undefined;
-      if (prescriptionImageUri && user) {
-        const imgRef = ref(storage, `prescriptions/${user.uid}/${id}/recipe`);
-        const response = await fetch(prescriptionImageUri);
-        const blob = await response.blob();
-        await uploadBytes(imgRef, blob);
-        prescriptionImageUrl = await getDownloadURL(imgRef);
+      if (prescriptionImageUri) {
+        prescriptionImageUrl = await uploadImage(prescriptionImageUri);
       }
 
       const consultation = {

@@ -11,10 +11,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../context/AuthContext';
 import { doc, setDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { initFirebase } from '@junglapp/firebase';
+import { initFirebase, uploadImage } from '@junglapp/firebase';
 
-const { db, storage } = initFirebase();
+const { db } = initFirebase();
 
 const schema = z.object({
   name: z.string().min(2, 'Nombre requerido'),
@@ -66,11 +65,7 @@ export default function RegisterVetScreen() {
 
       // After sign up, user is available
       if (firebaseUser) {
-        const credRef = ref(storage, `vets/${firebaseUser.uid}/credential`);
-        const response = await fetch(credentialUri);
-        const blob = await response.blob();
-        await uploadBytes(credRef, blob);
-        const credentialUrl = await getDownloadURL(credRef);
+        const credentialUrl = await uploadImage(credentialUri);
 
         await setDoc(doc(db, 'veterinarians', firebaseUser.uid), {
           userId: firebaseUser.uid,
