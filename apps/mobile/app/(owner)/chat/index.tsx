@@ -43,7 +43,9 @@ export default function ChatListScreen() {
     setChats(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Chat)));
   }
 
-  useEffect(() => { loadChats(); }, [user]);
+  useEffect(() => {
+    loadChats();
+  }, [user]);
 
   async function onRefresh() {
     setRefreshing(true);
@@ -68,22 +70,23 @@ export default function ChatListScreen() {
   const allMessages = [...foundChats, ...matchChats];
 
   const filtered = search.trim()
-    ? allMessages.filter((c) =>
-        getOtherName(c).toLowerCase().includes(search.toLowerCase()) ||
-        (c.lastMessage || '').toLowerCase().includes(search.toLowerCase())
+    ? allMessages.filter(
+        (c) =>
+          getOtherName(c).toLowerCase().includes(search.toLowerCase()) ||
+          (c.lastMessage || '').toLowerCase().includes(search.toLowerCase())
       )
     : allMessages;
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
-      {/* Title */}
-      <View className="px-5 pt-4 pb-2">
+      {/* ── Title ── */}
+      <View className="px-5 pt-5 pb-3">
         <Text className="text-2xl font-bold text-gray-900">Messages</Text>
       </View>
 
-      {/* Search */}
-      <View className="px-4 pb-3">
-        <View className="bg-white border border-gray-200 rounded-xl flex-row items-center px-3 py-2.5 gap-2">
+      {/* ── Search bar ── */}
+      <View className="px-4 pb-4">
+        <View className="bg-white border border-gray-200 rounded-2xl flex-row items-center px-4 py-3 gap-2 shadow-sm">
           <Text className="text-gray-400 text-base">🔍</Text>
           <TextInput
             className="flex-1 text-base text-gray-800"
@@ -97,15 +100,23 @@ export default function ChatListScreen() {
 
       <ScrollView
         className="flex-1"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#2D6A4F" />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#2D6A4F" />
+        }
+        showsVerticalScrollIndicator={false}
       >
-        {/* New Matches horizontal scroll */}
+        {/* ── New Matches horizontal scroll ── */}
         {matchChats.length > 0 && (
-          <View className="mb-4">
+          <View className="mb-5">
             <View className="flex-row items-center justify-between px-5 mb-3">
-              <Text className="text-gray-700 font-semibold text-sm">New Matches</Text>
-              <TouchableOpacity>
-                <Text className="text-xs font-semibold" style={{ color: '#2D6A4F' }}>See all</Text>
+              <Text className="text-gray-800 font-bold text-base">New Matches</Text>
+              <TouchableOpacity
+                className="rounded-full px-3 py-1"
+                style={{ backgroundColor: '#D8F3DC' }}
+              >
+                <Text className="text-xs font-semibold" style={{ color: '#2D6A4F' }}>
+                  See all
+                </Text>
               </TouchableOpacity>
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} className="pl-5">
@@ -113,15 +124,19 @@ export default function ChatListScreen() {
                 <TouchableOpacity
                   key={chat.id}
                   className="mr-4 items-center"
+                  activeOpacity={0.8}
                   onPress={() => router.push(`/(owner)/chat/${chat.id}` as any)}
                 >
                   <View
-                    className="w-14 h-14 rounded-full items-center justify-center border-2"
+                    className="w-16 h-16 rounded-full items-center justify-center border-2"
                     style={{ backgroundColor: '#D8F3DC', borderColor: '#95D5B2' }}
                   >
-                    <Text className="text-2xl">🐕</Text>
+                    <Text className="text-3xl">🐕</Text>
                   </View>
-                  <Text className="text-xs text-gray-600 mt-1.5 font-medium max-w-16 text-center" numberOfLines={1}>
+                  <Text
+                    className="text-xs text-gray-600 mt-2 font-semibold max-w-[64px] text-center"
+                    numberOfLines={1}
+                  >
                     {getOtherName(chat)}
                   </Text>
                 </TouchableOpacity>
@@ -131,20 +146,20 @@ export default function ChatListScreen() {
           </View>
         )}
 
-        {/* Messages list */}
+        {/* ── Messages list ── */}
         <View className="px-4">
-          <Text className="text-gray-700 font-semibold text-sm mb-3">Messages</Text>
+          <Text className="text-gray-800 font-bold text-base mb-3">Messages</Text>
 
           {filtered.length === 0 ? (
-            <View className="items-center py-16">
+            <View className="items-center py-16 bg-white rounded-2xl border border-gray-100 shadow-sm">
               <Text className="text-5xl mb-3">💬</Text>
-              <Text className="text-gray-600 font-semibold">Sin conversaciones aún</Text>
-              <Text className="text-gray-400 text-sm mt-1 text-center">
+              <Text className="text-gray-700 font-semibold text-base">Sin conversaciones aún</Text>
+              <Text className="text-gray-400 text-sm mt-1 text-center px-8">
                 Realiza un match o ayuda a encontrar una mascota para chatear
               </Text>
             </View>
           ) : (
-            <View className="gap-1">
+            <View className="gap-2">
               {filtered.map((chat) => {
                 const emoji = getChatEmoji(chat);
                 const name = getOtherName(chat);
@@ -152,28 +167,36 @@ export default function ChatListScreen() {
                 return (
                   <TouchableOpacity
                     key={chat.id}
-                    className="bg-white rounded-2xl px-4 py-3.5 flex-row items-center gap-3 border border-gray-100"
+                    className="bg-white rounded-2xl px-4 py-3.5 flex-row items-center gap-3 border border-gray-100 shadow-sm"
+                    activeOpacity={0.8}
                     onPress={() => router.push(`/(owner)/chat/${chat.id}` as any)}
                   >
                     {/* Avatar */}
                     <View
-                      className="w-12 h-12 rounded-full items-center justify-center"
+                      className="w-14 h-14 rounded-full items-center justify-center"
                       style={{ backgroundColor: '#D8F3DC' }}
                     >
                       <Text className="text-2xl">{emoji}</Text>
                     </View>
+
                     {/* Content */}
                     <View className="flex-1">
-                      <Text className="font-semibold text-gray-900 text-base">{name}</Text>
+                      <Text className="font-bold text-gray-900 text-base">{name}</Text>
                       <Text className="text-gray-400 text-sm mt-0.5" numberOfLines={1}>
                         {chat.lastMessage || 'Sin mensajes aún'}
                       </Text>
                     </View>
+
                     {/* Right side */}
-                    <View className="items-end gap-1.5">
-                      <Text className="text-gray-300 text-xs">{formatTimestamp(chat.updatedAt)}</Text>
+                    <View className="items-end gap-2">
+                      <Text className="text-gray-300 text-xs">
+                        {formatTimestamp(chat.updatedAt)}
+                      </Text>
                       {hasNew && (
-                        <View className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#52B788' }} />
+                        <View
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: '#52B788' }}
+                        />
                       )}
                     </View>
                   </TouchableOpacity>
@@ -183,7 +206,7 @@ export default function ChatListScreen() {
           )}
         </View>
 
-        <View className="h-8" />
+        <View className="h-10" />
       </ScrollView>
     </SafeAreaView>
   );

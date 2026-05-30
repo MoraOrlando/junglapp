@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, ScrollView, TextInput, TouchableOpacity,
-  KeyboardAvoidingView, Platform, Image, Alert,
+  View,
+  Text,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+  Image,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -15,14 +22,20 @@ import type { Chat, Message } from '@junglapp/types';
 const { db, rtdb } = initFirebase();
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return new Date(iso).toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
 }
 
 function formatDateLabel(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
   if (d.toDateString() === now.toDateString()) return 'TODAY';
-  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).toUpperCase();
+  return d
+    .toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+    .toUpperCase();
 }
 
 function groupByDate(messages: Message[]): Array<{ label: string; messages: Message[] }> {
@@ -128,8 +141,11 @@ export default function ChatRoomScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
-      {/* Header */}
-      <View className="flex-row items-center px-4 py-3 bg-white border-b border-gray-100 gap-3">
+      {/* ── Header ── */}
+      <View
+        className="flex-row items-center px-4 py-3 gap-3 border-b border-gray-100"
+        style={{ backgroundColor: '#FFFFFF' }}
+      >
         <TouchableOpacity className="pr-1" onPress={() => router.back()}>
           <Text className="text-2xl text-gray-600">←</Text>
         </TouchableOpacity>
@@ -140,17 +156,22 @@ export default function ChatRoomScreen() {
           <Text className="text-2xl">{headerEmoji}</Text>
         </View>
         <View className="flex-1">
-          <Text className="font-bold text-gray-900 text-base">{otherName}</Text>
+          <Text className="font-bold text-gray-900 text-base leading-tight">{otherName}</Text>
           <Text className="text-gray-400 text-xs">
             {chatType === 'found_pet' ? 'Mascota encontrada' : `with ${otherName}`}
           </Text>
         </View>
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        className="flex-1"
+      >
+        {/* ── Messages ── */}
         <ScrollView
           ref={scrollRef}
           className="flex-1 px-4 py-3"
+          showsVerticalScrollIndicator={false}
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
         >
           {messages.length === 0 && (
@@ -163,40 +184,47 @@ export default function ChatRoomScreen() {
           {groups.map(({ label, messages: groupMsgs }) => (
             <View key={label}>
               {/* Date separator */}
-              <View className="flex-row items-center gap-3 my-4">
+              <View className="flex-row items-center gap-3 my-5">
                 <View className="flex-1 h-px bg-gray-200" />
-                <Text className="text-gray-400 text-xs font-semibold">{label}</Text>
+                <Text className="text-gray-400 text-xs font-semibold tracking-widest">{label}</Text>
                 <View className="flex-1 h-px bg-gray-200" />
               </View>
 
               {groupMsgs.map((msg) => {
                 const isMe = msg.senderId === user?.uid;
                 return (
-                  <View key={msg.id} className={`mb-4 flex-row ${isMe ? 'justify-end' : 'justify-start'}`}>
+                  <View
+                    key={msg.id}
+                    className={`mb-4 flex-row ${isMe ? 'justify-end' : 'justify-start'}`}
+                  >
                     <View className={`max-w-xs ${isMe ? 'items-end' : 'items-start'}`}>
                       {/* Image if present */}
                       {msg.imageUrl ? (
                         <Image
                           source={{ uri: msg.imageUrl }}
-                          className="w-52 h-40 rounded-2xl mb-1"
+                          style={{ width: 208, height: 160, borderRadius: 16, marginBottom: 4 }}
                           resizeMode="cover"
                         />
                       ) : null}
+
                       {/* Text bubble */}
                       {msg.text ? (
                         <View
                           className={`rounded-2xl px-4 py-3 ${
-                            isMe
-                              ? 'rounded-tr-sm'
-                              : 'rounded-tl-sm bg-white border border-gray-100'
+                            isMe ? 'rounded-tr-sm' : 'rounded-tl-sm bg-white border border-gray-100'
                           }`}
                           style={isMe ? { backgroundColor: '#2D6A4F' } : {}}
                         >
-                          <Text className={isMe ? 'text-white' : 'text-gray-800'}>{msg.text}</Text>
+                          <Text className={isMe ? 'text-white' : 'text-gray-800'}>
+                            {msg.text}
+                          </Text>
                         </View>
                       ) : null}
+
                       {/* Timestamp */}
-                      <Text className="text-gray-300 text-xs mt-1 px-1">{formatTime(msg.createdAt)}</Text>
+                      <Text className="text-gray-300 text-xs mt-1.5 px-1">
+                        {formatTime(msg.createdAt)}
+                      </Text>
                     </View>
                   </View>
                 );
@@ -205,7 +233,7 @@ export default function ChatRoomScreen() {
           ))}
         </ScrollView>
 
-        {/* Input bar */}
+        {/* ── Input bar ── */}
         <View className="flex-row items-center px-3 py-2.5 bg-white border-t border-gray-100 gap-2">
           {/* Camera button */}
           <TouchableOpacity
