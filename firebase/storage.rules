@@ -1,39 +1,94 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isImageOrPdf() {
+      return request.resource.contentType.matches('image/.*')
+        || request.resource.contentType == 'application/pdf';
+    }
+
+    function maxSize(mb) {
+      return request.resource.size <= mb * 1024 * 1024;
+    }
+
+    // ── User profile photos ────────────────────────────────────────────────
+    // Only the user can write their own profile photo.
     match /users/{uid}/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow read: if isAuth();
+      allow write: if isAuth()
+        && request.auth.uid == uid
+        && isImageOrPdf()
+        && maxSize(5);
     }
 
-    match /pets/{petId}/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+    // ── Pet photos ─────────────────────────────────────────────────────────
+    // Path: pets/{ownerId}/{petId}/{fileName}
+    // Only the pet owner (matched by ownerId path segment) can upload.
+    match /pets/{ownerId}/{petId}/{fileName} {
+      allow read: if isAuth();
+      allow write: if isAuth()
+        && request.auth.uid == ownerId
+        && isImageOrPdf()
+        && maxSize(10);
     }
 
-    match /vets/{vetId}/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+    // ── Vet credentials and profile photos ────────────────────────────────
+    // Path: vets/{vetUserId}/{fileName}
+    // Only the vet (matched by vetUserId path segment) can upload.
+    match /vets/{vetUserId}/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth()
+        && request.auth.uid == vetUserId
+        && isImageOrPdf()
+        && maxSize(10);
     }
 
-    match /stores/{storeId}/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+    // ── Store logos ────────────────────────────────────────────────────────
+    // Path: stores/{storeUserId}/{fileName}
+    // Only the store owner (matched by storeUserId path segment) can upload.
+    match /stores/{storeUserId}/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth()
+        && request.auth.uid == storeUserId
+        && isImageOrPdf()
+        && maxSize(10);
     }
 
-    match /products/{productId}/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+    // ── Product photos ─────────────────────────────────────────────────────
+    // Path: products/{storeUserId}/{productId}/{fileName}
+    // Only the store owner (matched by storeUserId) can upload product photos.
+    match /products/{storeUserId}/{productId}/{fileName} {
+      allow read: if isAuth();
+      allow write: if isAuth()
+        && request.auth.uid == storeUserId
+        && isImageOrPdf()
+        && maxSize(10);
     }
 
-    match /prescriptions/{apptId}/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+    // ── Prescription images ────────────────────────────────────────────────
+    // Path: prescriptions/{vetUserId}/{apptId}/{fileName}
+    // Only the vet who owns the appointment folder can upload prescriptions.
+    match /prescriptions/{vetUserId}/{apptId}/{fileName} {
+      allow read: if isAuth();
+      allow write: if isAuth()
+        && request.auth.uid == vetUserId
+        && isImageOrPdf()
+        && maxSize(10);
     }
 
-    match /lostPets/{petId}/{allPaths=**} {
+    // ── Lost pet photos ────────────────────────────────────────────────────
+    // Path: lostPets/{ownerUid}/{lostPetId}/{fileName}
+    // Public read (community search); only the owner can upload.
+    match /lostPets/{ownerUid}/{lostPetId}/{fileName} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if isAuth()
+        && request.auth.uid == ownerUid
+        && isImageOrPdf()
+        && maxSize(10);
     }
   }
 }

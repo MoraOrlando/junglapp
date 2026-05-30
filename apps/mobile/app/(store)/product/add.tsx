@@ -58,7 +58,7 @@ export default function AddProductScreen() {
 
       const photoUrls: string[] = [];
       for (const photoUri of photos) {
-        const photoRef = ref(storage, `products/${Date.now()}_${Math.random().toString(36).slice(2)}`);
+        const photoRef = ref(storage, `products/${user.uid}/${Date.now()}_${Math.random().toString(36).slice(2)}`);
         const response = await fetch(photoUri);
         const blob = await response.blob();
         await uploadBytes(photoRef, blob);

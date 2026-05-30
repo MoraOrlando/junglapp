@@ -14,4 +14,5 @@ export const COLLECTIONS = {
 export const RTDB_PATHS = {
   MESSAGES: 'messages',
   PRESENCE: 'presence',
+  CHAT_MEMBERS: 'chatMembers',
 } as const;

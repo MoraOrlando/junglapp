@@ -4,12 +4,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   collection, query, where, getDocs, addDoc, doc, getDoc
 } from 'firebase/firestore';
-import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
+import { ref, set } from 'firebase/database';
+import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import type { Pet } from '@junglapp/types';
 
 const { width } = Dimensions.get('window');
-const { db } = initFirebase();
+const { db, rtdb } = initFirebase();
 
 export default function MatchScreen() {
   const { user } = useAuth();
@@ -66,7 +67,7 @@ export default function MatchScreen() {
       });
 
       // Create chat
-      await addDoc(collection(db, COLLECTIONS.CHATS), {
+      const chatRef = await addDoc(collection(db, COLLECTIONS.CHATS), {
         participants: [user.uid, candidate.ownerId],
         participantNames: {
           [user.uid]: user.name,
@@ -76,6 +77,10 @@ export default function MatchScreen() {
         lastMessage: `¡${selectedMyPet.name} y ${candidate.name} hicieron match! 🐾`,
         updatedAt: new Date().toISOString(),
       });
+
+      // Register both participants in RTDB so chat messages are accessible
+      await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatRef.id}/${user.uid}`), true);
+      await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatRef.id}/${candidate.ownerId}`), true);
 
       Alert.alert('¡Match! 💚', `${selectedMyPet.name} y ${candidate.name} han hecho match. ¡Puedes chatear con el dueño!`);
     }

@@ -9,6 +9,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
+import { useAuth } from '../../../context/AuthContext';
 import type { Appointment, Pet } from '@junglapp/types';
 
 const { db, storage } = initFirebase();
@@ -16,6 +17,7 @@ const { db, storage } = initFirebase();
 export default function AppointmentDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { user } = useAuth();
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [pet, setPet] = useState<Pet | null>(null);
   const [diagnosis, setDiagnosis] = useState('');
@@ -70,8 +72,8 @@ export default function AppointmentDetailScreen() {
     setSaving(true);
     try {
       let prescriptionImageUrl: string | undefined;
-      if (prescriptionImageUri) {
-        const imgRef = ref(storage, `prescriptions/${id}/recipe`);
+      if (prescriptionImageUri && user) {
+        const imgRef = ref(storage, `prescriptions/${user.uid}/${id}/recipe`);
         const response = await fetch(prescriptionImageUri);
         const blob = await response.blob();
         await uploadBytes(imgRef, blob);

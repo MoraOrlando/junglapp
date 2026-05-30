@@ -1,11 +1,19 @@
 {
   "rules": {
+    "chatMembers": {
+      "$chatId": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      }
+    },
     "messages": {
       "$chatId": {
-        ".read": "auth != null",
-        ".write": "auth != null",
+        ".read": "auth != null && root.child('chatMembers').child($chatId).child(auth.uid).exists()",
+        ".write": "auth != null && root.child('chatMembers').child($chatId).child(auth.uid).exists()",
         "$msgId": {
-          ".validate": "newData.hasChildren(['senderId', 'text', 'createdAt']) && newData.child('senderId').val() === auth.uid"
+          ".validate": "newData.hasChildren(['senderId', 'senderName', 'text', 'createdAt']) && newData.child('senderId').val() === auth.uid && newData.child('text').val().length > 0 && newData.child('text').val().length <= 2000"
         }
       }
     },

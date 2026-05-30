@@ -5,11 +5,12 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   doc, getDoc, updateDoc, addDoc, collection, query, where, getDocs
 } from 'firebase/firestore';
-import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
+import { ref, set } from 'firebase/database';
+import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import type { LostPet } from '@junglapp/types';
 
-const { db } = initFirebase();
+const { db, rtdb } = initFirebase();
 
 export default function LostPetDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -77,6 +78,10 @@ export default function LostPetDetailScreen() {
                   updatedAt: new Date().toISOString(),
                 });
                 chatId = chatRef.id;
+
+                // Register both participants in RTDB so chat messages are accessible
+                await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${user.uid}`), true);
+                await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${lostPet.ownerId}`), true);
               }
 
               router.replace(`/(owner)/chat/${chatId}` as any);
