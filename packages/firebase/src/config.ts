@@ -1,20 +1,14 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { initializeAuth, getReactNativePersistence, getAuth, Auth } from 'firebase/auth';
+import { initializeAuth, getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 import { getDatabase, Database } from 'firebase/database';
 
-// Works for both Expo (EXPO_PUBLIC_) and Next.js (NEXT_PUBLIC_) env prefixes
 function getEnv(key: string): string {
   const expoKey = `EXPO_PUBLIC_${key}`;
   const nextKey = `NEXT_PUBLIC_${key}`;
-
   if (typeof process !== 'undefined') {
-    return (
-      (process.env[expoKey] as string) ||
-      (process.env[nextKey] as string) ||
-      ''
-    );
+    return (process.env[expoKey] as string) || (process.env[nextKey] as string) || '';
   }
   return '';
 }
@@ -39,14 +33,12 @@ function initFirebase() {
   if (!app) {
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-    // Use initializeAuth with AsyncStorage on React Native, fallback to getAuth on web
+    // initializeAuth with in-memory persistence — works on both RN and web
+    // without requiring AsyncStorage native module setup
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-      auth = initializeAuth(app, {
-        persistence: getReactNativePersistence(AsyncStorage),
-      });
+      auth = initializeAuth(app);
     } catch {
+      // Auth was already initialized (e.g. hot reload) — retrieve existing instance
       auth = getAuth(app);
     }
 
