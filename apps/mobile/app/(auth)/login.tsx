@@ -18,8 +18,9 @@ type FormData = z.infer<typeof schema>;
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { signIn } = useAuth();
+  const { signIn, signInWithGoogle, signInWithMicrosoft } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [socialLoading, setSocialLoading] = useState<'google' | 'microsoft' | null>(null);
 
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -36,14 +37,32 @@ export default function LoginScreen() {
     }
   }
 
+  async function handleGoogle() {
+    setSocialLoading('google');
+    try {
+      await signInWithGoogle();
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSocialLoading(null);
+    }
+  }
+
+  async function handleMicrosoft() {
+    setSocialLoading('microsoft');
+    try {
+      await signInWithMicrosoft();
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSocialLoading(null);
+    }
+  }
+
   return (
     <SafeAreaView className="flex-1 bg-background">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
-      >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
         <ScrollView contentContainerStyle={{ flexGrow: 1 }} className="px-6">
-          {/* Back button */}
           <TouchableOpacity onPress={() => router.back()} className="mt-4 mb-8">
             <Text className="text-primary-500 text-base">← Volver</Text>
           </TouchableOpacity>
@@ -98,6 +117,37 @@ export default function LoginScreen() {
             >
               <Text className="text-white font-semibold text-base">
                 {loading ? 'Ingresando...' : 'Iniciar Sesión'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Divider */}
+            <View className="flex-row items-center my-2">
+              <View className="flex-1 h-px bg-gray-200" />
+              <Text className="mx-4 text-gray-400 text-sm">o continuar con</Text>
+              <View className="flex-1 h-px bg-gray-200" />
+            </View>
+
+            {/* Google */}
+            <TouchableOpacity
+              className="flex-row items-center justify-center border border-gray-200 rounded-2xl py-3 bg-white gap-2"
+              onPress={handleGoogle}
+              disabled={socialLoading !== null}
+            >
+              <Text className="text-lg">🔴</Text>
+              <Text className="font-semibold text-gray-700">
+                {socialLoading === 'google' ? 'Conectando...' : 'Google'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Microsoft */}
+            <TouchableOpacity
+              className="flex-row items-center justify-center border border-gray-200 rounded-2xl py-3 bg-white gap-2"
+              onPress={handleMicrosoft}
+              disabled={socialLoading !== null}
+            >
+              <Text className="text-lg">🔷</Text>
+              <Text className="font-semibold text-gray-700">
+                {socialLoading === 'microsoft' ? 'Conectando...' : 'Microsoft'}
               </Text>
             </TouchableOpacity>
           </View>

@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  ScrollView, KeyboardAvoidingView, Platform, Alert
+  ScrollView, KeyboardAvoidingView, Platform, Alert, Linking
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,6 +10,8 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as Location from 'expo-location';
 import { useAuth } from '../../context/AuthContext';
+
+const TERMS_URL = 'https://junglapp.com/terminos'; // replace with your actual URL
 
 const REGIONS = [
   'Arica y Parinacota', 'Tarapacá', 'Antofagasta', 'Atacama', 'Coquimbo',
@@ -30,12 +32,14 @@ type FormData = z.infer<typeof schema>;
 
 export default function RegisterOwnerScreen() {
   const router = useRouter();
-  const { signUp } = useAuth();
+  const { signUp, signInWithGoogle, signInWithMicrosoft } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [socialLoading, setSocialLoading] = useState<'google' | 'microsoft' | null>(null);
   const [region, setRegion] = useState('Metropolitana');
   const [regionOpen, setRegionOpen] = useState(false);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -58,7 +62,20 @@ export default function RegisterOwnerScreen() {
     }
   }
 
+  async function handleGoogle() {
+    if (!termsAccepted) { Alert.alert('Requerido', 'Debes aceptar los términos de uso para continuar.'); return; }
+    setSocialLoading('google');
+    try { await signInWithGoogle(); } catch (e: any) { Alert.alert('Error', e.message); } finally { setSocialLoading(null); }
+  }
+
+  async function handleMicrosoft() {
+    if (!termsAccepted) { Alert.alert('Requerido', 'Debes aceptar los términos de uso para continuar.'); return; }
+    setSocialLoading('microsoft');
+    try { await signInWithMicrosoft(); } catch (e: any) { Alert.alert('Error', e.message); } finally { setSocialLoading(null); }
+  }
+
   async function onSubmit(data: FormData) {
+    if (!termsAccepted) { Alert.alert('Requerido', 'Debes aceptar los términos de uso para continuar.'); return; }
     setLoading(true);
     try {
       await signUp(data.email, data.password, {
@@ -183,8 +200,56 @@ export default function RegisterOwnerScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Terms acceptance */}
           <TouchableOpacity
-            className={`bg-primary-500 rounded-2xl py-4 items-center mt-6 mb-10 ${loading ? 'opacity-70' : ''}`}
+            className="flex-row items-start gap-3 mt-6"
+            onPress={() => setTermsAccepted(!termsAccepted)}
+            activeOpacity={0.7}
+          >
+            <View className={`w-5 h-5 rounded border-2 mt-0.5 items-center justify-center ${termsAccepted ? 'bg-primary-500 border-primary-500' : 'border-gray-300 bg-white'}`}>
+              {termsAccepted && <Text className="text-white text-xs font-bold">✓</Text>}
+            </View>
+            <Text className="flex-1 text-sm text-gray-600">
+              He leído y acepto los{' '}
+              <Text className="text-primary-500 font-semibold" onPress={() => Linking.openURL(TERMS_URL)}>
+                Términos y Condiciones de Uso
+              </Text>
+            </Text>
+          </TouchableOpacity>
+
+          {/* Divider */}
+          <View className="flex-row items-center my-4">
+            <View className="flex-1 h-px bg-gray-200" />
+            <Text className="mx-4 text-gray-400 text-sm">o regístrate con</Text>
+            <View className="flex-1 h-px bg-gray-200" />
+          </View>
+
+          {/* Social buttons */}
+          <View className="gap-3 mb-4">
+            <TouchableOpacity
+              className="flex-row items-center justify-center border border-gray-200 rounded-2xl py-3 bg-white gap-2"
+              onPress={handleGoogle}
+              disabled={socialLoading !== null}
+            >
+              <Text className="text-lg">🔴</Text>
+              <Text className="font-semibold text-gray-700">
+                {socialLoading === 'google' ? 'Conectando...' : 'Continuar con Google'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="flex-row items-center justify-center border border-gray-200 rounded-2xl py-3 bg-white gap-2"
+              onPress={handleMicrosoft}
+              disabled={socialLoading !== null}
+            >
+              <Text className="text-lg">🔷</Text>
+              <Text className="font-semibold text-gray-700">
+                {socialLoading === 'microsoft' ? 'Conectando...' : 'Continuar con Microsoft'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            className={`bg-primary-500 rounded-2xl py-4 items-center mb-10 ${loading ? 'opacity-70' : ''}`}
             onPress={handleSubmit(onSubmit)}
             disabled={loading}
           >

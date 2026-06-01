@@ -40,14 +40,32 @@ export default function AddPetScreen() {
   });
 
   async function pickPhoto() {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsMultipleSelection: true,
-      quality: 0.8,
-    });
-    if (!result.canceled) {
-      setPhotos([...photos, ...result.assets.map((a) => a.uri)]);
-    }
+    Alert.alert('Agregar foto', '¿Cómo quieres agregar la foto?', [
+      {
+        text: 'Cámara',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert('Permiso denegado', 'Necesitamos acceso a tu cámara.');
+            return;
+          }
+          const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+          if (!result.canceled) setPhotos([...photos, result.assets[0].uri]);
+        },
+      },
+      {
+        text: 'Galería',
+        onPress: async () => {
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsMultipleSelection: true,
+            quality: 0.8,
+          });
+          if (!result.canceled) setPhotos([...photos, ...result.assets.map((a) => a.uri)]);
+        },
+      },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
   }
 
   async function onSubmit(data: FormData) {

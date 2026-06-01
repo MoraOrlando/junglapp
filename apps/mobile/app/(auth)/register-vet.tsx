@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  ScrollView, KeyboardAvoidingView, Platform, Alert
+  ScrollView, KeyboardAvoidingView, Platform, Alert, Linking
 } from 'react-native';
+
+const TERMS_URL = 'https://junglapp.com/terminos';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useForm, Controller } from 'react-hook-form';
@@ -34,6 +36,7 @@ export default function RegisterVetScreen() {
   const { signUp, firebaseUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [credentialUri, setCredentialUri] = useState<string | null>(null);
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -50,6 +53,10 @@ export default function RegisterVetScreen() {
   async function onSubmit(data: FormData) {
     if (!credentialUri) {
       Alert.alert('Requerido', 'Por favor sube tu credencial profesional');
+      return;
+    }
+    if (!termsAccepted) {
+      Alert.alert('Requerido', 'Debes aceptar los términos de uso para continuar.');
       return;
     }
     setLoading(true);
@@ -157,8 +164,25 @@ export default function RegisterVetScreen() {
             </View>
           </View>
 
+          {/* Terms acceptance */}
           <TouchableOpacity
-            className={`bg-primary-500 rounded-2xl py-4 items-center mt-6 mb-10 ${loading ? 'opacity-70' : ''}`}
+            className="flex-row items-start gap-3 mt-6"
+            onPress={() => setTermsAccepted(!termsAccepted)}
+            activeOpacity={0.7}
+          >
+            <View className={`w-5 h-5 rounded border-2 mt-0.5 items-center justify-center ${termsAccepted ? 'bg-primary-500 border-primary-500' : 'border-gray-300 bg-white'}`}>
+              {termsAccepted && <Text className="text-white text-xs font-bold">✓</Text>}
+            </View>
+            <Text className="flex-1 text-sm text-gray-600">
+              He leído y acepto los{' '}
+              <Text className="text-primary-500 font-semibold" onPress={() => Linking.openURL(TERMS_URL)}>
+                Términos y Condiciones de Uso
+              </Text>
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            className={`bg-primary-500 rounded-2xl py-4 items-center mt-4 mb-10 ${loading ? 'opacity-70' : ''}`}
             onPress={handleSubmit(onSubmit)}
             disabled={loading}
           >

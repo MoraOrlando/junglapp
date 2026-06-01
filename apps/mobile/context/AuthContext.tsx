@@ -5,6 +5,7 @@ import {
   createUserWithEmailAndPassword,
   signOut,
   GoogleAuthProvider,
+  OAuthProvider,
   signInWithCredential,
   FirebaseError,
 } from 'firebase/auth';
@@ -14,8 +15,13 @@ import {
   setDoc,
   updateDoc,
 } from 'firebase/firestore';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import * as AuthSession from 'expo-auth-session';
 import { initFirebase } from '@junglapp/firebase';
 import type { User, UserRole } from '@junglapp/types';
+
+WebBrowser.maybeCompleteAuthSession();
 
 const { auth, db } = initFirebase();
 
@@ -25,16 +31,40 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, userData: Omit<User, 'uid' | 'createdAt'>) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  signInWithMicrosoft: () => Promise<void>;
   logOut: () => Promise<void>;
   updateProfile: (data: Partial<User>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+// Google OAuth client IDs — replace with your real IDs from Google Cloud Console
+const GOOGLE_CLIENT_IDS = {
+  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+  androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+};
+
+// Microsoft Azure AD app client ID
+const MICROSOFT_CLIENT_ID = process.env.EXPO_PUBLIC_MICROSOFT_CLIENT_ID ?? '';
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<import('firebase/auth').User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [googleRequest, googleResponse, promptGoogleAsync] = Google.useAuthRequest(GOOGLE_CLIENT_IDS);
+
+  useEffect(() => {
+    if (googleResponse?.type === 'success') {
+      const { id_token } = googleResponse.params;
+      const credential = GoogleAuthProvider.credential(id_token);
+      signInWithCredential(auth, credential).then(async ({ user: fbUser }) => {
+        await ensureUserDoc(fbUser, 'owner');
+      });
+    }
+  }, [googleResponse]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
@@ -52,8 +82,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, []);
 
+  async function ensureUserDoc(fbUser: import('firebase/auth').User, defaultRole: UserRole) {
+    const ref = doc(db, 'users', fbUser.uid);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      const newUser: User = {
+        uid: fbUser.uid,
+        email: fbUser.email ?? '',
+        name: fbUser.displayName ?? '',
+        role: defaultRole,
+        phone: '',
+        address: '',
+        region: '',
+        city: '',
+        createdAt: new Date().toISOString(),
+      };
+      await setDoc(ref, newUser);
+      setUser(newUser);
+    } else {
+      setUser({ uid: fbUser.uid, ...snap.data() } as User);
+    }
+  }
+
   async function signIn(email: string, password: string) {
     await signInWithEmailAndPassword(auth, email, password);
+  }
+
+  async function signInWithGoogle() {
+    await promptGoogleAsync();
+  }
+
+  async function signInWithMicrosoft() {
+    const redirectUri = AuthSession.makeRedirectUri({ scheme: 'junglapp' });
+    const discovery = {
+      authorizationEndpoint: `https://login.microsoftonline.com/common/oauth2/v2.0/authorize`,
+      tokenEndpoint: `https://login.microsoftonline.com/common/oauth2/v2.0/token`,
+    };
+    const request = new AuthSession.AuthRequest({
+      clientId: MICROSOFT_CLIENT_ID,
+      scopes: ['openid', 'profile', 'email'],
+      redirectUri,
+    });
+    const result = await request.promptAsync(discovery);
+    if (result.type === 'success' && result.params.access_token) {
+      const provider = new OAuthProvider('microsoft.com');
+      const credential = provider.credential({ accessToken: result.params.access_token });
+      const { user: fbUser } = await signInWithCredential(auth, credential);
+      await ensureUserDoc(fbUser, 'owner');
+    }
   }
 
   async function signUp(
@@ -84,7 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, firebaseUser, loading, signIn, signUp, logOut, updateProfile }}>
+    <AuthContext.Provider value={{ user, firebaseUser, loading, signIn, signUp, signInWithGoogle, signInWithMicrosoft, logOut, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );
