@@ -8,7 +8,10 @@ export interface User {
   phone: string;
   email: string;
   address: string;
-  postalCode: string;
+  region: string;
+  city: string;
+  postalCode?: string;
+  location?: { lat: number; lng: number };
   photoUrl?: string;
   createdAt: string;
 }

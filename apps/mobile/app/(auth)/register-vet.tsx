@@ -22,7 +22,8 @@ const schema = z.object({
   email: z.string().email('Email inválido'),
   password: z.string().min(6, 'Mínimo 6 caracteres'),
   address: z.string().min(5, 'Dirección requerida'),
-  postalCode: z.string().min(4, 'Código postal requerido'),
+  region: z.string().min(2, 'Región requerida'),
+  city: z.string().min(2, 'Ciudad requerida'),
   licenseNumber: z.string().min(3, 'Número de registro requerido'),
   consultationFee: z.string().min(1, 'Valor consulta requerido'),
 });
@@ -60,7 +61,8 @@ export default function RegisterVetScreen() {
         phone: data.phone,
         email: data.email,
         address: data.address,
-        postalCode: data.postalCode,
+        region: data.region,
+        city: data.city,
       });
 
       // After sign up, user is available
@@ -112,7 +114,8 @@ export default function RegisterVetScreen() {
               { name: 'email' as const, label: 'Correo electrónico', placeholder: 'dr@ejemplo.com', keyboard: 'email-address' },
               { name: 'password' as const, label: 'Contraseña', placeholder: '••••••••', secure: true },
               { name: 'address' as const, label: 'Dirección de consulta', placeholder: 'Av. Veterinaria 123' },
-              { name: 'postalCode' as const, label: 'Código Postal', placeholder: '1234567', keyboard: 'number-pad' },
+              { name: 'region' as const, label: 'Región', placeholder: 'Metropolitana' },
+              { name: 'city' as const, label: 'Ciudad / Comuna', placeholder: 'Providencia' },
               { name: 'consultationFee' as const, label: 'Valor por consulta (CLP)', placeholder: '25000', keyboard: 'number-pad' },
             ].map((f) => (
               <View key={f.name}>

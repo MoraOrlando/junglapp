@@ -23,7 +23,8 @@ const schema = z.object({
   email: z.string().email('Email inválido'),
   password: z.string().min(6, 'Mínimo 6 caracteres'),
   address: z.string().min(5, 'Dirección requerida'),
-  postalCode: z.string().min(4, 'Código postal requerido'),
+  region: z.string().min(2, 'Región requerida'),
+  city: z.string().min(2, 'Ciudad requerida'),
 });
 type FormData = z.infer<typeof schema>;
 
@@ -46,7 +47,8 @@ export default function RegisterStoreScreen() {
         phone: data.phone,
         email: data.email,
         address: data.address,
-        postalCode: data.postalCode,
+        region: data.region,
+        city: data.city,
       });
 
       if (firebaseUser) {
@@ -92,7 +94,8 @@ export default function RegisterStoreScreen() {
               { name: 'email' as const, label: 'Correo electrónico', placeholder: 'tienda@ejemplo.com', keyboard: 'email-address' },
               { name: 'password' as const, label: 'Contraseña', placeholder: '••••••••', secure: true },
               { name: 'address' as const, label: 'Dirección de la tienda', placeholder: 'Av. Comercial 456' },
-              { name: 'postalCode' as const, label: 'Código Postal', placeholder: '1234567', keyboard: 'number-pad' },
+              { name: 'region' as const, label: 'Región', placeholder: 'Metropolitana' },
+              { name: 'city' as const, label: 'Ciudad / Comuna', placeholder: 'Providencia' },
             ].map((f) => (
               <View key={f.name}>
                 <Text className="text-sm font-medium text-gray-700 mb-1">{f.label}</Text>

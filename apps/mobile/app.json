@@ -35,6 +35,12 @@
           "photosPermission": "JunglApp needs access to your photos to upload pet pictures.",
           "cameraPermission": "JunglApp needs access to your camera to take pet photos."
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "JunglApp usa tu ubicación para mostrarte veterinarios, tiendas y mascotas extraviadas cercanas."
+        }
       ]
     ],
     "experiments": {

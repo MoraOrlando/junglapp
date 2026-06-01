@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   ScrollView, KeyboardAvoidingView, Platform, Alert
@@ -8,7 +8,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
+import * as Location from 'expo-location';
 import { useAuth } from '../../context/AuthContext';
+
+const REGIONS = [
+  'Arica y Parinacota', 'Tarapacá', 'Antofagasta', 'Atacama', 'Coquimbo',
+  'Valparaíso', 'Metropolitana', "O'Higgins", 'Maule', 'Ñuble',
+  'Biobío', 'Araucanía', 'Los Ríos', 'Los Lagos', 'Aysén', 'Magallanes',
+];
 
 const schema = z.object({
   name: z.string().min(2, 'Nombre requerido'),
@@ -17,7 +24,7 @@ const schema = z.object({
   email: z.string().email('Email inválido'),
   password: z.string().min(6, 'Mínimo 6 caracteres'),
   address: z.string().min(5, 'Dirección requerida'),
-  postalCode: z.string().min(4, 'Código postal requerido'),
+  city: z.string().min(2, 'Ciudad requerida'),
 });
 type FormData = z.infer<typeof schema>;
 
@@ -25,10 +32,31 @@ export default function RegisterOwnerScreen() {
   const router = useRouter();
   const { signUp } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [region, setRegion] = useState('Metropolitana');
+  const [regionOpen, setRegionOpen] = useState(false);
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [locating, setLocating] = useState(false);
 
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
   });
+
+  async function captureLocation() {
+    setLocating(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permiso denegado', 'No podremos geolocalizarte automáticamente, pero puedes continuar.');
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    } catch {
+      Alert.alert('Error', 'No se pudo obtener tu ubicación.');
+    } finally {
+      setLocating(false);
+    }
+  }
 
   async function onSubmit(data: FormData) {
     setLoading(true);
@@ -40,7 +68,9 @@ export default function RegisterOwnerScreen() {
         phone: data.phone,
         email: data.email,
         address: data.address,
-        postalCode: data.postalCode,
+        region,
+        city: data.city,
+        ...(coords ? { location: coords } : {}),
       });
     } catch (e: any) {
       Alert.alert('Error', e.message);
@@ -56,7 +86,6 @@ export default function RegisterOwnerScreen() {
     { name: 'email', label: 'Correo electrónico', placeholder: 'correo@ejemplo.com', keyboard: 'email-address' },
     { name: 'password', label: 'Contraseña', placeholder: '••••••••', secure: true },
     { name: 'address', label: 'Dirección', placeholder: 'Av. Principal 123' },
-    { name: 'postalCode', label: 'Código Postal', placeholder: '1234567', keyboard: 'number-pad' },
   ];
 
   return (
@@ -96,6 +125,62 @@ export default function RegisterOwnerScreen() {
                 )}
               </View>
             ))}
+
+            {/* Region picker */}
+            <View>
+              <Text className="text-sm font-medium text-gray-700 mb-1">Región</Text>
+              <TouchableOpacity
+                className="border border-gray-200 rounded-xl px-4 py-3 bg-white flex-row justify-between items-center"
+                onPress={() => setRegionOpen(!regionOpen)}
+              >
+                <Text className="text-base text-gray-800">{region}</Text>
+                <Text className="text-gray-400">{regionOpen ? '▲' : '▼'}</Text>
+              </TouchableOpacity>
+              {regionOpen && (
+                <View className="border border-gray-200 rounded-xl mt-1 bg-white max-h-60">
+                  <ScrollView nestedScrollEnabled>
+                    {REGIONS.map((r) => (
+                      <TouchableOpacity
+                        key={r}
+                        className={`px-4 py-3 border-b border-gray-50 ${region === r ? 'bg-green-50' : ''}`}
+                        onPress={() => { setRegion(r); setRegionOpen(false); }}
+                      >
+                        <Text className={region === r ? 'text-primary-700 font-medium' : 'text-gray-700'}>{r}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+            </View>
+
+            {/* City */}
+            <View>
+              <Text className="text-sm font-medium text-gray-700 mb-1">Ciudad / Comuna</Text>
+              <Controller
+                control={control}
+                name="city"
+                render={({ field: { onChange, value } }) => (
+                  <TextInput
+                    className="border border-gray-200 rounded-xl px-4 py-3 bg-white text-base"
+                    placeholder="Providencia"
+                    onChangeText={onChange}
+                    value={value}
+                  />
+                )}
+              />
+              {errors.city && <Text className="text-red-500 text-xs mt-1">{errors.city.message}</Text>}
+            </View>
+
+            {/* Geolocation */}
+            <TouchableOpacity
+              className={`rounded-xl py-3 items-center border ${coords ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200'}`}
+              onPress={captureLocation}
+              disabled={locating}
+            >
+              <Text className={coords ? 'text-green-700 font-medium' : 'text-primary-600 font-medium'}>
+                {locating ? 'Obteniendo ubicación...' : coords ? '✓ Ubicación capturada 📍' : '📍 Usar mi ubicación actual'}
+              </Text>
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity
