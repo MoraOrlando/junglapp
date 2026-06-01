@@ -23,6 +23,7 @@ export default function OwnerLayout() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
       }}
     >
+      {/* Visible tabs */}
       <Tabs.Screen
         name="index"
         options={{
@@ -31,10 +32,10 @@ export default function OwnerLayout() {
         }}
       />
       <Tabs.Screen
-        name="pets"
+        name="near"
         options={{
-          title: 'Mascotas',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🐾" focused={focused} />,
+          title: 'Cerca',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="📍" focused={focused} />,
         }}
       />
       <Tabs.Screen
@@ -45,33 +46,19 @@ export default function OwnerLayout() {
         }}
       />
       <Tabs.Screen
-        name="chat"
+        name="profile"
         options={{
-          title: 'Chat',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="💬" focused={focused} />,
+          title: 'Perfil',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} />,
         }}
       />
-      <Tabs.Screen
-        name="lost"
-        options={{
-          title: 'Extraviadas',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🔍" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="vets"
-        options={{
-          title: 'Veterinarios',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🩺" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="store"
-        options={{
-          title: 'Tienda',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🛒" focused={focused} />,
-        }}
-      />
+
+      {/* Hidden routes — still reachable via navigation */}
+      <Tabs.Screen name="pets" options={{ href: null }} />
+      <Tabs.Screen name="chat" options={{ href: null }} />
+      <Tabs.Screen name="lost" options={{ href: null }} />
+      <Tabs.Screen name="vets" options={{ href: null }} />
+      <Tabs.Screen name="store" options={{ href: null }} />
     </Tabs>
   );
 }

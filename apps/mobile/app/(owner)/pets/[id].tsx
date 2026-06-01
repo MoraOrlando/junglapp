@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, Switch } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
@@ -81,8 +82,16 @@ export default function PetDetailScreen() {
     <SafeAreaView className="flex-1 bg-background">
       <ScrollView className="flex-1">
         {/* Header */}
-        <View className={`h-48 items-center justify-center ${isLost ? 'bg-red-400' : 'bg-primary-500'}`}>
-          <Text className="text-8xl">{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
+        <View className={`h-64 items-center justify-center ${isLost ? 'bg-red-400' : 'bg-primary-500'}`}>
+          {pet.photos && pet.photos.length > 0 ? (
+            <Image
+              source={{ uri: pet.photos[0] }}
+              style={{ width: '100%', height: '100%' }}
+              contentFit="cover"
+            />
+          ) : (
+            <Text className="text-8xl">{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
+          )}
           {isLost && (
             <View className="absolute bottom-4 bg-red-600 px-4 py-1.5 rounded-full">
               <Text className="text-white text-xs font-bold">🔍 EXTRAVIADA — Publicada</Text>
@@ -121,6 +130,22 @@ export default function PetDetailScreen() {
               </View>
             </View>
           </View>
+
+          {/* Photo gallery */}
+          {pet.photos && pet.photos.length > 1 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
+              <View className="flex-row gap-2">
+                {pet.photos.map((uri, i) => (
+                  <Image
+                    key={i}
+                    source={{ uri }}
+                    style={{ width: 80, height: 80, borderRadius: 12 }}
+                    contentFit="cover"
+                  />
+                ))}
+              </View>
+            </ScrollView>
+          )}
 
           {/* Lost pet action button */}
           <TouchableOpacity

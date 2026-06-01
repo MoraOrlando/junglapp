@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { collection, query, where, getDocs } from 'firebase/firestore';
@@ -70,9 +71,13 @@ export default function PetsScreen() {
                 className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex-row items-center gap-4"
                 onPress={() => router.push(`/(owner)/pets/${pet.id}` as any)}
               >
-                <View className="bg-primary-100 rounded-2xl w-16 h-16 items-center justify-center">
-                  <Text className="text-3xl">{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
-                </View>
+                {pet.photos && pet.photos.length > 0 ? (
+                  <Image source={{ uri: pet.photos[0] }} style={{ width: 64, height: 64, borderRadius: 16 }} contentFit="cover" />
+                ) : (
+                  <View className="bg-primary-100 rounded-2xl w-16 h-16 items-center justify-center">
+                    <Text className="text-3xl">{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
+                  </View>
+                )}
                 <View className="flex-1">
                   <View className="flex-row items-center gap-2">
                     <Text className="font-bold text-gray-800 text-lg">{pet.name}</Text>

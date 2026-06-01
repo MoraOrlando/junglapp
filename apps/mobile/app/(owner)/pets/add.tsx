@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { collection, addDoc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'expo-image';
 import { initFirebase, COLLECTIONS, uploadImages } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 
@@ -120,7 +121,7 @@ export default function AddPetScreen() {
             <View className="flex-row gap-2 flex-wrap">
               {photos.map((uri, i) => (
                 <View key={i} className="w-20 h-20 bg-gray-100 rounded-xl overflow-hidden">
-                  <Text className="text-3xl text-center mt-4">🖼️</Text>
+                  <Image source={{ uri }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
                 </View>
               ))}
               <TouchableOpacity
