@@ -1,10 +1,8 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  ScrollView, KeyboardAvoidingView, Platform, Alert, Linking
+  ScrollView, KeyboardAvoidingView, Platform, Alert
 } from 'react-native';
-
-const TERMS_URL = 'https://junglapp.com/terminos';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useForm, Controller } from 'react-hook-form';
@@ -136,7 +134,7 @@ export default function RegisterStoreScreen() {
             </View>
             <Text className="flex-1 text-sm text-gray-600">
               He leído y acepto los{' '}
-              <Text className="text-primary-500 font-semibold" onPress={() => Linking.openURL(TERMS_URL)}>
+              <Text className="text-primary-500 font-semibold" onPress={() => router.push('/(auth)/terms')}>
                 Términos y Condiciones de Uso
               </Text>
             </Text>
