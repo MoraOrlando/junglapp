@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuth } from '../../context/AuthContext';
 import { doc, setDoc } from 'firebase/firestore';
-import { initFirebase } from '@junglapp/firebase';
+import { initFirebase, handleEmailAlreadyInUse } from '@junglapp/firebase';
 
 const { db } = initFirebase();
 
@@ -67,7 +67,11 @@ export default function RegisterStoreScreen() {
         });
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      if (e.code === 'auth/email-already-in-use') {
+        await handleEmailAlreadyInUse(data.email);
+      } else {
+        Alert.alert('Error', e.message);
+      }
     } finally {
       setLoading(false);
     }

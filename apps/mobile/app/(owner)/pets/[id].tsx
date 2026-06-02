@@ -31,11 +31,13 @@ export default function PetDetailScreen() {
       if (snap.exists()) setPet({ id: snap.id, ...snap.data() } as Pet);
       setLoading(false);
     });
+    // Filter isFound in JS to avoid requiring a composite Firestore index
     getDocs(query(
       collection(db, COLLECTIONS.LOST_PETS),
-      where('petId', '==', id),
-      where('isFound', '==', false)
-    )).then((snap) => setIsLost(!snap.empty));
+      where('petId', '==', id)
+    )).then((snap) => {
+      setIsLost(snap.docs.some((d) => d.data().isFound === false));
+    });
   }, [id]);
 
   function triggerFlameAndNavigate() {
@@ -73,10 +75,9 @@ export default function PetDetailScreen() {
           onPress: async () => {
             const snap = await getDocs(query(
               collection(db, COLLECTIONS.LOST_PETS),
-              where('petId', '==', id),
-              where('isFound', '==', false)
+              where('petId', '==', id)
             ));
-            for (const d of snap.docs) {
+            for (const d of snap.docs.filter((d) => !d.data().isFound)) {
               await updateDoc(doc(db, COLLECTIONS.LOST_PETS, d.id), { isFound: true });
             }
             setIsLost(false);

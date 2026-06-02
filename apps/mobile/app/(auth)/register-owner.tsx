@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as Location from 'expo-location';
 import { useAuth } from '../../context/AuthContext';
+import { handleEmailAlreadyInUse } from '@junglapp/firebase';
 
 const REGIONS = [
   'Arica y Parinacota', 'Tarapacá', 'Antofagasta', 'Atacama', 'Coquimbo',
@@ -88,7 +89,11 @@ export default function RegisterOwnerScreen() {
         ...(coords ? { location: coords } : {}),
       });
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      if (e.code === 'auth/email-already-in-use') {
+        await handleEmailAlreadyInUse(data.email);
+      } else {
+        Alert.alert('Error', e.message);
+      }
     } finally {
       setLoading(false);
     }

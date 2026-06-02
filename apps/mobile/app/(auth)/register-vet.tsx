@@ -12,7 +12,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../context/AuthContext';
 import { doc, setDoc } from 'firebase/firestore';
-import { initFirebase, uploadImage } from '@junglapp/firebase';
+import { initFirebase, uploadImage, handleEmailAlreadyInUse } from '@junglapp/firebase';
 
 const { db } = initFirebase();
 
@@ -108,7 +108,11 @@ export default function RegisterVetScreen() {
         });
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      if (e.code === 'auth/email-already-in-use') {
+        await handleEmailAlreadyInUse(data.email);
+      } else {
+        Alert.alert('Error', e.message);
+      }
     } finally {
       setLoading(false);
     }
