@@ -24,11 +24,29 @@ const roles = [
   {
     id: 'store',
     emoji: '🏪',
-    title: 'Tienda',
-    subtitle: 'Pet Shop',
-    description: 'Publica y vende productos para mascotas.',
+    title: 'Tienda Pet Shop',
+    subtitle: 'Comercio',
+    description: 'Publica y vende productos para mascotas desde tu tienda.',
     color: 'bg-amber-50 border-amber-200',
     textColor: 'text-amber-600',
+  },
+  {
+    id: 'walker',
+    emoji: '🦮',
+    title: 'Paseador de Perros',
+    subtitle: 'Dog Walker',
+    description: 'Ofrece paseos y cuidado de perros en tu zona.',
+    color: 'bg-orange-50 border-orange-200',
+    textColor: 'text-orange-600',
+  },
+  {
+    id: 'grooming',
+    emoji: '✂️',
+    title: 'Peluquería',
+    subtitle: 'Grooming · A domicilio o tienda',
+    description: 'Ofrece baño, corte y estética para mascotas desde tu local o a domicilio.',
+    color: 'bg-purple-50 border-purple-200',
+    textColor: 'text-purple-600',
   },
 ];
 
@@ -58,7 +76,7 @@ export default function RegisterScreen() {
                 <Text className="text-4xl">{role.emoji}</Text>
                 <View className="flex-1">
                   <Text className={`font-bold text-lg ${role.textColor}`}>{role.title}</Text>
-                  <Text className="text-gray-500 text-sm">{role.subtitle}</Text>
+                  <Text className="text-gray-500 text-xs">{role.subtitle}</Text>
                   <Text className="text-gray-600 text-sm mt-1">{role.description}</Text>
                 </View>
                 <Text className="text-gray-400 text-xl">›</Text>
