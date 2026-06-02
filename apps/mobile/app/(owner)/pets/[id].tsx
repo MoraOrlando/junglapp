@@ -1,9 +1,14 @@
-import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, Switch } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity, Alert,
+  Animated, Modal
+} from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import {
+  doc, getDoc, updateDoc, collection, query, where, getDocs
+} from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import type { Pet } from '@junglapp/types';
 
@@ -15,6 +20,10 @@ export default function PetDetailScreen() {
   const [pet, setPet] = useState<Pet | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLost, setIsLost] = useState(false);
+  const [showFlame, setShowFlame] = useState(false);
+
+  const flameScale = useRef(new Animated.Value(0)).current;
+  const flameOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (!id) return;
@@ -22,7 +31,6 @@ export default function PetDetailScreen() {
       if (snap.exists()) setPet({ id: snap.id, ...snap.data() } as Pet);
       setLoading(false);
     });
-    // Check if already reported lost
     getDocs(query(
       collection(db, COLLECTIONS.LOST_PETS),
       where('petId', '==', id),
@@ -30,37 +38,51 @@ export default function PetDetailScreen() {
     )).then((snap) => setIsLost(!snap.empty));
   }, [id]);
 
-  async function toggleLookingForPartner() {
+  function triggerFlameAndNavigate() {
+    setShowFlame(true);
+    flameScale.setValue(0);
+    flameOpacity.setValue(0);
+    Animated.sequence([
+      Animated.parallel([
+        Animated.spring(flameScale, { toValue: 1, useNativeDriver: true, friction: 5 }),
+        Animated.timing(flameOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+      ]),
+      Animated.delay(700),
+      Animated.timing(flameOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+    ]).start(() => {
+      setShowFlame(false);
+      router.push(`/(owner)/pets/match-profile?petId=${id}` as any);
+    });
+  }
+
+  async function handleHeartPress() {
     if (!pet || !id) return;
-    const newValue = !pet.lookingForPartner;
-    await updateDoc(doc(db, COLLECTIONS.PETS, id), { lookingForPartner: newValue });
-    setPet({ ...pet, lookingForPartner: newValue });
+    if (!pet.lookingForPartner) {
+      await updateDoc(doc(db, COLLECTIONS.PETS, id), { lookingForPartner: true });
+      setPet({ ...pet, lookingForPartner: true });
+    }
+    triggerFlameAndNavigate();
   }
 
   function handleLostReport() {
     if (isLost) {
-      Alert.alert(
-        '🔍 Ya reportada',
-        `${pet?.name} ya está publicada como extraviada. ¿Deseas cancelar el reporte?`,
-        [
-          { text: 'Mantener reporte', style: 'cancel' },
-          {
-            text: 'Cancelar reporte', style: 'destructive',
-            onPress: async () => {
-              // Mark as found internally (cancel report)
-              const snap = await getDocs(query(
-                collection(db, COLLECTIONS.LOST_PETS),
-                where('petId', '==', id),
-                where('isFound', '==', false)
-              ));
-              for (const d of snap.docs) {
-                await updateDoc(doc(db, COLLECTIONS.LOST_PETS, d.id), { isFound: true });
-              }
-              setIsLost(false);
-            },
+      Alert.alert('🔍 Ya reportada', `${pet?.name} ya está publicada como extraviada. ¿Deseas cancelar el reporte?`, [
+        { text: 'Mantener reporte', style: 'cancel' },
+        {
+          text: 'Cancelar reporte', style: 'destructive',
+          onPress: async () => {
+            const snap = await getDocs(query(
+              collection(db, COLLECTIONS.LOST_PETS),
+              where('petId', '==', id),
+              where('isFound', '==', false)
+            ));
+            for (const d of snap.docs) {
+              await updateDoc(doc(db, COLLECTIONS.LOST_PETS, d.id), { isFound: true });
+            }
+            setIsLost(false);
           },
-        ]
-      );
+        },
+      ]);
     } else {
       router.push(`/(owner)/lost/report?petId=${id}` as any);
     }
@@ -71,7 +93,6 @@ export default function PetDetailScreen() {
       <Text className="text-gray-400">Cargando...</Text>
     </SafeAreaView>
   );
-
   if (!pet) return (
     <SafeAreaView className="flex-1 bg-background items-center justify-center">
       <Text className="text-gray-400">Mascota no encontrada</Text>
@@ -80,15 +101,27 @@ export default function PetDetailScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-background">
+      {/* Flame overlay */}
+      <Modal transparent visible={showFlame} animationType="none">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' }}>
+          <Animated.Text style={{
+            fontSize: 120,
+            transform: [{ scale: Animated.multiply(flameScale, new Animated.Value(1.5)) }],
+            opacity: flameOpacity,
+          }}>
+            🔥
+          </Animated.Text>
+          <Animated.Text style={{ fontSize: 22, color: '#fff', fontWeight: 'bold', marginTop: 12, opacity: flameOpacity }}>
+            ¡A buscar pareja!
+          </Animated.Text>
+        </View>
+      </Modal>
+
       <ScrollView className="flex-1">
-        {/* Header */}
+        {/* Header photo */}
         <View className={`h-64 items-center justify-center ${isLost ? 'bg-red-400' : 'bg-primary-500'}`}>
           {pet.photos && pet.photos.length > 0 ? (
-            <Image
-              source={{ uri: pet.photos[0] }}
-              style={{ width: '100%', height: '100%' }}
-              contentFit="cover"
-            />
+            <Image source={{ uri: pet.photos[0] }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
           ) : (
             <Text className="text-8xl">{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
           )}
@@ -99,10 +132,7 @@ export default function PetDetailScreen() {
           )}
         </View>
 
-        <TouchableOpacity
-          className="absolute top-10 left-4 bg-white/80 rounded-full p-2"
-          onPress={() => router.back()}
-        >
+        <TouchableOpacity className="absolute top-10 left-4 bg-white/80 rounded-full p-2" onPress={() => router.back()}>
           <Text className="text-primary-700 text-base px-1">←</Text>
         </TouchableOpacity>
 
@@ -110,24 +140,21 @@ export default function PetDetailScreen() {
           {/* Name card */}
           <View className="bg-white rounded-2xl p-5 shadow-md mb-4">
             <View className="flex-row justify-between items-start">
-              <View>
+              <View className="flex-1 mr-4">
                 <Text className="text-3xl font-bold text-gray-800">{pet.name}</Text>
                 <Text className="text-gray-500 mt-1">{pet.breed} · {pet.color}</Text>
               </View>
-              <View className="items-end">
-                <View className="flex-row items-center gap-2">
-                  <Text className="text-xs text-gray-500">Busca pareja</Text>
-                  <Switch
-                    value={pet.lookingForPartner}
-                    onValueChange={toggleLookingForPartner}
-                    trackColor={{ false: '#D1D5DB', true: '#52B788' }}
-                    thumbColor={pet.lookingForPartner ? '#2D6A4F' : '#F3F4F6'}
-                  />
-                </View>
-                {pet.lookingForPartner && (
-                  <Text className="text-pink-500 text-xs mt-1">💕 En Match</Text>
-                )}
-              </View>
+              {/* Heart / Match button */}
+              <TouchableOpacity
+                className={`rounded-2xl px-4 py-3 items-center ${pet.lookingForPartner ? 'bg-pink-50 border-2 border-pink-300' : 'bg-gray-50 border-2 border-gray-200'}`}
+                onPress={handleHeartPress}
+                activeOpacity={0.7}
+              >
+                <Text className="text-3xl">{pet.lookingForPartner ? '❤️' : '🤍'}</Text>
+                <Text className={`text-xs font-semibold mt-1 ${pet.lookingForPartner ? 'text-pink-500' : 'text-gray-400'}`}>
+                  {pet.lookingForPartner ? 'En Match' : 'Buscar pareja'}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -136,18 +163,13 @@ export default function PetDetailScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
               <View className="flex-row gap-2">
                 {pet.photos.map((uri, i) => (
-                  <Image
-                    key={i}
-                    source={{ uri }}
-                    style={{ width: 80, height: 80, borderRadius: 12 }}
-                    contentFit="cover"
-                  />
+                  <Image key={i} source={{ uri }} style={{ width: 80, height: 80, borderRadius: 12 }} contentFit="cover" />
                 ))}
               </View>
             </ScrollView>
           )}
 
-          {/* Lost pet action button */}
+          {/* Lost report button */}
           <TouchableOpacity
             className={`rounded-2xl py-4 px-5 mb-4 flex-row items-center gap-3 ${isLost ? 'bg-red-50 border-2 border-red-300' : 'bg-orange-50 border-2 border-orange-200'}`}
             onPress={handleLostReport}
@@ -191,11 +213,29 @@ export default function PetDetailScreen() {
           )}
 
           {/* Medical record */}
-          <Text className="text-gray-700 font-semibold text-base mb-3">Ficha Médica 🏥</Text>
+          <View className="flex-row justify-between items-center mb-3">
+            <Text className="text-gray-700 font-semibold text-base">Ficha Médica 🏥</Text>
+            <TouchableOpacity
+              className="bg-primary-500 rounded-xl px-4 py-2"
+              onPress={() => router.push(`/(owner)/pets/add-visit?petId=${id}` as any)}
+            >
+              <Text className="text-white text-xs font-semibold">+ Registrar visita</Text>
+            </TouchableOpacity>
+          </View>
+
           <View className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100">
             <Text className="text-gray-400 text-xs mb-2">Vacunas</Text>
             {pet.medicalRecord.vaccinations.length === 0 ? (
-              <Text className="text-gray-400 text-sm">Sin vacunas registradas</Text>
+              <View className="items-center py-4">
+                <Text className="text-gray-300 text-4xl mb-2">💉</Text>
+                <Text className="text-gray-400 text-sm">Sin vacunas registradas</Text>
+                <TouchableOpacity
+                  className="mt-3 border border-primary-300 rounded-xl px-4 py-2"
+                  onPress={() => router.push(`/(owner)/pets/add-visit?petId=${id}` as any)}
+                >
+                  <Text className="text-primary-600 text-xs font-medium">Registrar primera visita</Text>
+                </TouchableOpacity>
+              </View>
             ) : (
               pet.medicalRecord.vaccinations.map((v, i) => (
                 <View key={i} className="flex-row justify-between py-1 border-b border-gray-50">
@@ -226,6 +266,8 @@ export default function PetDetailScreen() {
               <Text className="text-gray-700">{pet.medicalRecord.notes}</Text>
             </View>
           )}
+
+          <View className="h-8" />
         </View>
       </ScrollView>
     </SafeAreaView>

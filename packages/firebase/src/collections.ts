@@ -9,6 +9,7 @@ export const COLLECTIONS = {
   CHATS: 'chats',
   LOST_PETS: 'lostPets',
   ORDERS: 'orders',
+  MEDICAL_VISITS: 'medicalVisits',
 } as const;
 
 export const RTDB_PATHS = {

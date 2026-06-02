@@ -37,6 +37,12 @@
         }
       ],
       [
+        "expo-calendar",
+        {
+          "calendarPermission": "JunglApp necesita acceso a tu calendario para agregar recordatorios de visitas veterinarias."
+        }
+      ],
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "JunglApp usa tu ubicación para mostrarte veterinarios, tiendas y mascotas extraviadas cercanas."
