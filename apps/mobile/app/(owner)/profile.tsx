@@ -83,6 +83,15 @@ export default function ProfileScreen() {
 
             <TouchableOpacity
               className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex-row items-center"
+              onPress={() => router.push('/(owner)/pets/search-owner' as any)}
+            >
+              <Text className="text-xl mr-3">🔎</Text>
+              <Text className="flex-1 text-gray-800 font-medium">Buscar dueño por correo / RUT</Text>
+              <Text className="text-gray-300 text-xl">›</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex-row items-center"
               onPress={() => router.push('/(auth)/terms' as any)}
             >
               <Text className="text-xl mr-3">📄</Text>
