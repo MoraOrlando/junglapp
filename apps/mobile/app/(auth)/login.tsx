@@ -1,16 +1,20 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  KeyboardAvoidingView, Platform, ScrollView, Alert
+  KeyboardAvoidingView, Platform, ScrollView, Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import * as LocalAuthentication from 'expo-local-authentication';
-import * as SecureStore from 'expo-secure-store';
 import { useAuth } from '../../context/AuthContext';
+
+// Biometric + SecureStore — only available in native builds, not Expo Go
+let LocalAuthentication: any = null;
+let SecureStore: any = null;
+try { LocalAuthentication = require('expo-local-authentication'); } catch {}
+try { SecureStore = require('expo-secure-store'); } catch {}
 
 const CREDS_KEY = 'junglapp_saved_creds';
 
@@ -20,12 +24,17 @@ const schema = z.object({
 });
 type FormData = z.infer<typeof schema>;
 
+// Use inline style everywhere — NativeWind padding can misalign text on Android in Expo Go
 const inputStyle = {
   height: 52,
   paddingHorizontal: 16,
   fontSize: 16,
   color: '#1F2937',
   textAlignVertical: 'center' as const,
+  borderWidth: 1,
+  borderColor: '#E5E7EB',
+  borderRadius: 12,
+  backgroundColor: '#FFFFFF',
 };
 
 export default function LoginScreen() {
@@ -43,31 +52,34 @@ export default function LoginScreen() {
 
   useEffect(() => {
     async function checkBiometrics() {
-      const hasHardware = await LocalAuthentication.hasHardwareAsync();
-      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-      const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
+      if (!LocalAuthentication || !SecureStore) return;
+      try {
+        const hasHardware = await LocalAuthentication.hasHardwareAsync();
+        const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+        const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
 
-      if (hasHardware && isEnrolled) {
-        setBiometricAvailable(true);
-        if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
-          setBiometricType('Face ID');
-        } else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
-          setBiometricType('Huella dactilar');
+        if (hasHardware && isEnrolled) {
+          setBiometricAvailable(true);
+          if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+            setBiometricType('Face ID');
+          } else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
+            setBiometricType('Huella dactilar');
+          }
         }
-      }
 
-      // Check if there are saved credentials
-      const saved = await SecureStore.getItemAsync(CREDS_KEY);
-      if (saved) {
-        const { email } = JSON.parse(saved);
-        setValue('email', email);
-        setHasSavedCreds(true);
-      }
+        const saved = await SecureStore.getItemAsync(CREDS_KEY);
+        if (saved) {
+          const { email } = JSON.parse(saved);
+          setValue('email', email);
+          setHasSavedCreds(true);
+        }
+      } catch {}
     }
     checkBiometrics();
   }, []);
 
   async function handleBiometricLogin() {
+    if (!LocalAuthentication || !SecureStore) return;
     const saved = await SecureStore.getItemAsync(CREDS_KEY);
     if (!saved) { Alert.alert('Sin sesión guardada', 'Inicia sesión manualmente primero.'); return; }
 
@@ -94,10 +106,14 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await signIn(data.email, data.password);
-      // Save credentials for biometric login next time
-      await SecureStore.setItemAsync(CREDS_KEY, JSON.stringify({ email: data.email, password: data.password }));
+      if (SecureStore) {
+        await SecureStore.setItemAsync(CREDS_KEY, JSON.stringify({ email: data.email, password: data.password }));
+      }
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Credenciales incorrectas');
+      const msg = e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password'
+        ? 'Correo o contraseña incorrectos'
+        : e.message || 'Error al iniciar sesión';
+      Alert.alert('Error', msg);
     } finally {
       setLoading(false);
     }
@@ -114,39 +130,54 @@ export default function LoginScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
-        <ScrollView contentContainerStyle={{ flexGrow: 1 }} className="px-6">
-          <TouchableOpacity onPress={() => router.back()} className="mt-4 mb-8">
-            <Text className="text-primary-500 text-base">← Volver</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24 }}>
+          <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16, marginBottom: 32 }}>
+            <Text style={{ color: '#16a34a', fontSize: 16 }}>← Volver</Text>
           </TouchableOpacity>
 
-          <View className="mb-8">
-            <Text className="text-3xl font-bold text-primary-700">Bienvenido de vuelta 🐾</Text>
-            <Text className="text-gray-500 mt-2">Inicia sesión en tu cuenta</Text>
+          <View style={{ marginBottom: 32 }}>
+            <Text style={{ fontSize: 28, fontWeight: '700', color: '#15803d' }}>Bienvenido de vuelta 🐾</Text>
+            <Text style={{ color: '#6B7280', marginTop: 8 }}>Inicia sesión en tu cuenta</Text>
           </View>
 
-          {/* Biometric quick login */}
+          {/* Biometric quick login — only shows in native builds */}
           {biometricAvailable && hasSavedCreds && (
             <TouchableOpacity
-              className="bg-primary-50 border-2 border-primary-200 rounded-2xl py-4 flex-row items-center justify-center gap-3 mb-6"
+              style={{
+                backgroundColor: '#f0fdf4',
+                borderWidth: 2,
+                borderColor: '#bbf7d0',
+                borderRadius: 16,
+                paddingVertical: 16,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 10,
+                marginBottom: 24,
+              }}
               onPress={handleBiometricLogin}
               disabled={loading}
             >
-              <Text className="text-2xl">{biometricType === 'Face ID' ? '🪪' : '👆'}</Text>
-              <Text className="text-primary-700 font-semibold text-base">Ingresar con {biometricType}</Text>
+              <Text style={{ fontSize: 24 }}>{biometricType === 'Face ID' ? '🪪' : '👆'}</Text>
+              <Text style={{ color: '#15803d', fontWeight: '600', fontSize: 16 }}>
+                Ingresar con {biometricType}
+              </Text>
             </TouchableOpacity>
           )}
 
-          <View className="gap-4">
+          <View style={{ gap: 16 }}>
+            {/* Email */}
             <View>
-              <Text className="text-sm font-medium text-gray-700 mb-1">Correo electrónico</Text>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 6 }}>
+                Correo electrónico
+              </Text>
               <Controller
                 control={control}
                 name="email"
                 render={({ field: { onChange, value } }) => (
                   <TextInput
-                    className="border border-gray-200 rounded-xl bg-white"
                     style={inputStyle}
                     placeholder="correo@ejemplo.com"
                     placeholderTextColor="#9CA3AF"
@@ -159,17 +190,22 @@ export default function LoginScreen() {
                   />
                 )}
               />
-              {errors.email && <Text className="text-red-500 text-xs mt-1">{errors.email.message}</Text>}
+              {errors.email && <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>{errors.email.message}</Text>}
             </View>
 
+            {/* Password */}
             <View>
-              <Text className="text-sm font-medium text-gray-700 mb-1">Contraseña</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: '#374151' }}>Contraseña</Text>
+                <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password')}>
+                  <Text style={{ fontSize: 13, color: '#16a34a', fontWeight: '500' }}>¿Olvidaste tu contraseña?</Text>
+                </TouchableOpacity>
+              </View>
               <Controller
                 control={control}
                 name="password"
                 render={({ field: { onChange, value } }) => (
                   <TextInput
-                    className="border border-gray-200 rounded-xl bg-white"
                     style={inputStyle}
                     placeholder="••••••••"
                     placeholderTextColor="#9CA3AF"
@@ -181,52 +217,70 @@ export default function LoginScreen() {
                   />
                 )}
               />
-              {errors.password && <Text className="text-red-500 text-xs mt-1">{errors.password.message}</Text>}
+              {errors.password && <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>{errors.password.message}</Text>}
             </View>
 
+            {/* Login button */}
             <TouchableOpacity
-              className={`bg-primary-500 rounded-2xl py-4 items-center mt-2 ${loading ? 'opacity-70' : ''}`}
+              style={{
+                backgroundColor: loading ? '#86efac' : '#16a34a',
+                borderRadius: 16,
+                paddingVertical: 16,
+                alignItems: 'center',
+                marginTop: 8,
+              }}
               onPress={handleSubmit(onSubmit)}
               disabled={loading}
             >
-              <Text className="text-white font-semibold text-base">
+              <Text style={{ color: 'white', fontWeight: '600', fontSize: 16 }}>
                 {loading ? 'Ingresando...' : 'Iniciar Sesión'}
               </Text>
             </TouchableOpacity>
 
-            <View className="flex-row items-center my-2">
-              <View className="flex-1 h-px bg-gray-200" />
-              <Text className="mx-4 text-gray-400 text-sm">o continuar con</Text>
-              <View className="flex-1 h-px bg-gray-200" />
+            {/* Divider */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 8 }}>
+              <View style={{ flex: 1, height: 1, backgroundColor: '#E5E7EB' }} />
+              <Text style={{ marginHorizontal: 16, color: '#9CA3AF', fontSize: 13 }}>o continuar con</Text>
+              <View style={{ flex: 1, height: 1, backgroundColor: '#E5E7EB' }} />
             </View>
 
+            {/* Google */}
             <TouchableOpacity
-              className="flex-row items-center justify-center border border-gray-200 rounded-2xl py-3 bg-white gap-2"
+              style={{
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 16,
+                paddingVertical: 14, backgroundColor: 'white', gap: 8,
+              }}
               onPress={handleGoogle}
               disabled={socialLoading !== null}
             >
-              <Text className="text-lg">🔴</Text>
-              <Text className="font-semibold text-gray-700">
+              <Text style={{ fontSize: 18 }}>🔴</Text>
+              <Text style={{ fontWeight: '600', color: '#374151' }}>
                 {socialLoading === 'google' ? 'Conectando...' : 'Google'}
               </Text>
             </TouchableOpacity>
 
+            {/* Microsoft */}
             <TouchableOpacity
-              className="flex-row items-center justify-center border border-gray-200 rounded-2xl py-3 bg-white gap-2"
+              style={{
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 16,
+                paddingVertical: 14, backgroundColor: 'white', gap: 8,
+              }}
               onPress={handleMicrosoft}
               disabled={socialLoading !== null}
             >
-              <Text className="text-lg">🔷</Text>
-              <Text className="font-semibold text-gray-700">
+              <Text style={{ fontSize: 18 }}>🔷</Text>
+              <Text style={{ fontWeight: '600', color: '#374151' }}>
                 {socialLoading === 'microsoft' ? 'Conectando...' : 'Microsoft'}
               </Text>
             </TouchableOpacity>
           </View>
 
-          <View className="flex-row justify-center mt-6 mb-10">
-            <Text className="text-gray-500">¿No tienes cuenta? </Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 24, marginBottom: 40 }}>
+            <Text style={{ color: '#6B7280' }}>¿No tienes cuenta? </Text>
             <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
-              <Text className="text-primary-500 font-semibold">Regístrate</Text>
+              <Text style={{ color: '#16a34a', fontWeight: '600' }}>Regístrate</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
