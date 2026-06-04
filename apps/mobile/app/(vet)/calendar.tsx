@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
@@ -8,10 +8,11 @@ import type { Veterinarian } from '@junglapp/types';
 
 const { db } = initFirebase();
 
-const TIME_SLOTS = [
+const ALL_TIME_SLOTS = [
   '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
-  '11:00', '11:30', '12:00', '14:00', '14:30', '15:00',
-  '15:30', '16:00', '16:30', '17:00', '17:30',
+  '11:00', '11:30', '12:00', '12:30', '13:00', '13:30',
+  '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
+  '17:00', '17:30', '18:00',
 ];
 
 function getNextDays(n: number) {
@@ -29,6 +30,7 @@ export default function VetCalendarScreen() {
   const [vetId, setVetId] = useState<string | null>(null);
   const [availability, setAvailability] = useState<Record<string, string[]>>({});
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [consultationFee, setConsultationFee] = useState('');
   const [saving, setSaving] = useState(false);
 
   const days = getNextDays(14);
@@ -40,6 +42,7 @@ export default function VetCalendarScreen() {
         const vet = snap.docs[0].data() as Veterinarian;
         setVetId(snap.docs[0].id);
         setAvailability(vet.availability || {});
+        if (vet.consultationFee) setConsultationFee(String(vet.consultationFee));
       }
     });
   }, [user]);
@@ -52,12 +55,16 @@ export default function VetCalendarScreen() {
     setAvailability({ ...availability, [selectedDate]: updated });
   }
 
-  async function saveAvailability() {
+  async function saveAll() {
     if (!vetId) return;
     setSaving(true);
     try {
-      await updateDoc(doc(db, COLLECTIONS.VETERINARIANS, vetId), { availability });
-      Alert.alert('✅', 'Disponibilidad guardada correctamente');
+      const fee = parseFloat(consultationFee.replace(/\./g, '').replace(',', '.'));
+      await updateDoc(doc(db, COLLECTIONS.VETERINARIANS, vetId), {
+        availability,
+        ...(isNaN(fee) ? {} : { consultationFee: fee }),
+      });
+      Alert.alert('✅', 'Agenda guardada correctamente');
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -68,74 +75,138 @@ export default function VetCalendarScreen() {
   const currentSlots = availability[selectedDate] || [];
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <View className="px-6 pt-4 pb-2">
-        <Text className="text-2xl font-bold text-blue-700 mb-1">Mi Disponibilidad 🗓️</Text>
-        <Text className="text-gray-400 text-sm">Selecciona los horarios NO disponibles (bloqueados)</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+      {/* Header */}
+      <View style={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 8 }}>
+        <Text style={{ fontSize: 26, fontWeight: '800', color: '#1D4ED8', marginBottom: 2 }}>
+          Mi Agenda 🗓️
+        </Text>
+        <Text style={{ color: '#94A3B8', fontSize: 13 }}>
+          Gestiona tu disponibilidad y tarifa
+        </Text>
       </View>
 
-      {/* Date picker */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} className="px-6 mb-4" style={{ maxHeight: 80 }}>
+      {/* Consultation fee */}
+      <View style={{ marginHorizontal: 24, marginBottom: 16, backgroundColor: '#EFF6FF', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#BFDBFE' }}>
+        <Text style={{ fontSize: 13, fontWeight: '600', color: '#1D4ED8', marginBottom: 8 }}>
+          💰 Tarifa de consulta (CLP)
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#BFDBFE', paddingHorizontal: 12, paddingVertical: 10 }}>
+          <Text style={{ color: '#1D4ED8', fontWeight: '700', fontSize: 18, marginRight: 6 }}>$</Text>
+          <TextInput
+            value={consultationFee}
+            onChangeText={setConsultationFee}
+            keyboardType="numeric"
+            placeholder="25000"
+            placeholderTextColor="#CBD5E1"
+            style={{ flex: 1, fontSize: 18, fontWeight: '600', color: '#1E293B' }}
+          />
+          <Text style={{ color: '#94A3B8', fontSize: 12 }}>CLP</Text>
+        </View>
+      </View>
+
+      {/* 14-day date strip */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ maxHeight: 90 }}
+        contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}
+      >
         {days.map((day) => {
           const d = new Date(day + 'T00:00:00');
           const isSelected = day === selectedDate;
-          const hasBlocked = (availability[day] || []).length > 0;
+          const hasSlots = (availability[day] || []).length > 0;
           return (
             <TouchableOpacity
               key={day}
-              className={`mr-2 rounded-2xl p-3 border-2 items-center w-16 ${isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'}`}
               onPress={() => setSelectedDate(day)}
+              style={{
+                width: 56,
+                borderRadius: 16,
+                padding: 10,
+                alignItems: 'center',
+                borderWidth: 2,
+                borderColor: isSelected ? '#1D4ED8' : '#E2E8F0',
+                backgroundColor: isSelected ? '#1D4ED8' : '#FFFFFF',
+              }}
             >
-              <Text className="text-xs text-gray-500">{d.toLocaleDateString('es-CL', { weekday: 'short' })}</Text>
-              <Text className={`font-bold ${isSelected ? 'text-blue-600' : 'text-gray-800'}`}>{d.getDate()}</Text>
-              {hasBlocked && <View className="w-1.5 h-1.5 rounded-full bg-red-400 mt-0.5" />}
+              <Text style={{ fontSize: 11, color: isSelected ? '#BFDBFE' : '#94A3B8' }}>
+                {d.toLocaleDateString('es-CL', { weekday: 'short' }).replace('.', '')}
+              </Text>
+              <Text style={{ fontWeight: '700', fontSize: 16, color: isSelected ? '#FFFFFF' : '#1E293B' }}>
+                {d.getDate()}
+              </Text>
+              {hasSlots ? (
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isSelected ? '#93C5FD' : '#1D4ED8', marginTop: 2 }} />
+              ) : (
+                <View style={{ width: 6, height: 6, marginTop: 2 }} />
+              )}
             </TouchableOpacity>
           );
         })}
       </ScrollView>
 
-      <ScrollView className="flex-1 px-6">
-        <Text className="text-gray-600 font-medium mb-3">
+      {/* Slot grid */}
+      <ScrollView style={{ flex: 1, paddingHorizontal: 24, marginTop: 16 }}>
+        <Text style={{ color: '#475569', fontWeight: '600', fontSize: 14, marginBottom: 4 }}>
           {new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}
         </Text>
-        <Text className="text-gray-400 text-xs mb-3">Toca un horario para bloquearlo/desbloquearlo</Text>
+        <Text style={{ color: '#94A3B8', fontSize: 12, marginBottom: 12 }}>
+          Verde = disponible para pacientes · Gris = no disponible
+        </Text>
 
-        <View className="flex-row flex-wrap gap-2 mb-6">
-          {TIME_SLOTS.map((slot) => {
-            const isBlocked = currentSlots.includes(slot);
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
+          {ALL_TIME_SLOTS.map((slot) => {
+            const isAvailable = currentSlots.includes(slot);
             return (
               <TouchableOpacity
                 key={slot}
-                className={`rounded-xl px-4 py-3 border-2 ${isBlocked ? 'bg-red-100 border-red-300' : 'bg-green-50 border-green-200'}`}
                 onPress={() => toggleSlot(slot)}
+                style={{
+                  borderRadius: 12,
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                  borderWidth: 2,
+                  borderColor: isAvailable ? '#16A34A' : '#E2E8F0',
+                  backgroundColor: isAvailable ? '#DCFCE7' : '#F8FAFC',
+                  alignItems: 'center',
+                  minWidth: 72,
+                }}
               >
-                <Text className={`text-sm font-medium ${isBlocked ? 'text-red-600' : 'text-green-700'}`}>{slot}</Text>
-                <Text className={`text-xs text-center ${isBlocked ? 'text-red-400' : 'text-green-400'}`}>
-                  {isBlocked ? '🚫' : '✅'}
+                <Text style={{ fontSize: 13, fontWeight: '600', color: isAvailable ? '#16A34A' : '#94A3B8' }}>
+                  {slot}
                 </Text>
+                <Text style={{ fontSize: 12, marginTop: 2 }}>{isAvailable ? '✅' : '○'}</Text>
               </TouchableOpacity>
             );
           })}
         </View>
 
-        <View className="flex-row gap-4 mb-4">
-          <View className="flex-row items-center gap-2">
-            <View className="w-3 h-3 rounded-full bg-green-400" />
-            <Text className="text-gray-500 text-xs">Disponible</Text>
+        {/* Legend */}
+        <View style={{ flexDirection: 'row', gap: 16, marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#16A34A' }} />
+            <Text style={{ color: '#64748B', fontSize: 12 }}>Disponible</Text>
           </View>
-          <View className="flex-row items-center gap-2">
-            <View className="w-3 h-3 rounded-full bg-red-400" />
-            <Text className="text-gray-500 text-xs">Bloqueado</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#CBD5E1' }} />
+            <Text style={{ color: '#64748B', fontSize: 12 }}>No disponible</Text>
           </View>
         </View>
 
         <TouchableOpacity
-          className={`bg-blue-600 rounded-2xl py-4 items-center mb-10 ${saving ? 'opacity-70' : ''}`}
-          onPress={saveAvailability}
+          onPress={saveAll}
           disabled={saving}
+          style={{
+            backgroundColor: saving ? '#93C5FD' : '#1D4ED8',
+            borderRadius: 16,
+            paddingVertical: 16,
+            alignItems: 'center',
+            marginBottom: 40,
+          }}
         >
-          <Text className="text-white font-semibold text-base">
-            {saving ? 'Guardando...' : '💾 Guardar Disponibilidad'}
+          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16 }}>
+            {saving ? 'Guardando...' : 'Guardar'}
           </Text>
         </TouchableOpacity>
       </ScrollView>

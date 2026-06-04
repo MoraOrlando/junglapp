@@ -12,6 +12,7 @@ export const COLLECTIONS = {
   MEDICAL_VISITS: 'medicalVisits',
   WALKERS: 'walkers',
   GROOMERS: 'groomers',
+  REVIEWS: 'reviews',
 } as const;
 
 export const RTDB_PATHS = {
