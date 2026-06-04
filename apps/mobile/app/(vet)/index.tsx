@@ -62,14 +62,14 @@ export default function VetDashboardScreen() {
       setVetProfile(vet);
 
       const apptSnap = await getDocs(
-        query(
-          collection(db, COLLECTIONS.APPOINTMENTS),
-          where('vetId', '==', vet.id),
-          where('status', 'in', ['pending', 'confirmed', 'arrived']),
-          orderBy('date', 'asc')
-        )
+        query(collection(db, COLLECTIONS.APPOINTMENTS), where('vetId', '==', vet.id))
       );
-      setAppointments(apptSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Appointment)));
+      const activeStatuses = ['pending', 'confirmed', 'arrived'];
+      const appts = apptSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as Appointment))
+        .filter((a) => activeStatuses.includes(a.status))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      setAppointments(appts);
     }
   }
 

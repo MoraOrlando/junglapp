@@ -29,9 +29,12 @@ export default function StoreOrdersScreen() {
     if (storeSnap.empty) return;
     const storeId = storeSnap.docs[0].id;
     const orderSnap = await getDocs(
-      query(collection(db, COLLECTIONS.ORDERS), where('storeId', '==', storeId), orderBy('createdAt', 'desc'))
+      query(collection(db, COLLECTIONS.ORDERS), where('storeId', '==', storeId))
     );
-    setOrders(orderSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Order)));
+    const sorted = orderSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() } as Order))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    setOrders(sorted);
   }
 
   useEffect(() => { loadOrders(); }, [user]);
