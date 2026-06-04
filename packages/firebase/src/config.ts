@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { initializeAuth, getAuth, getReactNativePersistence, Auth } from 'firebase/auth';
+import { initializeAuth, getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 import { getDatabase, Database } from 'firebase/database';
@@ -32,19 +32,11 @@ let rtdb: Database;
 function initFirebase() {
   if (!app) {
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-
     try {
-      // Use AsyncStorage for session persistence between app restarts
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-      auth = initializeAuth(app, {
-        persistence: getReactNativePersistence(AsyncStorage),
-      });
+      auth = initializeAuth(app);
     } catch {
-      // Already initialized (hot reload) or running on web — fall back to existing instance
-      try { auth = getAuth(app); } catch { auth = initializeAuth(app); }
+      auth = getAuth(app);
     }
-
     db = getFirestore(app);
     storage = getStorage(app);
     rtdb = getDatabase(app);

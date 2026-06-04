@@ -7,6 +7,9 @@ import {
   GoogleAuthProvider,
   OAuthProvider,
   signInWithCredential,
+  initializeAuth,
+  getAuth,
+  getReactNativePersistence,
   FirebaseError,
 } from 'firebase/auth';
 import {
@@ -15,6 +18,7 @@ import {
   setDoc,
   updateDoc,
 } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import * as AuthSession from 'expo-auth-session';
@@ -23,7 +27,17 @@ import type { User, UserRole } from '@junglapp/types';
 
 WebBrowser.maybeCompleteAuthSession();
 
-const { auth, db } = initFirebase();
+const { app, db } = initFirebase();
+
+// Initialize auth with AsyncStorage persistence so session survives app restarts
+let auth: import('firebase/auth').Auth;
+try {
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage),
+  });
+} catch {
+  auth = getAuth(app);
+}
 
 interface AuthContextType {
   user: User | null;
