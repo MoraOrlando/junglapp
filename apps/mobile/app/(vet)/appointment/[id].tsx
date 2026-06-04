@@ -1,86 +1,160 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Alert,
-  TextInput, KeyboardAvoidingView, Platform
+  TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { ref, set } from 'firebase/database';
 import * as ImagePicker from 'expo-image-picker';
-import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
+import { initFirebase, COLLECTIONS, RTDB_PATHS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
-import type { Appointment, Pet } from '@junglapp/types';
+import type { Appointment, Pet, Veterinarian } from '@junglapp/types';
 
-const { db } = initFirebase();
+const { db, rtdb } = initFirebase();
+
+const PRIMARY = '#1D4ED8';
+const GREEN = '#16A34A';
+const BORDER = '#E2E8F0';
+const DARK = '#1E293B';
+const GRAY = '#64748B';
+const inputStyle = {
+  borderWidth: 1, borderColor: BORDER, borderRadius: 12,
+  backgroundColor: '#FFFFFF', paddingHorizontal: 14, paddingVertical: 12,
+  fontSize: 15, color: DARK, textAlignVertical: 'top' as const,
+};
 
 export default function AppointmentDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
+
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [pet, setPet] = useState<Pet | null>(null);
+  const [vetProfile, setVetProfile] = useState<Veterinarian | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [arriving, setArriving] = useState(false);
+
+  // Consultation fields
+  const [symptoms, setSymptoms] = useState('');
   const [diagnosis, setDiagnosis] = useState('');
-  const [treatment, setTreatment] = useState('');
+  const [treatmentDone, setTreatmentDone] = useState('');
+  const [treatmentPending, setTreatmentPending] = useState('');
   const [careInstructions, setCareInstructions] = useState('');
   const [prescription, setPrescription] = useState('');
-  const [prescriptionImageUri, setPrescriptionImageUri] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [prescriptionUri, setPrescriptionUri] = useState<string | null>(null);
+  const [prescriptionUrl, setPrescriptionUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!id) return;
-    getDoc(doc(db, COLLECTIONS.APPOINTMENTS, id)).then(async (snap) => {
-      if (snap.exists()) {
-        const appt = { id: snap.id, ...snap.data() } as Appointment;
-        setAppointment(appt);
-        if (appt.consultation) {
-          setDiagnosis(appt.consultation.diagnosis);
-          setTreatment(appt.consultation.treatment);
-          setCareInstructions(appt.consultation.careInstructions);
-          setPrescription(appt.consultation.prescription || '');
-        }
-        const petSnap = await getDoc(doc(db, COLLECTIONS.PETS, appt.petId));
-        if (petSnap.exists()) setPet({ id: petSnap.id, ...petSnap.data() } as Pet);
-      }
-    });
-  }, [id]);
+    if (!id || !user) return;
+    loadAll();
+  }, [id, user]);
 
-  async function markArrived() {
-    if (!id) return;
-    await updateDoc(doc(db, COLLECTIONS.APPOINTMENTS, id), {
-      status: 'arrived',
-      arrivedAt: new Date().toISOString(),
-    });
-    setAppointment((prev) => prev ? { ...prev, status: 'arrived', arrivedAt: new Date().toISOString() } : null);
-    Alert.alert('✅', 'Paciente marcado como llegado. Puedes ver la ficha médica.');
+  async function loadAll() {
+    setLoading(true);
+    try {
+      const apptSnap = await getDoc(doc(db, COLLECTIONS.APPOINTMENTS, id!));
+      if (!apptSnap.exists()) return;
+      const appt = { id: apptSnap.id, ...apptSnap.data() } as Appointment;
+      setAppointment(appt);
+
+      if (appt.consultation) {
+        setSymptoms((appt.consultation as any).symptoms || '');
+        setDiagnosis(appt.consultation.diagnosis || '');
+        setTreatmentDone((appt.consultation as any).treatmentDone || appt.consultation.treatment || '');
+        setTreatmentPending((appt.consultation as any).treatmentPending || '');
+        setCareInstructions(appt.consultation.careInstructions || '');
+        setPrescription(appt.consultation.prescription || '');
+        setPrescriptionUrl(appt.consultation.prescriptionImageUrl || null);
+      }
+
+      const [petSnap, vetSnap] = await Promise.all([
+        getDoc(doc(db, COLLECTIONS.PETS, appt.petId)),
+        getDocs(query(collection(db, COLLECTIONS.VETERINARIANS), where('userId', '==', user!.uid))),
+      ]);
+      if (petSnap.exists()) setPet({ id: petSnap.id, ...petSnap.data() } as Pet);
+      if (!vetSnap.empty) setVetProfile({ id: vetSnap.docs[0].id, ...vetSnap.docs[0].data() } as Veterinarian);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  async function pickPrescriptionImage() {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
-    });
-    if (!result.canceled) setPrescriptionImageUri(result.assets[0].uri);
+  async function markArrived() {
+    if (!id || !appointment) return;
+    setArriving(true);
+    try {
+      const now = new Date().toISOString();
+      await updateDoc(doc(db, COLLECTIONS.APPOINTMENTS, id), {
+        status: 'arrived',
+        arrivedAt: now,
+      });
+
+      // Write RTDB notification so owner gets a real-time popup
+      await set(
+        ref(rtdb, `${RTDB_PATHS.NOTIFICATIONS}/${appointment.ownerId}/${id}`),
+        {
+          type: 'vet_arrived',
+          vetName: vetProfile?.name || 'Tu veterinario',
+          petId: appointment.petId,
+          appointmentId: id,
+          arrivedAt: now,
+          read: false,
+        }
+      );
+
+      setAppointment((p) => p ? { ...p, status: 'arrived', arrivedAt: now } : null);
+      Alert.alert('📍 Llegada registrada', 'Se notificó al dueño de la mascota. Puedes completar la ficha médica.');
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setArriving(false);
+    }
+  }
+
+  async function pickPrescription() {
+    Alert.alert('Subir receta', '¿Cómo quieres agregar la imagen?', [
+      {
+        text: 'Cámara', onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') return;
+          const r = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+          if (!r.canceled) setPrescriptionUri(r.assets[0].uri);
+        },
+      },
+      {
+        text: 'Galería', onPress: async () => {
+          const r = await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
+          if (!r.canceled) setPrescriptionUri(r.assets[0].uri);
+        },
+      },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
   }
 
   async function saveConsultation() {
-    if (!id || !appointment) return;
-    if (!diagnosis || !treatment) {
-      Alert.alert('Requerido', 'Completa diagnóstico y tratamiento');
+    if (!id || !appointment || !pet) return;
+    if (!symptoms.trim() || !diagnosis.trim() || !treatmentDone.trim()) {
+      Alert.alert('Requerido', 'Completa síntomas, diagnóstico y tratamiento realizado');
       return;
     }
     setSaving(true);
     try {
-      let prescriptionImageUrl: string | undefined;
-      if (prescriptionImageUri) {
-        prescriptionImageUrl = await uploadImage(prescriptionImageUri);
-      }
+      let imgUrl = prescriptionUrl;
+      if (prescriptionUri) imgUrl = await uploadImage(prescriptionUri);
 
       const consultation = {
-        diagnosis,
-        treatment,
-        careInstructions,
-        prescription,
-        prescriptionImageUrl,
+        symptoms: symptoms.trim(),
+        diagnosis: diagnosis.trim(),
+        treatmentDone: treatmentDone.trim(),
+        treatmentPending: treatmentPending.trim(),
+        treatment: treatmentDone.trim(), // backward compat
+        careInstructions: careInstructions.trim(),
+        prescription: prescription.trim(),
+        prescriptionImageUrl: imgUrl || null,
+        visitDate: new Date().toISOString(),
         createdAt: new Date().toISOString(),
       };
 
@@ -89,16 +163,16 @@ export default function AppointmentDetailScreen() {
         consultation,
       });
 
-      // Update pet medical record with new notes
-      if (pet) {
-        await updateDoc(doc(db, COLLECTIONS.PETS, pet.id), {
-          'medicalRecord.notes': `${pet.medicalRecord.notes}\n[${new Date().toLocaleDateString('es-CL')}] ${diagnosis}`,
-          'medicalRecord.lastUpdated': new Date().toISOString(),
-        });
-      }
+      // Append to pet medical record notes
+      const newNote = `[${new Date().toLocaleDateString('es-CL')}] ${diagnosis.trim()}`;
+      const existing = pet.medicalRecord.notes || '';
+      await updateDoc(doc(db, COLLECTIONS.PETS, pet.id), {
+        'medicalRecord.notes': existing ? `${existing}\n${newNote}` : newNote,
+        'medicalRecord.lastUpdated': new Date().toISOString(),
+      });
 
-      Alert.alert('✅ Consulta guardada', 'La ficha médica fue actualizada.', [
-        { text: 'OK', onPress: () => router.back() }
+      Alert.alert('✅ Consulta guardada', 'La ficha médica fue actualizada correctamente.', [
+        { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (e: any) {
       Alert.alert('Error', e.message);
@@ -107,137 +181,229 @@ export default function AppointmentDetailScreen() {
     }
   }
 
-  if (!appointment) return (
-    <SafeAreaView className="flex-1 bg-background items-center justify-center">
-      <Text className="text-gray-400">Cargando...</Text>
-    </SafeAreaView>
-  );
+  if (loading) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={PRIMARY} size="large" />
+      </SafeAreaView>
+    );
+  }
 
-  const canEdit = appointment.status === 'arrived' || appointment.status === 'completed';
+  if (!appointment) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: GRAY }}>Cita no encontrada</Text>
+      </SafeAreaView>
+    );
+  }
+
+  const canEdit = appointment.status === 'arrived';
+  const isCompleted = appointment.status === 'completed';
+  const statusColor = { pending: '#F59E0B', confirmed: '#3B82F6', arrived: '#8B5CF6', completed: '#16A34A', cancelled: '#EF4444' }[appointment.status] ?? GRAY;
+  const statusLabel = { pending: '⏳ Pendiente', confirmed: '✅ Confirmada', arrived: '📍 Veterinario llegó', completed: '✔️ Completada', cancelled: '❌ Cancelada' }[appointment.status] ?? appointment.status;
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
-        <ScrollView className="flex-1 px-6">
-          <TouchableOpacity onPress={() => router.back()} className="mt-4 mb-4">
-            <Text className="text-blue-500 text-base">← Volver</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView style={{ flex: 1, paddingHorizontal: 24 }} keyboardShouldPersistTaps="handled">
+
+          <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16, marginBottom: 20 }}>
+            <Text style={{ color: PRIMARY, fontSize: 16 }}>← Volver</Text>
           </TouchableOpacity>
 
-          <Text className="text-2xl font-bold text-gray-800 mb-4">Detalle de Cita 🩺</Text>
+          <Text style={{ fontSize: 22, fontWeight: '800', color: DARK, marginBottom: 16 }}>
+            Detalle de Cita 🩺
+          </Text>
 
-          {/* Appointment info */}
-          <View className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100">
-            <View className="flex-row justify-between items-center">
+          {/* Appointment summary card */}
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: BORDER }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <View>
-                <Text className="text-gray-500 text-sm">Fecha y hora</Text>
-                <Text className="font-semibold text-gray-800">{appointment.date} — {appointment.time}</Text>
+                <Text style={{ color: GRAY, fontSize: 12 }}>Fecha y hora</Text>
+                <Text style={{ fontWeight: '700', color: DARK, fontSize: 15 }}>{appointment.date} — {appointment.time}</Text>
               </View>
-              <View className={`rounded-full px-3 py-1 ${appointment.status === 'arrived' ? 'bg-blue-100' : appointment.status === 'completed' ? 'bg-green-100' : 'bg-yellow-100'}`}>
-                <Text className={`text-xs font-medium ${appointment.status === 'arrived' ? 'text-blue-600' : appointment.status === 'completed' ? 'text-green-600' : 'text-yellow-600'}`}>
-                  {appointment.status === 'arrived' ? '🔵 Llegó' : appointment.status === 'completed' ? '✅ Completada' : '⏳ Pendiente'}
-                </Text>
+              <View style={{ backgroundColor: statusColor + '20', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 }}>
+                <Text style={{ color: statusColor, fontWeight: '600', fontSize: 12 }}>{statusLabel}</Text>
               </View>
             </View>
+            {(appointment as any).reason && (
+              <View style={{ backgroundColor: '#F1F5F9', borderRadius: 10, padding: 10, marginTop: 4 }}>
+                <Text style={{ color: GRAY, fontSize: 12 }}>Motivo: {(appointment as any).reason}</Text>
+              </View>
+            )}
           </View>
 
-          {/* Mark arrived button */}
+          {/* MARK ARRIVED */}
           {appointment.status === 'confirmed' && (
             <TouchableOpacity
-              className="bg-blue-500 rounded-2xl py-4 items-center mb-4"
+              style={{
+                backgroundColor: arriving ? '#93C5FD' : PRIMARY,
+                borderRadius: 16, paddingVertical: 16,
+                alignItems: 'center', marginBottom: 16,
+                flexDirection: 'row', justifyContent: 'center', gap: 8,
+              }}
               onPress={markArrived}
+              disabled={arriving}
             >
-              <Text className="text-white font-semibold text-base">📍 Marcar como Llegado</Text>
+              {arriving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ fontSize: 20 }}>📍</Text>}
+              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16 }}>
+                {arriving ? 'Notificando al dueño...' : 'Marcar como Llegado'}
+              </Text>
             </TouchableOpacity>
           )}
 
-          {/* Pet medical record */}
-          {(canEdit || appointment.status === 'arrived') && pet && (
-            <>
-              <Text className="text-gray-700 font-semibold text-base mb-3">Ficha Médica de {pet.name} 📋</Text>
+          {/* Arrived notice */}
+          {appointment.status === 'arrived' && (
+            <View style={{ backgroundColor: '#EDE9FE', borderRadius: 16, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#C4B5FD', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Text style={{ fontSize: 24 }}>📬</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontWeight: '700', color: '#6D28D9', fontSize: 14 }}>El dueño fue notificado</Text>
+                <Text style={{ color: '#7C3AED', fontSize: 12, marginTop: 2 }}>Completa la ficha médica de la mascota</Text>
+              </View>
+            </View>
+          )}
 
-              <View className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100">
-                <View className="flex-row gap-3">
-                  <View className="bg-primary-100 rounded-xl w-14 h-14 items-center justify-center">
-                    <Text className="text-3xl">{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
-                  </View>
-                  <View className="flex-1">
-                    <Text className="font-bold text-gray-800 text-lg">{pet.name}</Text>
-                    <Text className="text-gray-500 text-sm">{pet.breed} · {pet.color}</Text>
-                    {pet.chipNumber && <Text className="text-gray-400 text-xs">Chip: {pet.chipNumber}</Text>}
+          {/* PET CARD */}
+          {pet && (canEdit || isCompleted) && (
+            <>
+              <Text style={{ fontWeight: '700', color: DARK, fontSize: 16, marginBottom: 10 }}>
+                Ficha de {pet.name} 📋
+              </Text>
+              <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: BORDER }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                  {pet.photos?.[0] ? (
+                    <Image source={{ uri: pet.photos[0] }} style={{ width: 64, height: 64, borderRadius: 12 }} contentFit="cover" />
+                  ) : (
+                    <View style={{ width: 64, height: 64, borderRadius: 12, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 32 }}>{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontWeight: '800', color: DARK, fontSize: 18 }}>{pet.name}</Text>
+                    <Text style={{ color: GRAY, fontSize: 13 }}>{pet.breed} · {pet.color}</Text>
+                    <Text style={{ color: GRAY, fontSize: 12 }}>Nacimiento: {pet.birthDate}</Text>
+                    {pet.chipNumber ? <Text style={{ color: GRAY, fontSize: 12 }}>Chip: {pet.chipNumber}</Text> : null}
                   </View>
                 </View>
 
                 {pet.medicalRecord.allergies.length > 0 && (
-                  <View className="bg-red-50 rounded-xl p-3 mt-3 border border-red-100">
-                    <Text className="text-red-500 text-xs font-medium">⚠️ Alergias: {pet.medicalRecord.allergies.join(', ')}</Text>
+                  <View style={{ backgroundColor: '#FEF2F2', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#FECACA', marginBottom: 8 }}>
+                    <Text style={{ color: '#DC2626', fontSize: 13, fontWeight: '600' }}>
+                      ⚠️ Alergias: {pet.medicalRecord.allergies.join(', ')}
+                    </Text>
                   </View>
                 )}
 
                 {pet.medicalRecord.vaccinations.length > 0 && (
-                  <View className="mt-3">
-                    <Text className="text-gray-400 text-xs mb-1">Vacunas registradas:</Text>
+                  <View style={{ marginBottom: 8 }}>
+                    <Text style={{ color: GRAY, fontSize: 12, marginBottom: 4, fontWeight: '600' }}>Vacunas:</Text>
                     {pet.medicalRecord.vaccinations.map((v, i) => (
-                      <Text key={i} className="text-gray-600 text-sm">• {v.name} — {v.date}</Text>
+                      <Text key={i} style={{ color: DARK, fontSize: 13 }}>• {v.name} — {v.date}</Text>
                     ))}
                   </View>
                 )}
 
-                {pet.medicalRecord.notes && (
-                  <View className="mt-3">
-                    <Text className="text-gray-400 text-xs mb-1">Historial:</Text>
-                    <Text className="text-gray-600 text-sm">{pet.medicalRecord.notes}</Text>
+                {pet.medicalRecord.notes ? (
+                  <View>
+                    <Text style={{ color: GRAY, fontSize: 12, marginBottom: 4, fontWeight: '600' }}>Historial médico:</Text>
+                    <Text style={{ color: DARK, fontSize: 13, lineHeight: 20 }}>{pet.medicalRecord.notes}</Text>
                   </View>
-                )}
+                ) : null}
               </View>
 
-              {/* Consultation notes */}
-              <Text className="text-gray-700 font-semibold text-base mb-3">Registro de Consulta</Text>
+              {/* CONSULTATION FORM */}
+              <Text style={{ fontWeight: '700', color: DARK, fontSize: 16, marginBottom: 12 }}>
+                Registro de Consulta
+              </Text>
 
               {[
-                { label: 'Diagnóstico *', value: diagnosis, set: setDiagnosis, placeholder: 'Describe el diagnóstico...' },
-                { label: 'Tratamiento *', value: treatment, set: setTreatment, placeholder: 'Tratamiento indicado...' },
-                { label: 'Cuidados a realizar', value: careInstructions, set: setCareInstructions, placeholder: 'Instrucciones para el dueño...' },
-                { label: 'Receta médica (texto)', value: prescription, set: setPrescription, placeholder: 'Medicamentos y dosis...' },
-              ].map((field) => (
-                <View key={field.label} className="mb-4">
-                  <Text className="text-sm font-medium text-gray-700 mb-1">{field.label}</Text>
+                { label: 'Síntomas observados *', value: symptoms, set: setSymptoms, placeholder: 'Describe los síntomas que presenta la mascota...' },
+                { label: 'Diagnóstico *', value: diagnosis, set: setDiagnosis, placeholder: 'Diagnóstico clínico...' },
+                { label: 'Tratamiento realizado *', value: treatmentDone, set: setTreatmentDone, placeholder: 'Procedimientos y tratamientos realizados en la consulta...' },
+                { label: 'Tratamiento a realizar', value: treatmentPending, set: setTreatmentPending, placeholder: 'Indicaciones para continuar en casa o próximas visitas...' },
+                { label: 'Instrucciones de cuidado', value: careInstructions, set: setCareInstructions, placeholder: 'Instrucciones específicas para el dueño...' },
+                { label: 'Receta (texto)', value: prescription, set: setPrescription, placeholder: 'Medicamentos, dosis y duración...' },
+              ].map((f) => (
+                <View key={f.label} style={{ marginBottom: 14 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 }}>{f.label}</Text>
                   <TextInput
-                    className="border border-gray-200 rounded-xl px-4 py-3 bg-white text-base"
-                    placeholder={field.placeholder}
-                    value={field.value}
-                    onChangeText={field.set}
+                    style={{ ...inputStyle, minHeight: 80 }}
+                    placeholder={f.placeholder}
+                    placeholderTextColor="#94A3B8"
+                    value={f.value}
+                    onChangeText={f.set}
                     multiline
-                    numberOfLines={3}
-                    editable={appointment.status !== 'completed'}
+                    editable={!isCompleted}
                   />
                 </View>
               ))}
 
-              {/* Prescription image */}
-              <TouchableOpacity
-                className="border-2 border-dashed border-blue-300 rounded-xl py-5 items-center bg-blue-50 mb-6"
-                onPress={pickPrescriptionImage}
-                disabled={appointment.status === 'completed'}
-              >
-                <Text className="text-2xl mb-1">{prescriptionImageUri ? '✅' : '📄'}</Text>
-                <Text className="text-blue-600 font-medium">
-                  {prescriptionImageUri ? 'Receta cargada' : 'Subir imagen de receta'}
-                </Text>
-              </TouchableOpacity>
-
-              {appointment.status !== 'completed' && (
+              {/* Prescription photo */}
+              <View style={{ marginBottom: 24 }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 }}>Foto de receta</Text>
                 <TouchableOpacity
-                  className={`bg-blue-600 rounded-2xl py-4 items-center mb-10 ${saving ? 'opacity-70' : ''}`}
+                  style={{
+                    borderWidth: 2, borderStyle: 'dashed', borderColor: prescriptionUri || prescriptionUrl ? GREEN : '#93C5FD',
+                    borderRadius: 16, paddingVertical: 20, alignItems: 'center',
+                    backgroundColor: prescriptionUri || prescriptionUrl ? '#F0FDF4' : '#EFF6FF',
+                  }}
+                  onPress={pickPrescription}
+                  disabled={isCompleted}
+                >
+                  {prescriptionUri ? (
+                    <Image source={{ uri: prescriptionUri }} style={{ width: '100%', height: 160, borderRadius: 12 }} contentFit="cover" />
+                  ) : prescriptionUrl ? (
+                    <Image source={{ uri: prescriptionUrl }} style={{ width: '100%', height: 160, borderRadius: 12 }} contentFit="cover" />
+                  ) : (
+                    <>
+                      <Text style={{ fontSize: 32, marginBottom: 6 }}>📄</Text>
+                      <Text style={{ color: PRIMARY, fontWeight: '600', fontSize: 14 }}>Subir foto de receta</Text>
+                      <Text style={{ color: GRAY, fontSize: 12, marginTop: 2 }}>Cámara o galería</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              {!isCompleted && (
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: saving ? '#93C5FD' : PRIMARY,
+                    borderRadius: 16, paddingVertical: 16,
+                    alignItems: 'center', marginBottom: 40,
+                    flexDirection: 'row', justifyContent: 'center', gap: 8,
+                  }}
                   onPress={saveConsultation}
                   disabled={saving}
                 >
-                  <Text className="text-white font-semibold text-base">
-                    {saving ? 'Guardando...' : '💾 Guardar Consulta'}
+                  {saving && <ActivityIndicator color="#fff" size="small" />}
+                  <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16 }}>
+                    {saving ? 'Guardando...' : '💾 Completar y Guardar Consulta'}
                   </Text>
                 </TouchableOpacity>
               )}
+
+              {isCompleted && (
+                <View style={{ backgroundColor: '#F0FDF4', borderRadius: 16, padding: 16, marginBottom: 40, borderWidth: 1, borderColor: '#BBF7D0', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 28, marginBottom: 4 }}>✅</Text>
+                  <Text style={{ fontWeight: '700', color: GREEN, fontSize: 15 }}>Consulta completada</Text>
+                  <Text style={{ color: GRAY, fontSize: 13, marginTop: 4, textAlign: 'center' }}>
+                    La ficha médica de {pet.name} fue actualizada
+                  </Text>
+                </View>
+              )}
             </>
           )}
+
+          {/* Pending/not arrived yet */}
+          {!canEdit && !isCompleted && appointment.status !== 'confirmed' && appointment.status !== 'arrived' && (
+            <View style={{ backgroundColor: '#FFFBEB', borderRadius: 16, padding: 20, alignItems: 'center', marginTop: 8 }}>
+              <Text style={{ fontSize: 40, marginBottom: 8 }}>⏳</Text>
+              <Text style={{ fontWeight: '600', color: '#92400E', fontSize: 15, textAlign: 'center' }}>
+                Confirma la cita para poder marcar llegada y completar la ficha
+              </Text>
+            </View>
+          )}
+
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

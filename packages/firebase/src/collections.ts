@@ -19,4 +19,5 @@ export const RTDB_PATHS = {
   MESSAGES: 'messages',
   PRESENCE: 'presence',
   CHAT_MEMBERS: 'chatMembers',
+  NOTIFICATIONS: 'notifications',
 } as const;
