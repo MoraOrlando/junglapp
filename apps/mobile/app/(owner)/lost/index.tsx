@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import type { LostPet } from '@junglapp/types';
@@ -25,13 +25,11 @@ export default function LostPetsPublicScreen() {
 
   async function load() {
     const snap = await getDocs(
-      query(
-        collection(db, COLLECTIONS.LOST_PETS),
-        where('isFound', '==', false),
-        orderBy('reportedAt', 'desc')
-      )
+      query(collection(db, COLLECTIONS.LOST_PETS), where('isFound', '==', false))
     );
-    const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as LostPet));
+    const data = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() } as LostPet))
+      .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt));
     setLostPets(data);
     setFiltered(data);
   }

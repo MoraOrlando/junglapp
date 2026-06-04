@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import type { Chat } from '@junglapp/types';
@@ -34,13 +34,10 @@ export default function ChatListScreen() {
   async function loadChats() {
     if (!user) return;
     const snap = await getDocs(
-      query(
-        collection(db, COLLECTIONS.CHATS),
-        where('participants', 'array-contains', user.uid),
-        orderBy('updatedAt', 'desc')
-      )
+      query(collection(db, COLLECTIONS.CHATS), where('participants', 'array-contains', user.uid))
     );
-    setChats(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Chat)));
+    const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Chat));
+    setChats(data.sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')));
   }
 
   useEffect(() => {

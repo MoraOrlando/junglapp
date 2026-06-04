@@ -38,13 +38,10 @@ export default function MatchScreen() {
     if (!user) return;
     setSelectedMyPet(myPet);
     const snap = await getDocs(
-      query(
-        collection(db, COLLECTIONS.PETS),
-        where('lookingForPartner', '==', true),
-        where('ownerId', '!=', user.uid)
-      )
+      query(collection(db, COLLECTIONS.PETS), where('lookingForPartner', '==', true))
     );
-    setCandidates(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)));
+    const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet));
+    setCandidates(all.filter((p) => p.ownerId !== user.uid));
     setCurrentIndex(0);
   }
 

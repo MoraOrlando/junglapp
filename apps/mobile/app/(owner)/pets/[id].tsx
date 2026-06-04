@@ -147,12 +147,17 @@ export default function PetDetailScreen() {
               </View>
               {/* Heart / Match button */}
               <TouchableOpacity
-                className={`rounded-2xl px-4 py-3 items-center ${pet.lookingForPartner ? 'bg-pink-50 border-2 border-pink-300' : 'bg-gray-50 border-2 border-gray-200'}`}
+                style={{
+                  borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center',
+                  backgroundColor: pet.lookingForPartner ? '#fdf2f8' : '#f9fafb',
+                  borderWidth: 2,
+                  borderColor: pet.lookingForPartner ? '#f9a8d4' : '#e5e7eb',
+                }}
                 onPress={handleHeartPress}
                 activeOpacity={0.7}
               >
-                <Text className="text-3xl">{pet.lookingForPartner ? '❤️' : '🤍'}</Text>
-                <Text className={`text-xs font-semibold mt-1 ${pet.lookingForPartner ? 'text-pink-500' : 'text-gray-400'}`}>
+                <Text style={{ fontSize: 30 }}>{pet.lookingForPartner ? '❤️' : '🤍'}</Text>
+                <Text style={{ fontSize: 11, fontWeight: '600', marginTop: 4, color: pet.lookingForPartner ? '#ec4899' : '#9ca3af' }}>
                   {pet.lookingForPartner ? 'En Match' : 'Buscar pareja'}
                 </Text>
               </TouchableOpacity>
