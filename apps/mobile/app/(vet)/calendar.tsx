@@ -15,8 +15,8 @@ const ALL_TIME_SLOTS = [
   '17:00', '17:30', '18:00',
 ];
 
-function getNextDays(n: number) {
-  const days = [];
+function getNextDays(n: number): string[] {
+  const days: string[] = [];
   for (let i = 0; i < n; i++) {
     const d = new Date();
     d.setDate(d.getDate() + i);
@@ -87,11 +87,28 @@ export default function VetCalendarScreen() {
       </View>
 
       {/* Consultation fee */}
-      <View style={{ marginHorizontal: 24, marginBottom: 16, backgroundColor: '#EFF6FF', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#BFDBFE' }}>
+      <View style={{
+        marginHorizontal: 24,
+        marginBottom: 16,
+        backgroundColor: '#EFF6FF',
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: '#BFDBFE',
+      }}>
         <Text style={{ fontSize: 13, fontWeight: '600', color: '#1D4ED8', marginBottom: 8 }}>
           💰 Tarifa de consulta (CLP)
         </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#BFDBFE', paddingHorizontal: 12, paddingVertical: 10 }}>
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: '#FFFFFF',
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: '#BFDBFE',
+          paddingHorizontal: 12,
+          paddingVertical: 10,
+        }}>
           <Text style={{ color: '#1D4ED8', fontWeight: '700', fontSize: 18, marginRight: 6 }}>$</Text>
           <TextInput
             value={consultationFee}
@@ -137,7 +154,13 @@ export default function VetCalendarScreen() {
                 {d.getDate()}
               </Text>
               {hasSlots ? (
-                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isSelected ? '#93C5FD' : '#1D4ED8', marginTop: 2 }} />
+                <View style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 3,
+                  backgroundColor: isSelected ? '#93C5FD' : '#1D4ED8',
+                  marginTop: 2,
+                }} />
               ) : (
                 <View style={{ width: 6, height: 6, marginTop: 2 }} />
               )}

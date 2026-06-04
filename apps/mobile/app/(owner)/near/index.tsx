@@ -26,6 +26,9 @@ interface NearItem {
   emoji: string;
   subtitle?: string;
   route: string;
+  rating?: number;
+  reviewCount?: number;
+  consultationFee?: number;
 }
 
 export default function NearScreen() {
@@ -48,8 +51,11 @@ export default function NearScreen() {
         name: `Dr. ${v.name}`,
         address: v.address,
         emoji: '🩺',
-        subtitle: v.consultationFee ? `$${v.consultationFee.toLocaleString()} consulta` : undefined,
+        subtitle: v.consultationFee ? `$${v.consultationFee.toLocaleString('es-CL')} consulta` : undefined,
         route: `/(owner)/vets/${v.id}`,
+        rating: v.rating,
+        reviewCount: v.reviewCount,
+        consultationFee: v.consultationFee,
       };
     });
 
@@ -85,21 +91,37 @@ export default function NearScreen() {
   });
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <View className="px-6 pt-4 pb-2">
-        <Text className="text-2xl font-bold text-primary-700">Cerca de ti 📍</Text>
-        <Text className="text-gray-400 text-sm mt-1">Servicios y tiendas disponibles</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+      <View style={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 8 }}>
+        <Text style={{ fontSize: 24, fontWeight: '800', color: '#1D4ED8' }}>Cerca de ti 📍</Text>
+        <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 4 }}>Servicios y tiendas disponibles</Text>
       </View>
 
       {/* Category chips */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} className="px-6 mb-2" contentContainerStyle={{ gap: 8, paddingRight: 24 }}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ maxHeight: 50, marginBottom: 8 }}
+        contentContainerStyle={{ paddingHorizontal: 24, gap: 8, alignItems: 'center' }}
+      >
         {CATEGORIES.map((c) => (
           <TouchableOpacity
             key={c.id}
-            className={`rounded-full px-4 py-2 border ${category === c.id ? 'bg-primary-500 border-primary-500' : 'bg-white border-gray-200'}`}
             onPress={() => setCategory(c.id)}
+            style={{
+              borderRadius: 20,
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+              borderWidth: 1,
+              borderColor: category === c.id ? '#1D4ED8' : '#E2E8F0',
+              backgroundColor: category === c.id ? '#1D4ED8' : '#FFFFFF',
+            }}
           >
-            <Text className={`text-sm font-medium ${category === c.id ? 'text-white' : 'text-gray-600'}`}>
+            <Text style={{
+              fontSize: 13,
+              fontWeight: '600',
+              color: category === c.id ? '#FFFFFF' : '#64748B',
+            }}>
               {c.emoji} {c.label}
             </Text>
           </TouchableOpacity>
@@ -107,31 +129,79 @@ export default function NearScreen() {
       </ScrollView>
 
       <ScrollView
-        className="flex-1 px-6"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#2D6A4F" />}
+        style={{ flex: 1, paddingHorizontal: 24 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1D4ED8" />}
       >
         {filtered.length === 0 ? (
-          <View className="items-center py-16">
-            <Text className="text-4xl mb-3">📍</Text>
-            <Text className="text-gray-500">No hay servicios disponibles aún</Text>
+          <View style={{ alignItems: 'center', paddingVertical: 64 }}>
+            <Text style={{ fontSize: 40, marginBottom: 12 }}>📍</Text>
+            <Text style={{ color: '#94A3B8', fontSize: 15 }}>No hay servicios disponibles aún</Text>
           </View>
         ) : (
-          <View className="gap-4 pb-6 pt-2">
+          <View style={{ gap: 12, paddingBottom: 24, paddingTop: 8 }}>
             {filtered.map((it) => (
               <TouchableOpacity
                 key={`${it.kind}-${it.id}`}
-                className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex-row items-center gap-4"
                 onPress={() => router.push(it.route as any)}
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: 20,
+                  padding: 16,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 14,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: 0.06,
+                  shadowRadius: 4,
+                  elevation: 2,
+                  borderWidth: 1,
+                  borderColor: '#F1F5F9',
+                }}
               >
-                <View className={`rounded-2xl w-16 h-16 items-center justify-center ${it.kind === 'vet' ? 'bg-blue-100' : 'bg-amber-100'}`}>
-                  <Text className="text-3xl">{it.emoji}</Text>
+                {/* Icon */}
+                <View style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: 16,
+                  backgroundColor: it.kind === 'vet' ? '#EFF6FF' : '#FEF3C7',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <Text style={{ fontSize: 30 }}>{it.emoji}</Text>
                 </View>
-                <View className="flex-1">
-                  <Text className="font-bold text-gray-800 text-base">{it.name}</Text>
-                  <Text className="text-gray-500 text-sm">{it.address}</Text>
-                  {it.subtitle && <Text className="text-primary-600 text-xs mt-0.5">{it.subtitle}</Text>}
+
+                {/* Info */}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: '700', color: '#1E293B', fontSize: 15, marginBottom: 2 }}>
+                    {it.name}
+                  </Text>
+                  <Text style={{ color: '#64748B', fontSize: 12, marginBottom: 4 }}>{it.address}</Text>
+
+                  {/* Rating + fee row (for vets) */}
+                  {it.kind === 'vet' && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      {/* Rating */}
+                      <Text style={{ fontSize: 12, color: '#F59E0B', fontWeight: '600' }}>
+                        ⭐ {it.rating ? it.rating.toFixed(1) : 'Sin reseñas'}
+                        {it.reviewCount ? ` (${it.reviewCount})` : ''}
+                      </Text>
+                      {/* Fee */}
+                      {it.consultationFee !== undefined && it.consultationFee > 0 && (
+                        <Text style={{ fontSize: 12, color: '#16A34A', fontWeight: '600' }}>
+                          💰 ${it.consultationFee.toLocaleString('es-CL')}
+                        </Text>
+                      )}
+                    </View>
+                  )}
+
+                  {/* Subtitle for stores */}
+                  {it.kind === 'store' && it.subtitle && (
+                    <Text style={{ color: '#F59E0B', fontSize: 12, fontWeight: '500' }}>{it.subtitle}</Text>
+                  )}
                 </View>
-                <Text className="text-gray-300 text-xl">›</Text>
+
+                <Text style={{ color: '#CBD5E1', fontSize: 20 }}>›</Text>
               </TouchableOpacity>
             ))}
           </View>
