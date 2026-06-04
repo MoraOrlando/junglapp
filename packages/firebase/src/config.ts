@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { initializeAuth, getAuth, Auth } from 'firebase/auth';
+import { initializeAuth, getAuth, getReactNativePersistence, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 import { getDatabase, Database } from 'firebase/database';
@@ -33,13 +33,16 @@ function initFirebase() {
   if (!app) {
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-    // initializeAuth with in-memory persistence — works on both RN and web
-    // without requiring AsyncStorage native module setup
     try {
-      auth = initializeAuth(app);
+      // Use AsyncStorage for session persistence between app restarts
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      auth = initializeAuth(app, {
+        persistence: getReactNativePersistence(AsyncStorage),
+      });
     } catch {
-      // Auth was already initialized (e.g. hot reload) — retrieve existing instance
-      auth = getAuth(app);
+      // Already initialized (hot reload) or running on web — fall back to existing instance
+      try { auth = getAuth(app); } catch { auth = initializeAuth(app); }
     }
 
     db = getFirestore(app);
