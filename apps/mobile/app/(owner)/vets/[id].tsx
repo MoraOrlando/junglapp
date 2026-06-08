@@ -146,7 +146,7 @@ export default function VetDetailScreen() {
       const newReview: Omit<Review, 'id'> = {
         vetId: vet.id,
         ownerId: user.uid,
-        ownerName: user.displayName || 'Usuario',
+        ownerName: user.name || 'Usuario',
         rating: reviewRating,
         comment: reviewComment.trim(),
         createdAt: new Date().toISOString(),
