@@ -6,7 +6,7 @@ import {
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, getDocs, collection, query, where, addDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, where, addDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import type { Trainer } from '@junglapp/types';
@@ -97,8 +97,14 @@ export default function TrainerDetailScreen() {
 
   async function submitReview() {
     if (!trainer || !user) return;
+    if (reviewComment.trim().length > 2000) {
+      Alert.alert('Reseña muy larga', 'El comentario no puede superar 2000 caracteres.');
+      return;
+    }
     setSubmittingReview(true);
     try {
+      // Only write the review — rating recalculation is handled server-side
+      // via a Cloud Function triggered by onCreate in the reviews collection.
       await addDoc(collection(db, COLLECTIONS.REVIEWS), {
         vetId: trainer.id,
         ownerId: user.uid,
@@ -107,16 +113,9 @@ export default function TrainerDetailScreen() {
         comment: reviewComment.trim(),
         createdAt: new Date().toISOString(),
       });
-      const allReviews = [...reviews, { rating: reviewRating }];
-      const avg = allReviews.reduce((s, r: any) => s + r.rating, 0) / allReviews.length;
-      await updateDoc(doc(db, COLLECTIONS.TRAINERS, trainer.id), {
-        rating: Math.round(avg * 10) / 10,
-        reviewCount: allReviews.length,
-      });
-      setTrainer((prev) => prev ? { ...prev, rating: Math.round(avg * 10) / 10, reviewCount: allReviews.length } : prev);
       setHasReviewed(true);
       setReviewModal(false);
-      Alert.alert('¡Gracias por tu reseña! 🐾');
+      Alert.alert('¡Gracias por tu reseña! 🐾', 'Tu calificación fue registrada.');
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {

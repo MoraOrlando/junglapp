@@ -1,23 +1,41 @@
 const CLOUD_NAME =
   (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME) ||
-  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME) ||
-  'dhfhv1a3l';
+  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME);
 
 const UPLOAD_PRESET =
   (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET) ||
-  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET) ||
-  'junglapp_uploads';
+  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET);
 
-const UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
+const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
+
+function getMimeType(ext: string): string {
+  const map: Record<string, string> = {
+    jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    png: 'image/png', webp: 'image/webp',
+    pdf: 'application/pdf',
+  };
+  return map[ext] || 'image/jpeg';
+}
 
 export async function uploadImage(uri: string): Promise<string> {
+  if (!CLOUD_NAME || !UPLOAD_PRESET) {
+    throw new Error('Cloudinary credentials not configured. Set EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME and EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET.');
+  }
+
+  const ext = uri.split('.').pop()?.toLowerCase() ?? '';
+  if (!ALLOWED_EXTENSIONS.includes(ext)) {
+    throw new Error(`Tipo de archivo no permitido: ${ext}. Solo se aceptan ${ALLOWED_EXTENSIONS.join(', ')}.`);
+  }
+
+  const mimeType = getMimeType(ext);
+  const uploadUrl = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
+
   const form = new FormData();
   form.append('upload_preset', UPLOAD_PRESET);
-  // React Native requires the file object shape below; web fetch handles Blob/File directly
-  form.append('file', { uri, type: 'image/jpeg', name: 'upload.jpg' } as any);
+  form.append('file', { uri, type: mimeType, name: `upload.${ext}` } as any);
 
-  const res = await fetch(UPLOAD_URL, { method: 'POST', body: form });
-  if (!res.ok) throw new Error(`Cloudinary upload failed: ${res.status}`);
+  const res = await fetch(uploadUrl, { method: 'POST', body: form });
+  if (!res.ok) throw new Error(`Error al subir imagen: ${res.status}`);
   const json = await res.json();
   return json.secure_url as string;
 }

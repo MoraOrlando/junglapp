@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, Alert, TextInput, Image } fro
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
-  doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, serverTimestamp,
+  doc, getDoc, collection, query, where, getDocs, addDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
@@ -151,19 +151,12 @@ export default function VetDetailScreen() {
         comment: reviewComment.trim(),
         createdAt: new Date().toISOString(),
       };
+      if (reviewComment.trim().length > 2000) {
+        Alert.alert('Reseña muy larga', 'El comentario no puede superar 2000 caracteres.');
+        return;
+      }
+      // Only write the review — rating recalculation handled server-side via Cloud Function
       await addDoc(collection(db, COLLECTIONS.REVIEWS), newReview);
-
-      // Update vet average rating
-      const allReviewsSnap = await getDocs(
-        query(collection(db, COLLECTIONS.REVIEWS), where('vetId', '==', vet.id))
-      );
-      const allRatings = allReviewsSnap.docs.map((d) => (d.data() as Review).rating);
-      allRatings.push(reviewRating);
-      const avg = allRatings.reduce((a, b) => a + b, 0) / allRatings.length;
-      await updateDoc(doc(db, COLLECTIONS.VETERINARIANS, vet.id), {
-        rating: Math.round(avg * 10) / 10,
-        reviewCount: allRatings.length,
-      });
 
       setReviews((prev) => [{ ...newReview, id: 'new' }, ...prev].slice(0, 5));
       setCanReview(false);

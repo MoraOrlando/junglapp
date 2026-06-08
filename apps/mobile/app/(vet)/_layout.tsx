@@ -1,11 +1,19 @@
-import { Tabs } from 'expo-router';
+import { useEffect } from 'react';
+import { Tabs, useRouter } from 'expo-router';
 import { Text } from 'react-native';
+import { useAuth } from '../../context/AuthContext';
 
 function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
   return <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.6 }}>{emoji}</Text>;
 }
 
 export default function VetLayout() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+  useEffect(() => {
+    if (!loading && user && user.role !== 'vet') router.replace('/(auth)');
+  }, [user, loading]);
+
   return (
     <Tabs
       screenOptions={{

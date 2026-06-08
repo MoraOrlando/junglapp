@@ -170,8 +170,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function updateProfile(data: Partial<User>) {
     if (!firebaseUser) return;
-    await updateDoc(doc(db, 'users', firebaseUser.uid), data);
-    setUser((prev) => (prev ? { ...prev, ...data } : null));
+    // Strip immutable / privilege-escalation fields before writing
+    const { role, uid, createdAt, ...safeData } = data as any;
+    await updateDoc(doc(db, 'users', firebaseUser.uid), safeData);
+    setUser((prev) => (prev ? { ...prev, ...safeData } : null));
   }
 
   return (

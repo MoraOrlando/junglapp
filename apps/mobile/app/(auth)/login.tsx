@@ -94,7 +94,13 @@ export default function LoginScreen() {
     });
 
     if (result.success) {
-      const { email, password } = JSON.parse(saved);
+      const { email, password, storedAt } = JSON.parse(saved);
+      // Expire stored credentials after 30 days
+      if (storedAt && Date.now() - storedAt > 30 * 24 * 60 * 60 * 1000) {
+        await SecureStore.deleteItemAsync(CREDS_KEY);
+        Alert.alert('Sesión expirada', 'Por seguridad, inicia sesión manualmente.');
+        return;
+      }
       setLoading(true);
       try {
         await signIn(email, password);
@@ -111,7 +117,11 @@ export default function LoginScreen() {
     try {
       const firebaseUser = await signIn(data.email, data.password);
       if (SecureStore) {
-        await SecureStore.setItemAsync(CREDS_KEY, JSON.stringify({ email: data.email, password: data.password }));
+        await SecureStore.setItemAsync(
+          CREDS_KEY,
+          JSON.stringify({ email: data.email, password: data.password, storedAt: Date.now() }),
+          { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY }
+        );
       }
       // Verificar si debe cambiar contraseña
       if (firebaseUser?.uid) {

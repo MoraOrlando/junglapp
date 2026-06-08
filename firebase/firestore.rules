@@ -18,27 +18,22 @@ service cloud.firestore {
       return isAuth() && getRole() == 'support';
     }
 
-    // Incoming data does not change a field
     function fieldUnchanged(field) {
       return !(field in request.resource.data.diff(resource.data).affectedKeys());
     }
 
     // ── Users ──────────────────────────────────────────────────────────────
-    // Only the owner reads own doc; support reads all.
-    // Users cannot self-assign the 'support' role.
     match /users/{uid} {
       allow read: if isSelf(uid) || isSupport();
       allow create: if isSelf(uid)
         && request.resource.data.uid == uid
-        && request.resource.data.role in ['owner', 'vet', 'store'];
-      allow update: if (isSelf(uid) && fieldUnchanged('role'))
+        && request.resource.data.role in ['owner', 'vet', 'store', 'trainer'];
+      allow update: if (isSelf(uid) && fieldUnchanged('role') && fieldUnchanged('uid'))
         || isSupport();
       allow delete: if isSupport();
     }
 
     // ── Pets ───────────────────────────────────────────────────────────────
-    // Owners see their own pets + any pet with lookingForPartner=true.
-    // Vets/support can read all (needed for appointment context).
     match /pets/{petId} {
       allow read: if isAuth() && (
         resource.data.ownerId == request.auth.uid ||
@@ -56,23 +51,100 @@ service cloud.firestore {
     }
 
     // ── Veterinarians ──────────────────────────────────────────────────────
-    // All authenticated users can read (needed for booking).
-    // Self can update profile fields; only support can change status.
     match /veterinarians/{vetId} {
       allow read: if isAuth();
       allow create: if isAuth()
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.status == 'pending';
       allow update: if isAuth() && (
-        (resource.data.userId == request.auth.uid && fieldUnchanged('status'))
+        (resource.data.userId == request.auth.uid
+          && fieldUnchanged('status')
+          && fieldUnchanged('rating')
+          && fieldUnchanged('reviewCount'))
         || isSupport()
       );
       allow delete: if isSupport();
     }
 
+    // ── Trainers ───────────────────────────────────────────────────────────
+    match /trainers/{trainerId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow update: if isAuth() && (
+        (resource.data.userId == request.auth.uid
+          && fieldUnchanged('status')
+          && fieldUnchanged('rating')
+          && fieldUnchanged('reviewCount'))
+        || isSupport()
+      );
+      allow delete: if isSupport();
+    }
+
+    // ── Walkers ────────────────────────────────────────────────────────────
+    match /walkers/{walkerId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow update: if isAuth() && (
+        (resource.data.userId == request.auth.uid
+          && fieldUnchanged('status')
+          && fieldUnchanged('rating')
+          && fieldUnchanged('reviewCount'))
+        || isSupport()
+      );
+      allow delete: if isSupport();
+    }
+
+    // ── Groomers ───────────────────────────────────────────────────────────
+    match /groomers/{groomerId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow update: if isAuth() && (
+        (resource.data.userId == request.auth.uid
+          && fieldUnchanged('status')
+          && fieldUnchanged('rating')
+          && fieldUnchanged('reviewCount'))
+        || isSupport()
+      );
+      allow delete: if isSupport();
+    }
+
+    // ── Reviews ────────────────────────────────────────────────────────────
+    match /reviews/{reviewId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && request.resource.data.comment is string
+        && request.resource.data.comment.size() <= 2000;
+      allow update, delete: if isAuth() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ── Medical Visits ─────────────────────────────────────────────────────
+    match /medicalVisits/{visitId} {
+      allow read: if isAuth() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.vetId == request.auth.uid ||
+        isSupport()
+      );
+      allow create: if isAuth()
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isAuth() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.vetId == request.auth.uid ||
+        isSupport()
+      );
+      allow delete: if isSupport();
+    }
+
     // ── Stores ─────────────────────────────────────────────────────────────
-    // All authenticated users can read (needed for browsing).
-    // Self can update store info; only support can change status.
     match /stores/{storeId} {
       allow read: if isAuth();
       allow create: if isAuth()
@@ -86,8 +158,6 @@ service cloud.firestore {
     }
 
     // ── Products ───────────────────────────────────────────────────────────
-    // Public read (storefronts are visible to all users).
-    // Write restricted to the store owner.
     match /products/{productId} {
       allow read: if isAuth();
       allow create: if isAuth()
@@ -99,8 +169,6 @@ service cloud.firestore {
     }
 
     // ── Appointments ───────────────────────────────────────────────────────
-    // Only the owner and the assigned vet can read/update.
-    // Only owners can create (booking) or delete (cancellation).
     match /appointments/{apptId} {
       allow read: if isAuth() && (
         resource.data.ownerId == request.auth.uid ||
@@ -119,10 +187,26 @@ service cloud.firestore {
       );
     }
 
+    // ── Trainer Appointments ───────────────────────────────────────────────
+    match /trainerAppointments/{apptId} {
+      allow read: if isAuth() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.trainerId == request.auth.uid ||
+        isSupport()
+      );
+      allow create: if isAuth()
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isAuth() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.trainerId == request.auth.uid ||
+        isSupport()
+      );
+      allow delete: if isAuth() && (
+        resource.data.ownerId == request.auth.uid || isSupport()
+      );
+    }
+
     // ── Matches ────────────────────────────────────────────────────────────
-    // Only the two involved owners can read/update.
-    // Creator must be owner1.
-    // Matches cannot be deleted (permanent history).
     match /matches/{matchId} {
       allow read: if isAuth() && (
         resource.data.owner1Id == request.auth.uid ||
@@ -139,8 +223,6 @@ service cloud.firestore {
     }
 
     // ── Chats ──────────────────────────────────────────────────────────────
-    // Only chat participants can read or update.
-    // Creator must include themselves in the participants array.
     match /chats/{chatId} {
       allow read: if isAuth() && (
         request.auth.uid in resource.data.participants || isSupport()
@@ -155,8 +237,6 @@ service cloud.firestore {
     }
 
     // ── Lost pets ──────────────────────────────────────────────────────────
-    // Publicly readable (community feature).
-    // Only the reporting owner or support can update/delete.
     match /lostPets/{lostPetId} {
       allow read: if true;
       allow create: if isAuth()
@@ -170,7 +250,6 @@ service cloud.firestore {
     }
 
     // ── Orders ─────────────────────────────────────────────────────────────
-    // Buyer and store owner can read; only buyer can create; only store can update status.
     match /orders/{orderId} {
       allow read: if isAuth() && (
         resource.data.buyerId == request.auth.uid ||
@@ -179,11 +258,18 @@ service cloud.firestore {
       );
       allow create: if isAuth()
         && request.resource.data.buyerId == request.auth.uid;
+      // Store owner can only update status field
       allow update: if isAuth() && (
-        get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.userId == request.auth.uid
+        (get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.userId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
         || isSupport()
       );
       allow delete: if isSupport();
+    }
+
+    // ── Password Reset Cooldowns (internal) ────────────────────────────────
+    match /_passwordResetCooldowns/{email} {
+      allow read, write: if false; // server-side only
     }
   }
 }

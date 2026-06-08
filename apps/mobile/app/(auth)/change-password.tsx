@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator,
@@ -14,10 +14,15 @@ const { auth, db } = initFirebase();
 const GREEN = '#16a34a';
 
 export default function ChangePasswordScreen() {
-  const { user, firebaseUser } = useAuth();
+  const { user, firebaseUser, loading: authLoading } = useAuth();
   const router = useRouter();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+
+  // Redirect unauthenticated users away (blocks direct deeplink access)
+  useEffect(() => {
+    if (!authLoading && !firebaseUser) router.replace('/(auth)/login');
+  }, [firebaseUser, authLoading]);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);

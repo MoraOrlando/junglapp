@@ -70,10 +70,12 @@ service firebase.storage {
     }
 
     // ── Prescription images ────────────────────────────────────────────────
-    // Path: prescriptions/{vetUserId}/{apptId}/{fileName}
-    // Only the vet who owns the appointment folder can upload prescriptions.
-    match /prescriptions/{vetUserId}/{apptId}/{fileName} {
-      allow read: if isAuth();
+    // Path: prescriptions/{vetUserId}/{ownerUserId}/{apptId}/{fileName}
+    // Only the vet (upload) or the appointment owner (read) can access.
+    match /prescriptions/{vetUserId}/{ownerUserId}/{apptId}/{fileName} {
+      allow read: if isAuth() && (
+        request.auth.uid == vetUserId || request.auth.uid == ownerUserId
+      );
       allow write: if isAuth()
         && request.auth.uid == vetUserId
         && isImageOrPdf()
