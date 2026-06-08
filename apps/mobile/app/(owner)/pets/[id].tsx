@@ -59,11 +59,28 @@ export default function PetDetailScreen() {
 
   async function handleHeartPress() {
     if (!pet || !id) return;
-    if (!pet.lookingForPartner) {
+    if (pet.lookingForPartner) {
+      // Already active — ask to deactivate
+      Alert.alert(
+        '💔 Dejar de buscar pareja',
+        `¿Deseas que ${pet.name} deje de aparecer en Match?`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Sí, desactivar',
+            style: 'destructive',
+            onPress: async () => {
+              await updateDoc(doc(db, COLLECTIONS.PETS, id), { lookingForPartner: false });
+              setPet({ ...pet, lookingForPartner: false });
+            },
+          },
+        ]
+      );
+    } else {
       await updateDoc(doc(db, COLLECTIONS.PETS, id), { lookingForPartner: true });
       setPet({ ...pet, lookingForPartner: true });
+      triggerFlameAndNavigate();
     }
-    triggerFlameAndNavigate();
   }
 
   function handleLostReport() {
