@@ -33,7 +33,7 @@ function RouteGuard() {
         else if (role === 'vet') router.replace('/(vet)');
         else if (role === 'store') router.replace('/(store)');
         else if (role === 'trainer') router.replace('/(trainer)');
-        else if (role === 'support') router.replace('/(owner)');
+        else if (role === 'support') router.replace('/(support)');
       }
     }
   }, [user, loading, segments]);
@@ -54,6 +54,7 @@ export default function RootLayout() {
             <Stack.Screen name="(vet)" />
             <Stack.Screen name="(store)" />
             <Stack.Screen name="(trainer)" />
+            <Stack.Screen name="(support)" />
           </Stack>
         </AuthProvider>
       </SafeAreaProvider>
