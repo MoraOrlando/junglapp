@@ -31,6 +31,13 @@ export default function StoreLayout() {
         }}
       />
       <Tabs.Screen
+        name="services"
+        options={{
+          title: 'Servicios',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="✂️" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
         name="orders"
         options={{
           title: 'Pedidos',
@@ -44,6 +51,7 @@ export default function StoreLayout() {
           tabBarIcon: ({ focused }) => <TabIcon emoji="🏪" focused={focused} />,
         }}
       />
+      <Tabs.Screen name="product" options={{ href: null }} />
     </Tabs>
   );
 }

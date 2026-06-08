@@ -3,27 +3,17 @@ import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   KeyboardAvoidingView, Platform, Alert
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useForm, Controller } from 'react-hook-form';
-import { z } from 'zod';
-import { zodResolver } from '@hookform/resolvers/zod';
 import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import { initFirebase, COLLECTIONS, uploadImages } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 
 const { db } = initFirebase();
-
-const CATEGORIES = ['Alimentos', 'Juguetes', 'Accesorios', 'Higiene', 'Salud'];
-
-const schema = z.object({
-  name: z.string().min(1, 'Nombre requerido'),
-  description: z.string().min(5, 'Descripción requerida'),
-  price: z.string().min(1, 'Precio requerido'),
-  stock: z.string().min(1, 'Stock requerido'),
-});
-type FormData = z.infer<typeof schema>;
+const AMBER = '#D97706';
+const CATEGORIES = ['Alimentos', 'Juguetes', 'Accesorios', 'Higiene', 'Salud', 'Ropa', 'Transporte', 'Camas'];
 
 export default function AddProductScreen() {
   const router = useRouter();
@@ -31,10 +21,10 @@ export default function AddProductScreen() {
   const [loading, setLoading] = useState(false);
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [photos, setPhotos] = useState<string[]>([]);
-
-  const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema),
-  });
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [price, setPrice] = useState('');
+  const [stock, setStock] = useState('');
 
   async function pickPhoto() {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -45,24 +35,27 @@ export default function AddProductScreen() {
     if (!result.canceled) setPhotos([...photos, ...result.assets.map((a) => a.uri)]);
   }
 
-  async function onSubmit(data: FormData) {
+  function removePhoto(index: number) {
+    setPhotos((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function onSubmit() {
+    if (!name.trim()) { Alert.alert('Error', 'El nombre es requerido'); return; }
+    if (!price.trim() || isNaN(Number(price))) { Alert.alert('Error', 'Ingresa un precio válido'); return; }
+    if (!stock.trim() || isNaN(Number(stock))) { Alert.alert('Error', 'Ingresa el stock disponible'); return; }
     if (!user) return;
     setLoading(true);
     try {
-      const storeSnap = await getDocs(
-        query(collection(db, COLLECTIONS.STORES), where('userId', '==', user.uid))
-      );
+      const storeSnap = await getDocs(query(collection(db, COLLECTIONS.STORES), where('userId', '==', user.uid)));
       if (storeSnap.empty) { Alert.alert('Error', 'Tienda no encontrada'); return; }
       const storeId = storeSnap.docs[0].id;
-
-      const photoUrls = await uploadImages(photos);
-
+      const photoUrls = photos.length > 0 ? await uploadImages(photos) : [];
       await addDoc(collection(db, COLLECTIONS.PRODUCTS), {
         storeId,
-        name: data.name,
-        description: data.description,
-        price: Number(data.price),
-        stock: Number(data.stock),
+        name: name.trim(),
+        description: description.trim(),
+        price: Number(price),
+        stock: Number(stock),
         category,
         photos: photoUrls,
         isActive: true,
@@ -77,70 +70,99 @@ export default function AddProductScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
-        <ScrollView className="px-6">
-          <TouchableOpacity onPress={() => router.back()} className="mt-4 mb-6">
-            <Text className="text-amber-600 text-base">← Volver</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView style={{ paddingHorizontal: 24 }} showsVerticalScrollIndicator={false}>
+          <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16, marginBottom: 8 }}>
+            <Text style={{ color: AMBER, fontSize: 16 }}>← Volver</Text>
           </TouchableOpacity>
 
-          <Text className="text-2xl font-bold text-amber-700 mb-6">📦 Nuevo Producto</Text>
+          <Text style={{ fontSize: 22, fontWeight: '800', color: AMBER, marginBottom: 20 }}>📦 Nuevo Producto</Text>
 
-          <View className="mb-6">
-            <Text className="text-sm font-medium text-gray-700 mb-2">Fotos</Text>
-            <View className="flex-row gap-2 flex-wrap">
-              {photos.map((_, i) => (
-                <View key={i} className="w-20 h-20 bg-amber-50 rounded-xl items-center justify-center">
-                  <Text className="text-3xl">🖼️</Text>
-                </View>
-              ))}
-              <TouchableOpacity
-                className="w-20 h-20 border-2 border-dashed border-amber-300 rounded-xl items-center justify-center bg-amber-50"
-                onPress={pickPhoto}
-              >
-                <Text className="text-2xl">📷</Text>
-              </TouchableOpacity>
-            </View>
+          {/* Fotos */}
+          <View style={{ marginBottom: 20 }}>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 10 }}>
+              Fotos del producto {photos.length > 0 ? `(${photos.length})` : ''}
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                {photos.map((uri, i) => (
+                  <View key={i} style={{ position: 'relative' }}>
+                    <Image
+                      source={{ uri }}
+                      style={{ width: 80, height: 80, borderRadius: 12 }}
+                      contentFit="cover"
+                    />
+                    <TouchableOpacity
+                      onPress={() => removePhoto(i)}
+                      style={{
+                        position: 'absolute', top: -6, right: -6,
+                        backgroundColor: '#EF4444', borderRadius: 10, width: 20, height: 20,
+                        alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>×</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                <TouchableOpacity
+                  onPress={pickPhoto}
+                  style={{
+                    width: 80, height: 80, borderWidth: 2, borderStyle: 'dashed',
+                    borderColor: AMBER, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: '#FEF3C7',
+                  }}
+                >
+                  <Text style={{ fontSize: 24 }}>📷</Text>
+                  <Text style={{ color: AMBER, fontSize: 10, marginTop: 2, fontWeight: '600' }}>Agregar</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
 
-          <View className="gap-4">
+          {/* Campos */}
+          <View style={{ gap: 14 }}>
             {[
-              { name: 'name' as const, label: 'Nombre del producto', placeholder: 'Croquetas Premium 10kg' },
-              { name: 'description' as const, label: 'Descripción', placeholder: 'Alimento balanceado para perros adultos...', multiline: true },
-              { name: 'price' as const, label: 'Precio (CLP)', placeholder: '25000', keyboard: 'number-pad' },
-              { name: 'stock' as const, label: 'Stock disponible', placeholder: '50', keyboard: 'number-pad' },
+              { label: 'Nombre del producto *', placeholder: 'Croquetas Premium 10kg', value: name, set: setName, keyboard: 'default' },
+              { label: 'Descripción', placeholder: 'Alimento balanceado para perros adultos...', value: description, set: setDescription, multiline: true },
+              { label: 'Precio (CLP) *', placeholder: '25000', value: price, set: setPrice, keyboard: 'number-pad' },
+              { label: 'Stock disponible *', placeholder: '50', value: stock, set: setStock, keyboard: 'number-pad' },
             ].map((f) => (
-              <View key={f.name}>
-                <Text className="text-sm font-medium text-gray-700 mb-1">{f.label}</Text>
-                <Controller
-                  control={control}
-                  name={f.name}
-                  render={({ field: { onChange, value } }) => (
-                    <TextInput
-                      className="border border-gray-200 rounded-xl px-4 py-3 bg-white text-base"
-                      placeholder={f.placeholder}
-                      keyboardType={(f as any).keyboard || 'default'}
-                      onChangeText={onChange}
-                      value={value}
-                      multiline={(f as any).multiline}
-                      numberOfLines={(f as any).multiline ? 3 : 1}
-                    />
-                  )}
+              <View key={f.label}>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 4 }}>{f.label}</Text>
+                <TextInput
+                  style={{
+                    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
+                    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff', fontSize: 15,
+                    ...(f.multiline ? { minHeight: 80, textAlignVertical: 'top' } : {}),
+                  }}
+                  placeholder={f.placeholder}
+                  keyboardType={f.keyboard as any}
+                  multiline={f.multiline}
+                  numberOfLines={f.multiline ? 3 : 1}
+                  value={f.value}
+                  onChangeText={f.set}
                 />
-                {errors[f.name] && <Text className="text-red-500 text-xs mt-1">{errors[f.name]?.message}</Text>}
               </View>
             ))}
 
+            {/* Categoría */}
             <View>
-              <Text className="text-sm font-medium text-gray-700 mb-2">Categoría</Text>
-              <View className="flex-row flex-wrap gap-2">
+              <Text style={{ fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 8 }}>Categoría</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {CATEGORIES.map((cat) => (
                   <TouchableOpacity
                     key={cat}
-                    className={`rounded-full px-4 py-2 border ${category === cat ? 'bg-amber-500 border-amber-500' : 'bg-white border-gray-200'}`}
                     onPress={() => setCategory(cat)}
+                    style={{
+                      borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1,
+                      backgroundColor: category === cat ? AMBER : '#fff',
+                      borderColor: category === cat ? AMBER : '#E5E7EB',
+                    }}
                   >
-                    <Text className={`text-sm ${category === cat ? 'text-white' : 'text-gray-600'}`}>{cat}</Text>
+                    <Text style={{ fontSize: 13, color: category === cat ? '#fff' : '#6B7280', fontWeight: category === cat ? '600' : '400' }}>
+                      {cat}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -148,11 +170,17 @@ export default function AddProductScreen() {
           </View>
 
           <TouchableOpacity
-            className={`bg-amber-500 rounded-2xl py-4 items-center mt-6 mb-10 ${loading ? 'opacity-70' : ''}`}
-            onPress={handleSubmit(onSubmit)}
+            style={{
+              backgroundColor: AMBER, borderRadius: 16, paddingVertical: 16,
+              alignItems: 'center', marginTop: 24, marginBottom: 40,
+              opacity: loading ? 0.7 : 1,
+            }}
+            onPress={onSubmit}
             disabled={loading}
           >
-            <Text className="text-white font-semibold text-base">{loading ? 'Guardando...' : 'Publicar Producto'}</Text>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>
+              {loading ? 'Publicando...' : 'Publicar Producto'}
+            </Text>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>

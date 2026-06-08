@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import {
+  View, Text, ScrollView, TouchableOpacity, TextInput,
+  Alert, ActivityIndicator
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
+import * as Location from 'expo-location';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import type { Store } from '@junglapp/types';
 
 const { db } = initFirebase();
+const AMBER = '#D97706';
 
 export default function StoreProfileScreen() {
   const { user, logOut } = useAuth();
@@ -16,7 +21,9 @@ export default function StoreProfileScreen() {
   const [description, setDescription] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [gettingLocation, setGettingLocation] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -29,16 +36,36 @@ export default function StoreProfileScreen() {
         setDescription(s.description);
         setPhone(s.phone);
         setAddress(s.address);
+        if (s.location) setLocation(s.location);
       }
     });
   }, [user]);
+
+  async function captureLocation() {
+    setGettingLocation(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permiso denegado', 'Activa la ubicación en ajustes.');
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    } catch {
+      Alert.alert('Error', 'No se pudo obtener la ubicación.');
+    } finally {
+      setGettingLocation(false);
+    }
+  }
 
   async function save() {
     if (!storeDocId) return;
     setSaving(true);
     try {
-      await updateDoc(doc(db, COLLECTIONS.STORES, storeDocId), { name, description, phone, address });
-      Alert.alert('✅', 'Tienda actualizada');
+      const updates: any = { name, description, phone, address };
+      if (location) updates.location = location;
+      await updateDoc(doc(db, COLLECTIONS.STORES, storeDocId), updates);
+      Alert.alert('✅', 'Tienda actualizada correctamente');
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -46,64 +73,116 @@ export default function StoreProfileScreen() {
     }
   }
 
-  if (!store) return (
-    <SafeAreaView className="flex-1 bg-background items-center justify-center">
-      <Text className="text-gray-400">Cargando tienda...</Text>
-    </SafeAreaView>
-  );
+  if (!store) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB', alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={AMBER} />
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <ScrollView className="flex-1 px-6">
-        <Text className="text-2xl font-bold text-amber-700 mt-4 mb-6">Mi Tienda 🏪</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
+      <ScrollView style={{ flex: 1, paddingHorizontal: 24 }} showsVerticalScrollIndicator={false}>
+        <Text style={{ fontSize: 22, fontWeight: '800', color: AMBER, marginTop: 20, marginBottom: 20 }}>
+          Mi Tienda 🏪
+        </Text>
 
-        <View className="bg-white rounded-2xl p-5 mb-4 shadow-sm border border-gray-100 items-center">
-          <View className="bg-amber-100 rounded-full w-20 h-20 items-center justify-center mb-3">
-            <Text className="text-4xl">🏪</Text>
+        {/* Store card */}
+        <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 20, marginBottom: 16, alignItems: 'center', borderWidth: 1, borderColor: '#F3F4F6' }}>
+          <View style={{ backgroundColor: '#FEF3C7', borderRadius: 40, width: 80, height: 80, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+            <Text style={{ fontSize: 36 }}>🏪</Text>
           </View>
-          <Text className="text-xl font-bold text-gray-800">{store.name}</Text>
-          <Text className="text-gray-500 text-sm">{store.email}</Text>
-          <View className={`rounded-full px-3 py-1 mt-2 ${store.status === 'approved' ? 'bg-green-100' : store.status === 'pending' ? 'bg-yellow-100' : 'bg-red-100'}`}>
-            <Text className={`text-xs font-medium ${store.status === 'approved' ? 'text-green-600' : store.status === 'pending' ? 'text-yellow-600' : 'text-red-500'}`}>
+          <Text style={{ fontSize: 18, fontWeight: '800', color: '#1F2937' }}>{store.name}</Text>
+          <Text style={{ color: '#9CA3AF', fontSize: 13, marginTop: 2 }}>{store.email}</Text>
+          <View style={{
+            borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4, marginTop: 8,
+            backgroundColor: store.status === 'approved' ? '#ECFDF5' : store.status === 'pending' ? '#FFFBEB' : '#FEF2F2',
+          }}>
+            <Text style={{
+              fontSize: 12, fontWeight: '600',
+              color: store.status === 'approved' ? '#059669' : store.status === 'pending' ? '#D97706' : '#EF4444',
+            }}>
               {store.status === 'approved' ? '✅ Verificada' : store.status === 'pending' ? '⏳ En revisión' : '❌ Rechazada'}
             </Text>
           </View>
+          {store.rut && (
+            <Text style={{ color: '#9CA3AF', fontSize: 12, marginTop: 6 }}>RUT: {store.rut}</Text>
+          )}
         </View>
 
-        <View className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100">
-          <Text className="font-semibold text-gray-700 mb-3">Información de la tienda</Text>
+        {/* Editable fields */}
+        <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#F3F4F6' }}>
+          <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15, marginBottom: 14 }}>Información de la tienda</Text>
           {[
             { label: 'Nombre', value: name, set: setName },
             { label: 'Descripción', value: description, set: setDescription, multiline: true },
-            { label: 'Teléfono', value: phone, set: setPhone },
+            { label: 'Teléfono', value: phone, set: setPhone, keyboard: 'phone-pad' },
             { label: 'Dirección', value: address, set: setAddress },
           ].map((f) => (
-            <View key={f.label} className="mb-3">
-              <Text className="text-sm text-gray-600 mb-1">{f.label}</Text>
+            <View key={f.label} style={{ marginBottom: 12 }}>
+              <Text style={{ fontSize: 13, color: '#6B7280', marginBottom: 4, fontWeight: '500' }}>{f.label}</Text>
               <TextInput
-                className="border border-gray-200 rounded-xl px-4 py-3 bg-gray-50 text-base"
+                style={{
+                  borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
+                  paddingHorizontal: 14, paddingVertical: 10, backgroundColor: '#F9FAFB', fontSize: 14,
+                  ...(f.multiline ? { minHeight: 72, textAlignVertical: 'top' } : {}),
+                }}
                 value={f.value}
                 onChangeText={f.set}
                 multiline={f.multiline}
                 numberOfLines={f.multiline ? 3 : 1}
+                keyboardType={f.keyboard as any}
               />
             </View>
           ))}
         </View>
 
+        {/* Geolocalización */}
+        <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#F3F4F6' }}>
+          <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15, marginBottom: 6 }}>📍 Ubicación</Text>
+          <Text style={{ color: '#9CA3AF', fontSize: 12, marginBottom: 12 }}>
+            Permite que los clientes cercanos te encuentren.
+          </Text>
+          {location && (
+            <View style={{ backgroundColor: '#ECFDF5', borderRadius: 10, padding: 10, marginBottom: 10 }}>
+              <Text style={{ color: '#059669', fontSize: 12, fontWeight: '600' }}>
+                ✅ Ubicación guardada ({location.lat.toFixed(5)}, {location.lng.toFixed(5)})
+              </Text>
+            </View>
+          )}
+          <TouchableOpacity
+            onPress={captureLocation}
+            disabled={gettingLocation}
+            style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+              borderWidth: 1, borderColor: location ? '#10B981' : AMBER,
+              borderRadius: 12, paddingVertical: 11,
+              backgroundColor: location ? '#ECFDF5' : '#FEF3C7',
+            }}
+          >
+            {gettingLocation ? <ActivityIndicator size="small" color={AMBER} /> : <Text style={{ fontSize: 16 }}>📍</Text>}
+            <Text style={{ color: location ? '#059669' : AMBER, fontWeight: '600', fontSize: 14 }}>
+              {gettingLocation ? 'Obteniendo ubicación...' : location ? 'Actualizar ubicación' : 'Capturar ubicación'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         <TouchableOpacity
-          className={`bg-amber-500 rounded-2xl py-4 items-center mb-4 ${saving ? 'opacity-70' : ''}`}
           onPress={save}
           disabled={saving}
+          style={{ backgroundColor: AMBER, borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 12, opacity: saving ? 0.7 : 1 }}
         >
-          <Text className="text-white font-semibold">{saving ? 'Guardando...' : 'Guardar cambios'}</Text>
+          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>
+            {saving ? 'Guardando...' : 'Guardar cambios'}
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          className="bg-red-50 border border-red-200 rounded-2xl py-4 items-center mb-10"
           onPress={logOut}
+          style={{ borderWidth: 1, borderColor: '#FCA5A5', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 40, backgroundColor: '#FEF2F2' }}
         >
-          <Text className="text-red-500 font-semibold">Cerrar sesión</Text>
+          <Text style={{ color: '#EF4444', fontWeight: '700' }}>Cerrar sesión</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

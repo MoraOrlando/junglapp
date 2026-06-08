@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  ScrollView, KeyboardAvoidingView, Platform, Alert
+  ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuth } from '../../context/AuthContext';
 import { doc, setDoc } from 'firebase/firestore';
 import { initFirebase, handleEmailAlreadyInUse } from '@junglapp/firebase';
+import * as Location from 'expo-location';
 
 const { db } = initFirebase();
 
@@ -24,25 +25,50 @@ const schema = z.object({
   password: z.string().min(6, 'Mínimo 6 caracteres'),
   address: z.string().min(5, 'Dirección requerida'),
   region: z.string().min(2, 'Región requerida'),
-  city: z.string().min(2, 'Ciudad requerida'),
+  city: z.string().min(2, 'Ciudad / Comuna requerida'),
 });
 type FormData = z.infer<typeof schema>;
 
+const AMBER = '#D97706';
+const AMBER_LIGHT = '#FEF3C7';
+
 export default function RegisterStoreScreen() {
   const router = useRouter();
-  const { signUp, firebaseUser } = useAuth();
+  const { signUp } = useAuth();
   const [loading, setLoading] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [gettingLocation, setGettingLocation] = useState(false);
 
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
   });
 
+  async function captureLocation() {
+    setGettingLocation(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permiso denegado', 'Activa la ubicación para que los clientes te encuentren cerca.');
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    } catch {
+      Alert.alert('Error', 'No se pudo obtener la ubicación. Puedes continuar sin ella.');
+    } finally {
+      setGettingLocation(false);
+    }
+  }
+
   async function onSubmit(data: FormData) {
-    if (!termsAccepted) { Alert.alert('Requerido', 'Debes aceptar los términos de uso para continuar.'); return; }
+    if (!termsAccepted) {
+      Alert.alert('Requerido', 'Debes aceptar los términos de uso para continuar.');
+      return;
+    }
     setLoading(true);
     try {
-      await signUp(data.email, data.password, {
+      const { firebaseUser } = await signUp(data.email, data.password, {
         role: 'store',
         name: data.name,
         rut: data.rut,
@@ -51,24 +77,29 @@ export default function RegisterStoreScreen() {
         address: data.address,
         region: data.region,
         city: data.city,
-      });
+      }) as any;
 
-      if (firebaseUser) {
-        await setDoc(doc(db, 'stores', firebaseUser.uid), {
-          userId: firebaseUser.uid,
+      const uid = firebaseUser?.uid;
+      if (uid) {
+        await setDoc(doc(db, 'stores', uid), {
+          userId: uid,
+          rut: data.rut,
           name: data.storeName,
           description: data.storeDescription,
           address: data.address,
           phone: data.phone,
           email: data.email,
+          ...(location ? { location } : {}),
           status: 'pending',
           categories: [],
+          services: [],
           createdAt: new Date().toISOString(),
         });
       }
     } catch (e: any) {
       if (e.code === 'auth/email-already-in-use') {
         await handleEmailAlreadyInUse(data.email);
+        Alert.alert('Correo en uso', '¿Olvidaste tu contraseña? Puedes recuperarla desde la pantalla de inicio.');
       } else {
         Alert.alert('Error', e.message);
       }
@@ -77,79 +108,128 @@ export default function RegisterStoreScreen() {
     }
   }
 
+  const fields: Array<{
+    name: keyof FormData; label: string; placeholder: string;
+    keyboard?: any; secure?: boolean; multiline?: boolean;
+  }> = [
+    { name: 'name', label: 'Tu nombre completo', placeholder: 'Juan Pérez' },
+    { name: 'rut', label: 'RUT del responsable', placeholder: '12.345.678-9' },
+    { name: 'storeName', label: 'Nombre de la tienda', placeholder: 'PetShop Mascotitas' },
+    { name: 'storeDescription', label: 'Descripción de la tienda', placeholder: 'Vendemos productos premium para mascotas...', multiline: true },
+    { name: 'phone', label: 'Teléfono', placeholder: '+56 9 1234 5678', keyboard: 'phone-pad' },
+    { name: 'email', label: 'Correo electrónico', placeholder: 'tienda@ejemplo.com', keyboard: 'email-address' },
+    { name: 'password', label: 'Contraseña', placeholder: '••••••••', secure: true },
+    { name: 'address', label: 'Dirección de la tienda', placeholder: 'Av. Comercial 456' },
+    { name: 'region', label: 'Región', placeholder: 'Metropolitana' },
+    { name: 'city', label: 'Ciudad / Comuna', placeholder: 'Providencia' },
+  ];
+
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
-        <ScrollView className="px-6">
-          <TouchableOpacity onPress={() => router.back()} className="mt-4 mb-6">
-            <Text className="text-primary-500 text-base">← Volver</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView style={{ paddingHorizontal: 24 }} showsVerticalScrollIndicator={false}>
+          <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16, marginBottom: 24 }}>
+            <Text style={{ color: AMBER, fontSize: 16 }}>← Volver</Text>
           </TouchableOpacity>
 
-          <View className="mb-6">
-            <Text className="text-3xl font-bold text-primary-700">🏪 Tienda Pet Shop</Text>
-            <Text className="text-gray-500 mt-2">Tu tienda será revisada antes de activarse</Text>
+          <View style={{ marginBottom: 24 }}>
+            <Text style={{ fontSize: 28, fontWeight: '800', color: AMBER }}>🏪 Tienda Pet Shop</Text>
+            <Text style={{ color: '#6B7280', marginTop: 4 }}>Tu tienda será revisada antes de activarse</Text>
           </View>
 
-          <View className="gap-4">
-            {[
-              { name: 'name' as const, label: 'Tu nombre completo', placeholder: 'Juan Pérez' },
-              { name: 'rut' as const, label: 'RUT', placeholder: '12.345.678-9' },
-              { name: 'storeName' as const, label: 'Nombre de la tienda', placeholder: 'PetShop Mascotitas' },
-              { name: 'storeDescription' as const, label: 'Descripción de la tienda', placeholder: 'Vendemos productos premium para mascotas...' },
-              { name: 'phone' as const, label: 'Teléfono', placeholder: '+56 9 1234 5678', keyboard: 'phone-pad' },
-              { name: 'email' as const, label: 'Correo electrónico', placeholder: 'tienda@ejemplo.com', keyboard: 'email-address' },
-              { name: 'password' as const, label: 'Contraseña', placeholder: '••••••••', secure: true },
-              { name: 'address' as const, label: 'Dirección de la tienda', placeholder: 'Av. Comercial 456' },
-              { name: 'region' as const, label: 'Región', placeholder: 'Metropolitana' },
-              { name: 'city' as const, label: 'Ciudad / Comuna', placeholder: 'Providencia' },
-            ].map((f) => (
+          <View style={{ gap: 16 }}>
+            {fields.map((f) => (
               <View key={f.name}>
-                <Text className="text-sm font-medium text-gray-700 mb-1">{f.label}</Text>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 4 }}>{f.label}</Text>
                 <Controller
                   control={control}
                   name={f.name}
                   render={({ field: { onChange, value } }) => (
                     <TextInput
-                      className="border border-gray-200 rounded-xl px-4 py-3 bg-white text-base"
+                      style={{
+                        borderWidth: 1, borderColor: errors[f.name] ? '#EF4444' : '#E5E7EB',
+                        borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12,
+                        backgroundColor: '#fff', fontSize: 15,
+                        ...(f.multiline ? { minHeight: 80, textAlignVertical: 'top' } : {}),
+                      }}
                       placeholder={f.placeholder}
-                      keyboardType={(f as any).keyboard || 'default'}
-                      autoCapitalize={(f as any).keyboard === 'email-address' ? 'none' : 'words'}
-                      secureTextEntry={(f as any).secure}
+                      keyboardType={f.keyboard || 'default'}
+                      autoCapitalize={f.keyboard === 'email-address' ? 'none' : 'words'}
+                      secureTextEntry={f.secure}
+                      multiline={f.multiline}
+                      numberOfLines={f.multiline ? 3 : 1}
                       onChangeText={onChange}
                       value={value}
                     />
                   )}
                 />
                 {errors[f.name] && (
-                  <Text className="text-red-500 text-xs mt-1">{errors[f.name]?.message}</Text>
+                  <Text style={{ color: '#EF4444', fontSize: 11, marginTop: 3 }}>{errors[f.name]?.message}</Text>
                 )}
               </View>
             ))}
           </View>
 
-          {/* Terms acceptance */}
+          {/* Geolocalización */}
+          <View style={{ marginTop: 20 }}>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 8 }}>
+              📍 Ubicación de la tienda
+            </Text>
+            <Text style={{ color: '#6B7280', fontSize: 12, marginBottom: 10 }}>
+              Permite que los clientes cercanos puedan encontrar tu tienda.
+            </Text>
+            <TouchableOpacity
+              onPress={captureLocation}
+              disabled={gettingLocation}
+              style={{
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                borderWidth: 1, borderColor: location ? '#10B981' : AMBER,
+                borderRadius: 12, paddingVertical: 12, gap: 8,
+                backgroundColor: location ? '#ECFDF5' : AMBER_LIGHT,
+              }}
+            >
+              {gettingLocation
+                ? <ActivityIndicator size="small" color={AMBER} />
+                : <Text style={{ fontSize: 15 }}>{location ? '✅' : '📍'}</Text>
+              }
+              <Text style={{ color: location ? '#059669' : AMBER, fontWeight: '600' }}>
+                {gettingLocation ? 'Obteniendo ubicación...'
+                  : location ? `Ubicación capturada (${location.lat.toFixed(4)}, ${location.lng.toFixed(4)})`
+                    : 'Capturar ubicación actual'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Términos */}
           <TouchableOpacity
-            className="flex-row items-start gap-3 mt-6"
+            style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginTop: 24 }}
             onPress={() => setTermsAccepted(!termsAccepted)}
             activeOpacity={0.7}
           >
-            <View className={`w-5 h-5 rounded border-2 mt-0.5 items-center justify-center ${termsAccepted ? 'bg-primary-500 border-primary-500' : 'border-gray-300 bg-white'}`}>
-              {termsAccepted && <Text className="text-white text-xs font-bold">✓</Text>}
+            <View style={{
+              width: 20, height: 20, borderRadius: 4, borderWidth: 2, marginTop: 2,
+              alignItems: 'center', justifyContent: 'center',
+              backgroundColor: termsAccepted ? AMBER : '#fff',
+              borderColor: termsAccepted ? AMBER : '#D1D5DB',
+            }}>
+              {termsAccepted && <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>✓</Text>}
             </View>
-            <Text className="flex-1 text-sm text-gray-600">
+            <Text style={{ flex: 1, fontSize: 13, color: '#6B7280' }}>
               He leído y acepto los{' '}
-              <Text className="text-primary-500 font-semibold" onPress={() => router.push('/(auth)/terms')}>
-                Términos y Condiciones de Uso
-              </Text>
+              <Text style={{ color: AMBER, fontWeight: '600' }}>Términos y Condiciones de Uso</Text>
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            className={`bg-primary-500 rounded-2xl py-4 items-center mt-4 mb-10 ${loading ? 'opacity-70' : ''}`}
+            style={{
+              backgroundColor: AMBER, borderRadius: 16, paddingVertical: 16,
+              alignItems: 'center', marginTop: 16, marginBottom: 40,
+              opacity: loading ? 0.7 : 1,
+            }}
             onPress={handleSubmit(onSubmit)}
             disabled={loading}
           >
-            <Text className="text-white font-semibold text-base">
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>
               {loading ? 'Enviando solicitud...' : 'Enviar Solicitud'}
             </Text>
           </TouchableOpacity>

@@ -72,17 +72,29 @@ export interface Veterinarian {
   createdAt: string;
 }
 
+export interface StoreService {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  duration?: string;
+  isActive: boolean;
+}
+
 export interface Store {
   id: string;
   userId: string;
+  rut: string;
   name: string;
   description: string;
   address: string;
   phone: string;
   email: string;
   logoUrl?: string;
+  location?: { lat: number; lng: number };
   status: 'pending' | 'approved' | 'rejected';
   categories: string[];
+  services: StoreService[];
   createdAt: string;
 }
 
