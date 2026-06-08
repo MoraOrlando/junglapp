@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  KeyboardAvoidingView, Platform, ScrollView, Alert,
+  KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { sendPasswordResetEmail } from 'firebase/auth';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { initFirebase } from '@junglapp/firebase';
 
-const { auth } = initFirebase();
+const { app } = initFirebase();
+const fns = getFunctions(app, 'us-central1');
 
 const inputStyle = {
   height: 52,
@@ -29,21 +30,18 @@ export default function ForgotPasswordScreen() {
   const [sent, setSent] = useState(false);
 
   async function handleReset() {
-    const trimmed = email.trim();
+    const trimmed = email.trim().toLowerCase();
     if (!trimmed || !trimmed.includes('@')) {
       Alert.alert('Correo inválido', 'Ingresa un correo electrónico válido.');
       return;
     }
     setLoading(true);
     try {
-      await sendPasswordResetEmail(auth, trimmed);
+      const sendTempPassword = httpsCallable(fns, 'sendTempPassword');
+      await sendTempPassword({ email: trimmed });
       setSent(true);
     } catch (e: any) {
-      if (e.code === 'auth/user-not-found') {
-        Alert.alert('Correo no registrado', 'No encontramos una cuenta con ese correo.');
-      } else {
-        Alert.alert('Error', e.message);
-      }
+      Alert.alert('Error', e.message || 'No se pudo procesar la solicitud. Intenta nuevamente.');
     } finally {
       setLoading(false);
     }
@@ -58,22 +56,30 @@ export default function ForgotPasswordScreen() {
           </TouchableOpacity>
 
           {sent ? (
-            /* Success state */
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 }}>
               <Text style={{ fontSize: 64, marginBottom: 16 }}>📬</Text>
-              <Text style={{ fontSize: 22, fontWeight: '700', color: '#1F2937', textAlign: 'center' }}>
-                Revisa tu correo
+              <Text style={{ fontSize: 22, fontWeight: '800', color: '#1F2937', textAlign: 'center' }}>
+                ¡Contraseña temporal enviada!
               </Text>
-              <Text style={{ color: '#6B7280', marginTop: 12, textAlign: 'center', lineHeight: 22 }}>
-                Enviamos un enlace a{'\n'}
-                <Text style={{ fontWeight: '600', color: '#374151' }}>{email.trim()}</Text>
-                {'\n\n'}Haz clic en el enlace para crear una nueva contraseña. Revisa también tu carpeta de spam.
+              <Text style={{ color: '#6B7280', marginTop: 10, textAlign: 'center', lineHeight: 22, fontSize: 15 }}>
+                Enviamos una contraseña temporal a{'\n'}
+                <Text style={{ fontWeight: '700', color: '#374151' }}>{email.trim()}</Text>
+              </Text>
+              <View style={{ backgroundColor: '#F0FDF4', borderRadius: 14, padding: 18, marginTop: 20, borderWidth: 1, borderColor: '#BBF7D0', width: '100%' }}>
+                <Text style={{ color: '#166534', fontSize: 14, lineHeight: 24 }}>
+                  1️⃣ Abre el correo y copia la contraseña temporal{'\n'}
+                  2️⃣ Inicia sesión con esa contraseña{'\n'}
+                  3️⃣ La app te pedirá crear una nueva contraseña segura
+                </Text>
+              </View>
+              <Text style={{ color: '#9CA3AF', fontSize: 12, marginTop: 10, textAlign: 'center' }}>
+                Revisa también tu carpeta de spam.
               </Text>
               <TouchableOpacity
-                style={{ marginTop: 32, backgroundColor: '#16a34a', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 40 }}
+                style={{ marginTop: 28, backgroundColor: '#16a34a', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 40 }}
                 onPress={() => router.replace('/(auth)/login')}
               >
-                <Text style={{ color: 'white', fontWeight: '600', fontSize: 16 }}>Ir al inicio de sesión</Text>
+                <Text style={{ color: 'white', fontWeight: '700', fontSize: 16 }}>Ir a iniciar sesión</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -104,16 +110,16 @@ export default function ForgotPasswordScreen() {
               <TouchableOpacity
                 style={{
                   backgroundColor: loading ? '#86efac' : '#16a34a',
-                  borderRadius: 16,
-                  paddingVertical: 16,
-                  alignItems: 'center',
-                  marginTop: 24,
+                  borderRadius: 16, paddingVertical: 16,
+                  alignItems: 'center', marginTop: 24,
+                  flexDirection: 'row', justifyContent: 'center', gap: 8,
                 }}
                 onPress={handleReset}
                 disabled={loading}
               >
-                <Text style={{ color: 'white', fontWeight: '600', fontSize: 16 }}>
-                  {loading ? 'Enviando...' : 'Enviar enlace de recuperación'}
+                {loading && <ActivityIndicator size="small" color="#fff" />}
+                <Text style={{ color: 'white', fontWeight: '700', fontSize: 16 }}>
+                  {loading ? 'Enviando contraseña temporal...' : 'Enviar contraseña temporal'}
                 </Text>
               </TouchableOpacity>
 

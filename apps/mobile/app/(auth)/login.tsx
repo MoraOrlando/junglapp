@@ -8,7 +8,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { doc, getDoc } from 'firebase/firestore';
+import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
+
+const { db } = initFirebase();
 
 // Biometric + SecureStore — only available in native builds, not Expo Go
 let LocalAuthentication: any = null;
@@ -105,9 +109,17 @@ export default function LoginScreen() {
   async function onSubmit(data: FormData) {
     setLoading(true);
     try {
-      await signIn(data.email, data.password);
+      const firebaseUser = await signIn(data.email, data.password);
       if (SecureStore) {
         await SecureStore.setItemAsync(CREDS_KEY, JSON.stringify({ email: data.email, password: data.password }));
+      }
+      // Verificar si debe cambiar contraseña
+      if (firebaseUser?.uid) {
+        const userDoc = await getDoc(doc(db, COLLECTIONS.USERS, firebaseUser.uid));
+        if (userDoc.data()?.mustChangePassword) {
+          router.replace('/(auth)/change-password');
+          return;
+        }
       }
     } catch (e: any) {
       const msg = e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password'

@@ -43,7 +43,7 @@ interface AuthContextType {
   user: User | null;
   firebaseUser: import('firebase/auth').User | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<import('firebase/auth').User>;
   signUp: (email: string, password: string, userData: Omit<User, 'uid' | 'createdAt'>) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signInWithMicrosoft: () => Promise<void>;
@@ -119,7 +119,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signIn(email: string, password: string) {
-    await signInWithEmailAndPassword(auth, email, password);
+    const { user: fbUser } = await signInWithEmailAndPassword(auth, email, password);
+    return fbUser;
   }
 
   async function signInWithGoogle() {
