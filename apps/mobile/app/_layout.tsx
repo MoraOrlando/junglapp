@@ -19,6 +19,7 @@ function RouteGuard() {
     const inVet = segments[0] === '(vet)';
     const inStore = segments[0] === '(store)';
     const inSupport = segments[0] === '(support)';
+    const inTrainer = segments[0] === '(trainer)';
 
     if (!user && !inAuth) {
       router.replace('/(auth)');
@@ -31,6 +32,7 @@ function RouteGuard() {
         if (role === 'owner') router.replace('/(owner)');
         else if (role === 'vet') router.replace('/(vet)');
         else if (role === 'store') router.replace('/(store)');
+        else if (role === 'trainer') router.replace('/(trainer)');
         else if (role === 'support') router.replace('/(owner)');
       }
     }
@@ -51,6 +53,7 @@ export default function RootLayout() {
             <Stack.Screen name="(owner)" />
             <Stack.Screen name="(vet)" />
             <Stack.Screen name="(store)" />
+            <Stack.Screen name="(trainer)" />
           </Stack>
         </AuthProvider>
       </SafeAreaProvider>

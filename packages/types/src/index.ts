@@ -1,4 +1,4 @@
-export type UserRole = 'owner' | 'vet' | 'store' | 'walker' | 'grooming' | 'support';
+export type UserRole = 'owner' | 'vet' | 'store' | 'walker' | 'grooming' | 'trainer' | 'support';
 
 export interface User {
   uid: string;
@@ -69,6 +69,28 @@ export interface Veterinarian {
   availability: VetAvailability;
   rating?: number;
   reviewCount?: number;
+  createdAt: string;
+}
+
+export interface Trainer {
+  id: string;
+  userId: string;
+  name: string;
+  rut: string;
+  phone: string;
+  email: string;
+  address: string;
+  photoUrl?: string;
+  idImageUrl?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  specialties: string[];
+  certifications: string[];
+  experience: string;
+  serviceArea: string;
+  consultationFee: number;
+  rating?: number;
+  reviewCount?: number;
+  availability?: { [date: string]: string[] };
   createdAt: string;
 }
 

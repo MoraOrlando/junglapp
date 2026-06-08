@@ -13,6 +13,7 @@ export const COLLECTIONS = {
   WALKERS: 'walkers',
   GROOMERS: 'groomers',
   REVIEWS: 'reviews',
+  TRAINERS: 'trainers',
 } as const;
 
 export const RTDB_PATHS = {

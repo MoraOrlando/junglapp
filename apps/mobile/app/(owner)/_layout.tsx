@@ -91,12 +91,13 @@ export default function OwnerLayout() {
         }}
       />
 
-      {/* Hidden routes */}
-      <Tabs.Screen name="pets" options={{ href: null }} />
-      <Tabs.Screen name="chat" options={{ href: null }} />
-      <Tabs.Screen name="lost" options={{ href: null }} />
-      <Tabs.Screen name="vets" options={{ href: null }} />
-      <Tabs.Screen name="store" options={{ href: null }} />
+      {/* ── Hidden routes ── */}
+      <Tabs.Screen name="pets"      options={{ href: null }} />
+      <Tabs.Screen name="chat"      options={{ href: null }} />
+      <Tabs.Screen name="lost"      options={{ href: null }} />
+      <Tabs.Screen name="vets"      options={{ href: null }} />
+      <Tabs.Screen name="store"     options={{ href: null }} />
+      <Tabs.Screen name="trainers"  options={{ href: null }} />
     </Tabs>
   );
 }

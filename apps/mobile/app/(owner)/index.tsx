@@ -48,6 +48,29 @@ export default function OwnerHomeScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Services grid */}
+      <View style={{ paddingHorizontal: 24, marginBottom: 16 }}>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B7280', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>Servicios</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+          {[
+            { label: 'Veterinarios', emoji: '🩺', route: '/(owner)/vets' },
+            { label: 'Tiendas', emoji: '🛒', route: '/(owner)/store' },
+            { label: 'Adiestradores', emoji: '🐕', route: '/(owner)/trainers' },
+            { label: 'Perdidos', emoji: '🔍', route: '/(owner)/lost' },
+          ].map((item) => (
+            <TouchableOpacity
+              key={item.route}
+              onPress={() => router.push(item.route as any)}
+              style={{ width: '47%', backgroundColor: '#fff', borderRadius: 16, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: '#F3F4F6' }}
+              activeOpacity={0.8}
+            >
+              <Text style={{ fontSize: 28, marginBottom: 4 }}>{item.emoji}</Text>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151' }}>{item.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
       <Text className="px-6 text-gray-700 font-semibold text-base mb-2">Mis Mascotas</Text>
 
       <ScrollView
