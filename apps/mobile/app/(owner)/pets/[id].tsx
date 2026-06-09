@@ -248,7 +248,7 @@ export default function PetDetailScreen() {
 
           <View className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100">
             <Text className="text-gray-400 text-xs mb-2">Vacunas</Text>
-            {pet.medicalRecord.vaccinations.length === 0 ? (
+            {(pet.medicalRecord?.vaccinations ?? []).length === 0 ? (
               <View className="items-center py-4">
                 <Text className="text-gray-300 text-4xl mb-2">💉</Text>
                 <Text className="text-gray-400 text-sm">Sin vacunas registradas</Text>
@@ -260,7 +260,7 @@ export default function PetDetailScreen() {
                 </TouchableOpacity>
               </View>
             ) : (
-              pet.medicalRecord.vaccinations.map((v, i) => (
+              (pet.medicalRecord?.vaccinations ?? []).map((v, i) => (
                 <View key={i} className="flex-row justify-between py-1 border-b border-gray-50">
                   <Text className="text-gray-700">{v.name}</Text>
                   <Text className="text-gray-400 text-sm">{v.date}</Text>
@@ -269,21 +269,21 @@ export default function PetDetailScreen() {
             )}
           </View>
 
-          {pet.medicalRecord.allergies.length > 0 && (
+          {(pet.medicalRecord?.allergies ?? []).length > 0 && (
             <View className="bg-red-50 rounded-2xl p-4 mb-4 border border-red-100">
               <Text className="text-red-500 text-xs mb-2 font-medium">⚠️ Alergias</Text>
-              <Text className="text-red-700">{pet.medicalRecord.allergies.join(', ')}</Text>
+              <Text className="text-red-700">{(pet.medicalRecord?.allergies ?? []).join(', ')}</Text>
             </View>
           )}
 
-          {pet.medicalRecord.conditions.length > 0 && (
+          {(pet.medicalRecord?.conditions ?? []).length > 0 && (
             <View className="bg-amber-50 rounded-2xl p-4 mb-4 border border-amber-100">
               <Text className="text-amber-600 text-xs mb-2 font-medium">📋 Condiciones</Text>
-              <Text className="text-amber-700">{pet.medicalRecord.conditions.join(', ')}</Text>
+              <Text className="text-amber-700">{(pet.medicalRecord?.conditions ?? []).join(', ')}</Text>
             </View>
           )}
 
-          {pet.medicalRecord.notes && (
+          {pet.medicalRecord?.notes && (
             <View className="bg-white rounded-2xl p-4 mb-6 shadow-sm border border-gray-100">
               <Text className="text-gray-400 text-xs mb-1">Notas médicas</Text>
               <Text className="text-gray-700">{pet.medicalRecord.notes}</Text>

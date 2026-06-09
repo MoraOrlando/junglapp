@@ -13,7 +13,7 @@ export default function SupportLayout() {
   const { user, loading } = useAuth();
   const router = useRouter();
   useEffect(() => {
-    if (!loading && user && user.role !== 'support') router.replace('/(auth)');
+    if (!loading && (!user || user.role !== 'support')) router.replace('/(auth)');
   }, [user, loading]);
 
   return (

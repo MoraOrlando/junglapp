@@ -11,7 +11,7 @@ export default function VetLayout() {
   const { user, loading } = useAuth();
   const router = useRouter();
   useEffect(() => {
-    if (!loading && user && user.role !== 'vet') router.replace('/(auth)');
+    if (!loading && (!user || user.role !== 'vet')) router.replace('/(auth)');
   }, [user, loading]);
 
   return (

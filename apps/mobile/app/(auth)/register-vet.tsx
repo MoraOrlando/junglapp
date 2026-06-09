@@ -152,8 +152,10 @@ export default function RegisterVetScreen() {
     if (!termsAccepted) { Alert.alert('Requerido', 'Acepta los términos para continuar'); return; }
 
     setLoading(true);
+    let fbUser: any = null;
     try {
-      const { user: fbUser } = await createUserWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+      const cred = await createUserWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+      fbUser = cred.user;
 
       const [credentialUrl, photoUrl] = await Promise.all([
         uploadImage(credentialUri),
@@ -197,6 +199,9 @@ export default function RegisterVetScreen() {
         { text: 'OK', onPress: () => router.replace('/(auth)/login') },
       ]);
     } catch (e: any) {
+      if (fbUser && e.code !== 'auth/email-already-in-use') {
+        try { await fbUser.delete(); } catch {}
+      }
       const msg = e.code === 'auth/email-already-in-use'
         ? 'Este correo ya está registrado. Intenta iniciar sesión.'
         : e.message;

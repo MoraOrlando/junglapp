@@ -22,17 +22,15 @@ export async function uploadImage(uri: string): Promise<string> {
     throw new Error('Cloudinary credentials not configured. Set EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME and EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET.');
   }
 
-  const ext = uri.split('.').pop()?.toLowerCase() ?? '';
-  if (!ALLOWED_EXTENSIONS.includes(ext)) {
-    throw new Error(`Tipo de archivo no permitido: ${ext}. Solo se aceptan ${ALLOWED_EXTENSIONS.join(', ')}.`);
-  }
-
-  const mimeType = getMimeType(ext);
+  const pathWithoutQuery = uri.split('?')[0];
+  const ext = pathWithoutQuery.split('.').pop()?.toLowerCase() ?? '';
+  const resolvedExt = ALLOWED_EXTENSIONS.includes(ext) ? ext : 'jpg';
+  const mimeType = getMimeType(resolvedExt);
   const uploadUrl = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
 
   const form = new FormData();
   form.append('upload_preset', UPLOAD_PRESET);
-  form.append('file', { uri, type: mimeType, name: `upload.${ext}` } as any);
+  form.append('file', { uri, type: mimeType, name: `upload.${resolvedExt}` } as any);
 
   const res = await fetch(uploadUrl, { method: 'POST', body: form });
   if (!res.ok) throw new Error(`Error al subir imagen: ${res.status}`);
