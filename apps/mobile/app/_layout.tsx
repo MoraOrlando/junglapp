@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../context/AuthContext';
-import SplashAnimation from '../components/SplashAnimation';
 import '../global.css';
 
 function RouteGuard() {
@@ -43,8 +42,6 @@ function RouteGuard() {
 }
 
 export default function RootLayout() {
-  const [showSplash, setShowSplash] = useState(true);
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
@@ -59,9 +56,6 @@ export default function RootLayout() {
             <Stack.Screen name="(trainer)" />
             <Stack.Screen name="(support)" />
           </Stack>
-          {showSplash && (
-            <SplashAnimation onFinish={() => setShowSplash(false)} duration={3000} />
-          )}
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
