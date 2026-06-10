@@ -33,9 +33,13 @@ export default function OwnerLayout() {
     const unsub = onSnapshot(q, (snap) => {
       setUnreadChats(snap.docs.filter((d) => {
         const data = d.data();
-        return data.lastMessage && data.lastMessageAt && data.lastReadAt?.[user.uid] < data.lastMessageAt;
+        if (!data.lastMessage || !data.lastMessageAt) return false;
+        const lastMsg = typeof data.lastMessageAt === 'string' ? data.lastMessageAt : data.lastMessageAt?.toDate?.().toISOString() ?? '';
+        const lastRead = data.lastReadAt?.[user.uid];
+        const lastReadStr = typeof lastRead === 'string' ? lastRead : lastRead?.toDate?.().toISOString() ?? '';
+        return lastReadStr < lastMsg;
       }).length);
-      setMatchCount(snap.docs.filter((d) => d.data().matchId).length);
+      setMatchCount(snap.docs.filter((d) => !!d.data().matchId).length);
     });
     return unsub;
   }, [user?.uid]);

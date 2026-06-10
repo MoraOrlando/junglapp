@@ -15,6 +15,7 @@ export default function VetProfileScreen() {
   const { user, logOut } = useAuth();
   const [vet, setVet] = useState<Veterinarian | null>(null);
   const [vetDocId, setVetDocId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -35,10 +36,12 @@ export default function VetProfileScreen() {
         setPhone(v.phone || '');
         setAddress(v.address || '');
         setLicenseNumber(v.licenseNumber || '');
-        setFee(String(v.consultationFee || ''));
+        setFee(String(v.consultationFee ?? ''));
         setSpecialtyInput((v.specialties || []).join(', '));
+      } else {
+        setLoadError(true);
       }
-    });
+    }).catch(() => setLoadError(true));
   }, [user]);
 
   async function pickPhoto() {
@@ -76,8 +79,16 @@ export default function VetProfileScreen() {
 
   if (!vet) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB', alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={GREEN} />
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
+        {loadError ? (
+          <>
+            <Text style={{ fontSize: 40, marginBottom: 12 }}>⚠️</Text>
+            <Text style={{ color: '#374151', fontWeight: '600', textAlign: 'center' }}>No se encontró tu perfil veterinario.</Text>
+            <Text style={{ color: '#9CA3AF', fontSize: 13, marginTop: 8, textAlign: 'center' }}>Contacta a soporte si el problema persiste.</Text>
+          </>
+        ) : (
+          <ActivityIndicator color={GREEN} />
+        )}
       </SafeAreaView>
     );
   }

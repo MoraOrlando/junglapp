@@ -61,14 +61,19 @@ export default function VetDashboardScreen() {
       const vet = { id: vetSnap.docs[0].id, ...vetSnap.docs[0].data() } as Veterinarian;
       setVetProfile(vet);
 
+      const todayStr = today.toISOString().slice(0, 10);
       const apptSnap = await getDocs(
-        query(collection(db, COLLECTIONS.APPOINTMENTS), where('vetId', '==', vet.id))
+        query(
+          collection(db, COLLECTIONS.APPOINTMENTS),
+          where('vetId', '==', vet.id),
+          where('date', '==', todayStr),
+        )
       );
-      const activeStatuses = ['pending', 'confirmed', 'arrived'];
+      const activeStatuses = ['pending', 'confirmed', 'arrived', 'completed'];
       const appts = apptSnap.docs
         .map((d) => ({ id: d.id, ...d.data() } as Appointment))
         .filter((a) => activeStatuses.includes(a.status))
-        .sort((a, b) => a.date.localeCompare(b.date));
+        .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''));
       setAppointments(appts);
     }
   }
@@ -83,7 +88,7 @@ export default function VetDashboardScreen() {
     setRefreshing(false);
   }
 
-  const pendingCount = appointments.filter((a) => a.status === 'pending').length;
+  const pendingCount = appointments.filter((a) => ['pending', 'confirmed'].includes(a.status)).length;
   const completedCount = appointments.filter((a) => a.status === 'completed').length;
   const completedFee = vetProfile
     ? completedCount * (vetProfile.consultationFee || 0)

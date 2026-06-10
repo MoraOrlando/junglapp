@@ -74,9 +74,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (googleResponse?.type === 'success') {
       const { id_token } = googleResponse.params;
       const credential = GoogleAuthProvider.credential(id_token);
-      signInWithCredential(auth, credential).then(async ({ user: fbUser }) => {
-        await ensureUserDoc(fbUser, 'owner');
-      });
+      signInWithCredential(auth, credential)
+        .then(async ({ user: fbUser }) => { await ensureUserDoc(fbUser, 'owner'); })
+        .catch(() => {});
     }
   }, [googleResponse]);
 
@@ -139,9 +139,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       redirectUri,
     });
     const result = await request.promptAsync(discovery);
-    if (result.type === 'success' && result.params.access_token) {
+    if (result.type === 'success') {
+      const { id_token, access_token } = result.params;
       const provider = new OAuthProvider('microsoft.com');
-      const credential = provider.credential({ accessToken: result.params.access_token });
+      const credential = provider.credential({ idToken: id_token, accessToken: access_token });
       const { user: fbUser } = await signInWithCredential(auth, credential);
       await ensureUserDoc(fbUser, 'owner');
     }

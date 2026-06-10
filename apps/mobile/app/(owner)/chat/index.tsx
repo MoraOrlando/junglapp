@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import type { Chat } from '@junglapp/types';
@@ -31,22 +31,19 @@ export default function ChatListScreen() {
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
-  async function loadChats() {
-    if (!user) return;
-    const snap = await getDocs(
-      query(collection(db, COLLECTIONS.CHATS), where('participants', 'array-contains', user.uid))
-    );
-    const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Chat));
-    setChats(data.sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')));
-  }
-
   useEffect(() => {
-    loadChats();
-  }, [user]);
+    if (!user) return;
+    const q = query(collection(db, COLLECTIONS.CHATS), where('participants', 'array-contains', user.uid));
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Chat));
+      setChats(data.sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')));
+    });
+    return unsub;
+  }, [user?.uid]);
 
   async function onRefresh() {
     setRefreshing(true);
-    await loadChats();
+    await new Promise((r) => setTimeout(r, 400));
     setRefreshing(false);
   }
 

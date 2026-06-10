@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, Dimensions, Alert } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
-  collection, query, where, getDocs, addDoc, doc, getDoc, onSnapshot
+  collection, query, where, getDocs, addDoc, doc, getDoc, onSnapshot, limit
 } from 'firebase/firestore';
 import { ref, set } from 'firebase/database';
 import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
@@ -54,9 +54,21 @@ export default function MatchScreen() {
     if (!selectedMyPet || candidates.length === 0) return;
     const candidate = candidates[currentIndex];
     if (liked && user) {
+      // Guard against duplicate matches
+      const existing = await getDocs(
+        query(collection(db, COLLECTIONS.MATCHES),
+          where('pet1Id', '==', selectedMyPet.id),
+          where('pet2Id', '==', candidate.id),
+          limit(1))
+      );
+      if (!existing.empty) {
+        setCurrentIndex((i) => i + 1);
+        return;
+      }
+
       // Get candidate owner name
       const ownerDoc = await getDoc(doc(db, COLLECTIONS.USERS, candidate.ownerId));
-      const ownerData = ownerDoc.data();
+      const ownerData = ownerDoc.exists() ? ownerDoc.data() : null;
 
       // Create match
       const matchRef = await addDoc(collection(db, COLLECTIONS.MATCHES), {
