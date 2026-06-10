@@ -144,6 +144,20 @@ service cloud.firestore {
       allow delete: if isSupport();
     }
 
+    // ── Reminders (próximos controles veterinarios) ────────────────────────
+    match /reminders/{reminderId} {
+      allow read: if isAuth() && resource.data.ownerId == request.auth.uid;
+      allow create: if isAuth() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isAuth() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ── Vet invites (invitaciones a veterinarios no registrados) ──────────
+    match /vetInvites/{inviteId} {
+      allow read: if isSupport();
+      allow create: if isAuth() && request.resource.data.invitedBy == request.auth.uid;
+      allow update, delete: if isSupport();
+    }
+
     // ── Stores ─────────────────────────────────────────────────────────────
     match /stores/{storeId} {
       allow read: if isAuth();

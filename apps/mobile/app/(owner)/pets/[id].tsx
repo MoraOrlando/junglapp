@@ -14,10 +14,23 @@ import type { Pet } from '@junglapp/types';
 
 const { db } = initFirebase();
 
+interface VisitEntry {
+  id: string;
+  date: string;
+  vetName: string;
+  source: 'owner' | 'vet';
+  notes?: string;
+  diagnosis?: string;
+  treatment?: string;
+  prescriptionUrl?: string | null;
+  nextControlDate?: string | null;
+}
+
 export default function PetDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [pet, setPet] = useState<Pet | null>(null);
+  const [visits, setVisits] = useState<VisitEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [isLost, setIsLost] = useState(false);
   const [showFlame, setShowFlame] = useState(false);
@@ -37,6 +50,36 @@ export default function PetDetailScreen() {
       where('petId', '==', id)
     )).then((snap) => {
       setIsLost(snap.docs.some((d) => d.data().isFound === false));
+    });
+
+    // Visit history: owner-registered visits + vet-completed in-app consultations
+    Promise.all([
+      getDocs(query(collection(db, COLLECTIONS.MEDICAL_VISITS), where('petId', '==', id))),
+      getDocs(query(collection(db, COLLECTIONS.APPOINTMENTS), where('petId', '==', id))),
+    ]).then(([visitsSnap, apptsSnap]) => {
+      const ownerVisits: VisitEntry[] = visitsSnap.docs.map((d) => {
+        const v = d.data();
+        return {
+          id: d.id, source: 'owner',
+          date: v.date ?? '', vetName: v.vetName ?? 'Veterinario',
+          notes: v.notes, prescriptionUrl: v.prescriptionUrl,
+          nextControlDate: v.nextControlDate,
+        };
+      });
+      // Vet flow: only appointments the vet already completed are visible in the history
+      const vetVisits: VisitEntry[] = apptsSnap.docs
+        .filter((d) => d.data().status === 'completed' && d.data().consultation)
+        .map((d) => {
+          const a = d.data();
+          return {
+            id: d.id, source: 'vet',
+            date: a.date ?? '', vetName: a.vetName ?? 'Veterinario JunglApp',
+            diagnosis: a.consultation?.diagnosis,
+            treatment: a.consultation?.treatmentDone || a.consultation?.treatment,
+            prescriptionUrl: a.consultation?.prescriptionImageUrl,
+          };
+        });
+      setVisits([...ownerVisits, ...vetVisits].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? '')));
     });
   }, [id]);
 
@@ -282,6 +325,30 @@ export default function PetDetailScreen() {
               <Text className="text-amber-700">{(pet.medicalRecord?.conditions ?? []).join(', ')}</Text>
             </View>
           )}
+
+          {/* Visit history */}
+          <View className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100">
+            <Text className="text-gray-400 text-xs mb-2">Historial de visitas</Text>
+            {visits.length === 0 ? (
+              <Text className="text-gray-400 text-sm text-center py-3">Sin visitas registradas aún</Text>
+            ) : (
+              visits.map((v) => (
+                <View key={`${v.source}-${v.id}`} className="py-2.5 border-b border-gray-50">
+                  <View className="flex-row justify-between items-center">
+                    <Text className="font-semibold text-gray-800 text-sm">🩺 {v.vetName}</Text>
+                    <Text className="text-gray-400 text-xs">{v.date}</Text>
+                  </View>
+                  <Text className={`text-xs mt-0.5 ${v.source === 'vet' ? 'text-blue-500' : 'text-gray-400'}`}>
+                    {v.source === 'vet' ? 'Consulta agendada vía JunglApp ✓' : 'Registrada por ti'}
+                  </Text>
+                  {v.diagnosis ? <Text className="text-gray-600 text-xs mt-1">Diagnóstico: {v.diagnosis}</Text> : null}
+                  {v.treatment ? <Text className="text-gray-600 text-xs mt-0.5">Tratamiento: {v.treatment}</Text> : null}
+                  {v.notes ? <Text className="text-gray-600 text-xs mt-1">{v.notes}</Text> : null}
+                  {v.nextControlDate ? <Text className="text-amber-600 text-xs mt-1">📅 Próximo control: {v.nextControlDate}</Text> : null}
+                </View>
+              ))
+            )}
+          </View>
 
           {pet.medicalRecord?.notes && (
             <View className="bg-white rounded-2xl p-4 mb-6 shadow-sm border border-gray-100">

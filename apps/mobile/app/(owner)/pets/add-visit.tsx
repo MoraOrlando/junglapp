@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  Alert, KeyboardAvoidingView, Platform
+  Alert, KeyboardAvoidingView, Platform, Linking
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Calendar } from 'react-native-calendars';
+import YearCalendar from '../../../components/YearCalendar';
 import * as ImagePicker from 'expo-image-picker';
 import * as ExpoCalendar from 'expo-calendar';
 import {
   collection, addDoc, query, where, getDocs, orderBy, limit, doc, getDoc
 } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
+import { useAuth } from '../../../context/AuthContext';
 import type { Veterinarian } from '@junglapp/types';
 
 const { db } = initFirebase();
@@ -32,8 +33,10 @@ function StarRating({ value, onChange }: { value: number; onChange: (v: number) 
 export default function AddVisitScreen() {
   const { petId } = useLocalSearchParams<{ petId: string }>();
   const router = useRouter();
+  const { user } = useAuth();
 
   const [vetName, setVetName] = useState('');
+  const [vetEmail, setVetEmail] = useState('');
   const [vetSuggestions, setVetSuggestions] = useState<Veterinarian[]>([]);
   const [selectedVet, setSelectedVet] = useState<Veterinarian | null>(null);
   const [rating, setRating] = useState(0);
@@ -45,7 +48,7 @@ export default function AddVisitScreen() {
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Autocomplete: search registered vets as user types
+  // Autocomplete: search registered vets by name or email as user types
   useEffect(() => {
     if (vetName.length < 2) { setVetSuggestions([]); setSelectedVet(null); return; }
     const lower = vetName.toLowerCase();
@@ -56,7 +59,7 @@ export default function AddVisitScreen() {
     )).then((snap) => {
       const matches = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as Veterinarian))
-        .filter((v) => v.name.toLowerCase().includes(lower));
+        .filter((v) => v.name.toLowerCase().includes(lower) || v.email?.toLowerCase().includes(lower));
       setVetSuggestions(matches);
     });
   }, [vetName]);
@@ -98,16 +101,17 @@ export default function AddVisitScreen() {
     ]);
   }
 
-  async function addToDeviceCalendar() {
+  // Adds the next-control reminder to the device calendar. Returns true on success.
+  async function addToDeviceCalendar(silent = false): Promise<boolean> {
     try {
       const { status } = await ExpoCalendar.requestCalendarPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permiso denegado', 'No se pudo acceder al calendario.');
-        return;
+        if (!silent) Alert.alert('Permiso denegado', 'No se pudo acceder al calendario.');
+        return false;
       }
       const calendars = await ExpoCalendar.getCalendarsAsync(ExpoCalendar.EntityTypes.EVENT);
       const defaultCal = calendars.find((c) => c.allowsModifications) ?? calendars[0];
-      if (!defaultCal) return;
+      if (!defaultCal) return false;
 
       const date = new Date(nextControlDate + 'T10:00:00');
       await ExpoCalendar.createEventAsync(defaultCal.id, {
@@ -115,11 +119,35 @@ export default function AddVisitScreen() {
         startDate: date,
         endDate: new Date(date.getTime() + 60 * 60 * 1000),
         notes: `Recordatorio de control veterinario registrado en JunglApp`,
-        alarms: [{ relativeOffset: -60 }],
+        alarms: [{ relativeOffset: -60 }, { relativeOffset: -24 * 60 }],
       });
-      Alert.alert('✅ Listo', 'Recordatorio agregado a tu calendario.');
+      if (!silent) Alert.alert('✅ Listo', 'Recordatorio agregado a tu calendario.');
+      return true;
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      if (!silent) Alert.alert('Error', e.message);
+      return false;
+    }
+  }
+
+  // Stores an invite so the vet can be contacted to join JunglApp,
+  // and opens the mail composer if an email was provided.
+  async function inviteVet() {
+    try {
+      await addDoc(collection(db, COLLECTIONS.VET_INVITES), {
+        vetName: vetName.trim(),
+        vetEmail: vetEmail.trim() || null,
+        invitedBy: user?.uid ?? null,
+        invitedByName: user?.name ?? null,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      });
+    } catch {}
+    if (vetEmail.trim()) {
+      const subject = encodeURIComponent('Te invito a unirte a JunglApp 🐾');
+      const body = encodeURIComponent(
+        `Hola ${vetName.trim()},\n\nTe invito a registrarte en JunglApp, la app donde los dueños de mascotas pueden agendar y registrar sus visitas veterinarias contigo.\n\n¡Únete y haz crecer tu consulta!\n\nSaludos,\n${user?.name ?? ''}`
+      );
+      Linking.openURL(`mailto:${vetEmail.trim()}?subject=${subject}&body=${body}`).catch(() => {});
     }
   }
 
@@ -128,9 +156,27 @@ export default function AddVisitScreen() {
     router.push(`/(owner)/vets/${selectedVet.id}?bookDate=${nextControlDate}` as any);
   }
 
-  async function handleSave() {
+  function handleSave() {
     if (!petId) return;
     if (rating === 0) { Alert.alert('Faltan datos', 'Por favor califica el servicio.'); return; }
+
+    // Vet entered manually and not found among registered vets → offer to invite
+    if (!selectedVet && vetName.trim().length > 0) {
+      Alert.alert(
+        '🩺 Veterinario no registrado',
+        `"${vetName.trim()}" no está registrado en JunglApp. ¿Deseas invitarlo a ser parte de JunglApp?`,
+        [
+          { text: 'Sí, invitar', onPress: async () => { await inviteVet(); await doSave(); } },
+          { text: 'Continuar sin invitar', onPress: () => doSave() },
+          { text: 'Cancelar', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+    doSave();
+  }
+
+  async function doSave() {
     setSaving(true);
     try {
       let prescriptionUrl: string | undefined;
@@ -138,6 +184,7 @@ export default function AddVisitScreen() {
 
       await addDoc(collection(db, COLLECTIONS.MEDICAL_VISITS), {
         petId,
+        ownerId: user?.uid ?? null,
         date: new Date().toISOString().split('T')[0],
         vetName: selectedVet?.name || vetName,
         vetId: selectedVet?.id || null,
@@ -148,7 +195,26 @@ export default function AddVisitScreen() {
         createdAt: new Date().toISOString(),
       });
 
-      Alert.alert('✅ Visita registrada', 'La visita quedó guardada en la ficha médica.', [
+      let calendarMsg = '';
+      if (nextControlDate) {
+        // In-app reminder: home screen shows a banner when the control date is near
+        await addDoc(collection(db, COLLECTIONS.REMINDERS), {
+          ownerId: user?.uid ?? null,
+          petId,
+          type: 'vet_control',
+          date: nextControlDate,
+          vetName: selectedVet?.name || vetName || null,
+          done: false,
+          createdAt: new Date().toISOString(),
+        });
+        // Device calendar reminder
+        const added = await addToDeviceCalendar(true);
+        calendarMsg = added
+          ? '\n\n📅 Se agregó un recordatorio del próximo control a tu calendario y la app te avisará cuando se acerque la fecha.'
+          : '\n\n🔔 La app te avisará cuando se acerque la fecha del próximo control.';
+      }
+
+      Alert.alert('✅ Visita registrada', `La visita quedó guardada en la ficha médica.${calendarMsg}`, [
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (e: any) {
@@ -230,6 +296,24 @@ export default function AddVisitScreen() {
                   <Text className="text-blue-500 text-xs mt-0.5">{selectedVet.address}</Text>
                 </View>
               )}
+
+              {/* Manual vet → optional email to send an invite */}
+              {!selectedVet && vetName.trim().length >= 2 && (
+                <View className="mt-2">
+                  <Text className="text-gray-400 text-xs mb-1">Correo del veterinario (opcional, para invitarlo a JunglApp)</Text>
+                  <View className="border border-gray-200 rounded-xl bg-white flex-row items-center px-4">
+                    <Text className="text-lg mr-2">✉️</Text>
+                    <TextInput
+                      className="flex-1 py-3 text-base text-gray-800"
+                      placeholder="correo@veterinario.cl"
+                      value={vetEmail}
+                      onChangeText={setVetEmail}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                    />
+                  </View>
+                </View>
+              )}
             </View>
           </View>
 
@@ -280,11 +364,10 @@ export default function AddVisitScreen() {
 
             {showCalendar && (
               <View className="mt-2 rounded-2xl overflow-hidden border border-gray-200">
-                <Calendar
+                <YearCalendar
                   onDayPress={handleDateSelect}
                   minDate={new Date().toISOString().split('T')[0]}
                   markedDates={nextControlDate ? { [nextControlDate]: { selected: true, selectedColor: '#2D6A4F' } } : {}}
-                  theme={{ selectedDayBackgroundColor: '#2D6A4F', todayTextColor: '#2D6A4F', arrowColor: '#2D6A4F' }}
                 />
               </View>
             )}

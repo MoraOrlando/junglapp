@@ -8,15 +8,22 @@ import type { Veterinarian, Store } from '@junglapp/types';
 
 const { db } = initFirebase();
 
-type Category = 'all' | 'vet' | 'store' | 'clinic' | 'grooming';
+type Category = 'all' | 'vet' | 'veterinaria' | 'store' | 'grooming';
 
 const CATEGORIES: { id: Category; label: string; emoji: string }[] = [
   { id: 'all', label: 'Todos', emoji: '✨' },
   { id: 'vet', label: 'Veterinarios', emoji: '🩺' },
+  { id: 'veterinaria', label: 'Veterinarias', emoji: '🏥' },
   { id: 'store', label: 'Tiendas', emoji: '🛒' },
-  { id: 'clinic', label: 'Clínicas', emoji: '🏥' },
   { id: 'grooming', label: 'Peluquerías', emoji: '✂️' },
 ];
+
+const SERVICE_LABELS: Record<string, string> = {
+  veterinaria: '🩺 Veterinaria',
+  peluqueria: '✂️ Peluquería',
+  rayos_x: '🩻 Rayos X',
+  intervenciones: '🔬 Intervenciones',
+};
 
 interface NearItem {
   id: string;
@@ -29,6 +36,9 @@ interface NearItem {
   rating?: number;
   reviewCount?: number;
   consultationFee?: number;
+  is24_7?: boolean;
+  openingHours?: string;
+  clinicServices?: string[];
 }
 
 export default function NearScreen() {
@@ -56,6 +66,9 @@ export default function NearScreen() {
         rating: v.rating,
         reviewCount: v.reviewCount,
         consultationFee: v.consultationFee,
+        is24_7: v.is24_7,
+        openingHours: v.openingHours,
+        clinicServices: v.clinicServices,
       };
     });
 
@@ -85,8 +98,11 @@ export default function NearScreen() {
 
   const filtered = items.filter((it) => {
     if (category === 'all') return true;
-    if (category === 'vet' || category === 'clinic') return it.kind === 'vet';
-    if (category === 'store' || category === 'grooming') return it.kind === 'store';
+    if (category === 'vet') return it.kind === 'vet';
+    // Veterinarias: clinics with declared services or 24/7 emergency attention
+    if (category === 'veterinaria') return it.kind === 'vet' && (!!it.is24_7 || (it.clinicServices?.length ?? 0) > 0);
+    if (category === 'store') return it.kind === 'store';
+    if (category === 'grooming') return (it.kind === 'vet' && (it.clinicServices ?? []).includes('peluqueria')) || it.kind === 'store';
     return true;
   });
 
@@ -177,6 +193,27 @@ export default function NearScreen() {
                     {it.name}
                   </Text>
                   <Text style={{ color: '#64748B', fontSize: 12, marginBottom: 4 }}>{it.address}</Text>
+
+                  {/* 24/7 emergency + schedule + clinic services */}
+                  {it.kind === 'vet' && (it.is24_7 || it.openingHours || (it.clinicServices?.length ?? 0) > 0) && (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
+                      {it.is24_7 && (
+                        <View style={{ backgroundColor: '#FEE2E2', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                          <Text style={{ fontSize: 11, color: '#DC2626', fontWeight: '700' }}>🚨 Urgencias 24/7</Text>
+                        </View>
+                      )}
+                      {!it.is24_7 && it.openingHours ? (
+                        <View style={{ backgroundColor: '#F1F5F9', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                          <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>🕐 {it.openingHours}</Text>
+                        </View>
+                      ) : null}
+                      {(it.clinicServices ?? []).map((s) => (
+                        <View key={s} style={{ backgroundColor: '#EFF6FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                          <Text style={{ fontSize: 11, color: '#1D4ED8', fontWeight: '600' }}>{SERVICE_LABELS[s] ?? s}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
 
                   {/* Rating + fee row (for vets) */}
                   {it.kind === 'vet' && (

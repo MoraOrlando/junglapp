@@ -6,7 +6,14 @@ import * as ImagePicker from 'expo-image-picker';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
-import type { Veterinarian } from '@junglapp/types';
+import type { Veterinarian, ClinicService } from '@junglapp/types';
+
+const CLINIC_SERVICES: { id: ClinicService; label: string }[] = [
+  { id: 'veterinaria', label: '🩺 Veterinaria' },
+  { id: 'peluqueria', label: '✂️ Peluquería' },
+  { id: 'rayos_x', label: '🩻 Rayos X' },
+  { id: 'intervenciones', label: '🔬 Intervenciones' },
+];
 
 const { db } = initFirebase();
 const GREEN = '#2D6A4F';
@@ -22,6 +29,9 @@ export default function VetProfileScreen() {
   const [licenseNumber, setLicenseNumber] = useState('');
   const [specialtyInput, setSpecialtyInput] = useState('');
   const [fee, setFee] = useState('');
+  const [is24_7, setIs24_7] = useState(false);
+  const [openingHours, setOpeningHours] = useState('');
+  const [clinicServices, setClinicServices] = useState<ClinicService[]>([]);
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
@@ -38,6 +48,9 @@ export default function VetProfileScreen() {
         setLicenseNumber(v.licenseNumber || '');
         setFee(String(v.consultationFee ?? ''));
         setSpecialtyInput((v.specialties || []).join(', '));
+        setIs24_7(!!v.is24_7);
+        setOpeningHours(v.openingHours || '');
+        setClinicServices(v.clinicServices || []);
       } else {
         setLoadError(true);
       }
@@ -68,6 +81,7 @@ export default function VetProfileScreen() {
       const numFee = Number(fee) || 0;
       await updateDoc(doc(db, COLLECTIONS.VETERINARIANS, vetDocId), {
         name, phone, address, licenseNumber, specialties, consultationFee: numFee,
+        is24_7, openingHours, clinicServices,
       });
       Alert.alert('✅', 'Perfil actualizado correctamente');
     } catch (e: any) {
@@ -147,6 +161,63 @@ export default function VetProfileScreen() {
               placeholder="Cirugía, Dermatología, Cardiología..."
               placeholderTextColor="#9CA3AF"
             />
+          </View>
+        </View>
+
+        {/* Clinic / emergency services */}
+        <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#F3F4F6' }}>
+          <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15, marginBottom: 4 }}>Atención y servicios 🏥</Text>
+          <Text style={{ color: '#9CA3AF', fontSize: 12, marginBottom: 14 }}>
+            Esta información se muestra a los dueños en "Cerca de ti" para que ubiquen atención de urgencia.
+          </Text>
+
+          {/* 24/7 toggle */}
+          <TouchableOpacity
+            onPress={() => setIs24_7((v) => !v)}
+            style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              borderWidth: 1, borderColor: is24_7 ? '#FCA5A5' : '#E5E7EB', borderRadius: 12,
+              paddingHorizontal: 14, paddingVertical: 12, marginBottom: 12,
+              backgroundColor: is24_7 ? '#FEF2F2' : '#F9FAFB',
+            }}
+          >
+            <Text style={{ fontWeight: '600', fontSize: 14, color: is24_7 ? '#DC2626' : '#374151' }}>🚨 Urgencias 24/7</Text>
+            <Text style={{ fontSize: 18 }}>{is24_7 ? '✅' : '⬜'}</Text>
+          </TouchableOpacity>
+
+          {/* Opening hours (when not 24/7) */}
+          {!is24_7 && (
+            <View style={{ marginBottom: 12 }}>
+              <Text style={{ fontSize: 13, color: '#6B7280', marginBottom: 4, fontWeight: '500' }}>Horario de atención</Text>
+              <TextInput
+                style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: '#F9FAFB', fontSize: 14 }}
+                value={openingHours}
+                onChangeText={setOpeningHours}
+                placeholder="Lun-Vie 9:00-19:00, Sáb 10:00-14:00"
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+          )}
+
+          {/* Services offered */}
+          <Text style={{ fontSize: 13, color: '#6B7280', marginBottom: 8, fontWeight: '500' }}>Servicios ofrecidos</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {CLINIC_SERVICES.map((s) => {
+              const active = clinicServices.includes(s.id);
+              return (
+                <TouchableOpacity
+                  key={s.id}
+                  onPress={() => setClinicServices((prev) => active ? prev.filter((x) => x !== s.id) : [...prev, s.id])}
+                  style={{
+                    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
+                    borderWidth: 1, borderColor: active ? GREEN : '#E5E7EB',
+                    backgroundColor: active ? '#ECFDF5' : '#F9FAFB',
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: active ? GREEN : '#6B7280' }}>{s.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
 

@@ -69,8 +69,14 @@ export interface Veterinarian {
   availability: VetAvailability;
   rating?: number;
   reviewCount?: number;
+  // Clinic / emergency service info (shown in "Cerca de ti")
+  is24_7?: boolean;
+  openingHours?: string;
+  clinicServices?: ClinicService[];
   createdAt: string;
 }
+
+export type ClinicService = 'veterinaria' | 'peluqueria' | 'rayos_x' | 'intervenciones';
 
 export interface Trainer {
   id: string;

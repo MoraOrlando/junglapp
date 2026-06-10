@@ -10,10 +10,18 @@ import type { Pet } from '@junglapp/types';
 
 const { db } = initFirebase();
 
+interface ControlReminder {
+  id: string;
+  petId: string;
+  date: string;
+  vetName?: string | null;
+}
+
 export default function OwnerHomeScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const [pets, setPets] = useState<Pet[]>([]);
+  const [reminders, setReminders] = useState<ControlReminder[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -25,6 +33,27 @@ export default function OwnerHomeScreen() {
     return unsub;
   }, [user?.uid]);
 
+  // In-app notification of upcoming vet controls (within the next 7 days)
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, COLLECTIONS.REMINDERS), where('ownerId', '==', user.uid));
+    const unsub = onSnapshot(q, (snap) => {
+      const today = new Date().toISOString().split('T')[0];
+      const limitDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      setReminders(
+        snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as any))
+          .filter((r) => r.type === 'vet_control' && !r.done && r.date >= today && r.date <= limitDate)
+          .sort((a, b) => a.date.localeCompare(b.date))
+      );
+    });
+    return unsub;
+  }, [user?.uid]);
+
+  const initials = user?.name
+    ? user.name.split(' ').slice(0, 2).map((p) => p[0]).join('').toUpperCase()
+    : '🐾';
+
   async function onRefresh() {
     setRefreshing(true);
     await new Promise((r) => setTimeout(r, 500));
@@ -33,12 +62,25 @@ export default function OwnerHomeScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-background">
-      {/* Header */}
+      {/* Header: avatar + name → tap goes to profile */}
       <View className="flex-row justify-between items-center px-6 pt-4 pb-3">
-        <View>
-          <Text className="text-gray-400 text-sm">Hola,</Text>
-          <Text className="text-2xl font-bold text-primary-700">{user?.name?.split(' ')[0] || 'Family Lover'} 🐾</Text>
-        </View>
+        <TouchableOpacity
+          className="flex-row items-center gap-3 flex-1"
+          onPress={() => router.push('/(owner)/profile' as any)}
+          activeOpacity={0.7}
+        >
+          {user?.photoUrl ? (
+            <Image source={{ uri: user.photoUrl }} style={{ width: 48, height: 48, borderRadius: 24 }} contentFit="cover" />
+          ) : (
+            <View className="w-12 h-12 rounded-full bg-primary-500 items-center justify-center">
+              <Text className="text-white font-bold text-base">{initials}</Text>
+            </View>
+          )}
+          <View>
+            <Text className="text-gray-400 text-sm">Hola,</Text>
+            <Text className="text-2xl font-bold text-primary-700">{user?.name?.split(' ')[0] || 'Family Lover'} 🐾</Text>
+          </View>
+        </TouchableOpacity>
         <TouchableOpacity
           className="bg-primary-500 rounded-full w-11 h-11 items-center justify-center"
           onPress={() => router.push('/(owner)/pets/add' as any)}
@@ -47,28 +89,38 @@ export default function OwnerHomeScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Services grid */}
-      <View style={{ paddingHorizontal: 24, marginBottom: 16 }}>
-        <Text style={{ fontSize: 13, fontWeight: '700', color: '#6B7280', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>Servicios</Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-          {[
-            { label: 'Veterinarios', emoji: '🩺', route: '/(owner)/vets' },
-            { label: 'Tiendas', emoji: '🛒', route: '/(owner)/store' },
-            { label: 'Adiestradores', emoji: '🐕', route: '/(owner)/trainers' },
-            { label: 'Perdidos', emoji: '🔍', route: '/(owner)/lost' },
-          ].map((item) => (
-            <TouchableOpacity
-              key={item.route}
-              onPress={() => router.push(item.route as any)}
-              style={{ width: '47%', backgroundColor: '#fff', borderRadius: 16, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: '#F3F4F6' }}
-              activeOpacity={0.8}
-            >
-              <Text style={{ fontSize: 28, marginBottom: 4 }}>{item.emoji}</Text>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151' }}>{item.label}</Text>
-            </TouchableOpacity>
-          ))}
+      {/* Upcoming vet control reminders */}
+      {reminders.length > 0 && (
+        <View style={{ paddingHorizontal: 24, marginBottom: 12 }}>
+          {reminders.map((r) => {
+            const petName = pets.find((p) => p.id === r.petId)?.name ?? 'tu mascota';
+            const isToday = r.date === new Date().toISOString().split('T')[0];
+            return (
+              <TouchableOpacity
+                key={r.id}
+                onPress={() => router.push(`/(owner)/pets/${r.petId}` as any)}
+                style={{
+                  backgroundColor: isToday ? '#FEF2F2' : '#FFFBEB',
+                  borderWidth: 1, borderColor: isToday ? '#FECACA' : '#FDE68A',
+                  borderRadius: 14, padding: 12, marginBottom: 6,
+                  flexDirection: 'row', alignItems: 'center', gap: 10,
+                }}
+              >
+                <Text style={{ fontSize: 22 }}>🔔</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: '700', fontSize: 13, color: isToday ? '#DC2626' : '#92400E' }}>
+                    {isToday ? '¡Control veterinario HOY!' : 'Próximo control veterinario'}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: isToday ? '#EF4444' : '#B45309', marginTop: 1 }}>
+                    {petName} — {r.date}{r.vetName ? ` · ${r.vetName}` : ''}
+                  </Text>
+                </View>
+                <Text style={{ color: '#D1D5DB', fontSize: 18 }}>›</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
-      </View>
+      )}
 
       <Text className="px-6 text-gray-700 font-semibold text-base mb-2">Mis Mascotas</Text>
 

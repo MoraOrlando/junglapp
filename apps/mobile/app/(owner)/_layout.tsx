@@ -119,15 +119,9 @@ export default function OwnerLayout() {
           tabBarIcon: ({ focused }) => <TabIcon emoji="💬" focused={focused} badge={unreadChats} />,
         }}
       />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Perfil',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} />,
-        }}
-      />
-
       {/* ── Hidden routes ── */}
+      {/* Profile is reached by tapping the avatar on the home header */}
+      <Tabs.Screen name="profile"   options={{ href: null }} />
       <Tabs.Screen name="pets"      options={{ href: null }} />
       <Tabs.Screen name="lost"      options={{ href: null }} />
       <Tabs.Screen name="vets"      options={{ href: null }} />

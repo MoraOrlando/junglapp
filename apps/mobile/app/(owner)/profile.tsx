@@ -33,6 +33,13 @@ export default function ProfileScreen() {
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 40 }}>
         {/* Header */}
         <View className="bg-primary-500 px-6 pt-6 pb-10 rounded-b-3xl items-center">
+          {/* Back to home */}
+          <TouchableOpacity
+            onPress={() => router.replace('/(owner)' as any)}
+            style={{ position: 'absolute', top: 16, left: 16, backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 }}
+          >
+            <Text className="text-white font-semibold">← Volver</Text>
+          </TouchableOpacity>
           {user?.photoUrl ? (
             <Image source={{ uri: user.photoUrl }} style={{ width: 96, height: 96, borderRadius: 48 }} contentFit="cover" />
           ) : (

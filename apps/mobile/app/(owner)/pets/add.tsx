@@ -9,7 +9,7 @@ import { useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Calendar } from 'react-native-calendars';
+import YearCalendar from '../../../components/YearCalendar';
 import { collection, addDoc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import { initFirebase, COLLECTIONS, uploadImages } from '@junglapp/firebase';
@@ -107,21 +107,15 @@ function DatePickerField({
           {/* Inline calendar */}
           {showCal && (
             <View style={{ marginTop: 6, borderWidth: 1, borderColor: BORDER, borderRadius: 16, overflow: 'hidden', backgroundColor: 'white' }}>
-              <Calendar
+              <YearCalendar
                 onDayPress={(day: { dateString: string }) => {
                   onChange(toDisplay(day.dateString));
                   setShowCal(false);
                 }}
                 maxDate={maxDate || new Date().toISOString().split('T')[0]}
+                initialDate={iso || undefined}
                 markedDates={iso ? { [iso]: { selected: true, selectedColor: PRIMARY } } : {}}
-                theme={{
-                  selectedDayBackgroundColor: PRIMARY,
-                  todayTextColor: PRIMARY,
-                  arrowColor: PRIMARY,
-                  textSectionTitleColor: PRIMARY,
-                  dotColor: PRIMARY,
-                  monthTextColor: DARK_TEXT,
-                }}
+                color={PRIMARY}
               />
             </View>
           )}
