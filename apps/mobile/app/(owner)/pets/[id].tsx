@@ -9,7 +9,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   doc, getDoc, updateDoc, collection, query, where, getDocs
 } from 'firebase/firestore';
-import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
+import * as ImagePicker from 'expo-image-picker';
+import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import type { Pet } from '@junglapp/types';
 
 const { db } = initFirebase();
@@ -34,6 +35,7 @@ export default function PetDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [isLost, setIsLost] = useState(false);
   const [showFlame, setShowFlame] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const flameScale = useRef(new Animated.Value(0)).current;
   const flameOpacity = useRef(new Animated.Value(0)).current;
@@ -126,6 +128,44 @@ export default function PetDetailScreen() {
     }
   }
 
+  // Change main photo or add a new one to the pet gallery
+  function changePhoto() {
+    if (!pet || !id) return;
+    Alert.alert('📷 Foto de mascota', '¿Qué deseas hacer?', [
+      {
+        text: 'Tomar foto', onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') return;
+          const r = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+          if (!r.canceled) await savePhoto(r.assets[0].uri);
+        },
+      },
+      {
+        text: 'Elegir de galería', onPress: async () => {
+          const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+          if (!r.canceled) await savePhoto(r.assets[0].uri);
+        },
+      },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  }
+
+  async function savePhoto(uri: string) {
+    if (!pet || !id) return;
+    setUploadingPhoto(true);
+    try {
+      const url = await uploadImage(uri);
+      // New photo becomes the main photo; previous ones stay in the gallery
+      const photos = [url, ...(pet.photos ?? [])];
+      await updateDoc(doc(db, COLLECTIONS.PETS, id), { photos });
+      setPet({ ...pet, photos });
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
+
   function handleLostReport() {
     if (isLost) {
       Alert.alert('🔍 Ya reportada', `${pet?.name} ya está publicada como extraviada. ¿Deseas cancelar el reporte?`, [
@@ -179,10 +219,13 @@ export default function PetDetailScreen() {
       </Modal>
 
       <ScrollView className="flex-1">
-        {/* Header photo */}
-        <View className={`h-64 items-center justify-center ${isLost ? 'bg-red-400' : 'bg-primary-500'}`}>
+        {/* Header photo — explicit pixel height so the image also renders on web */}
+        <View
+          className={`items-center justify-center ${isLost ? 'bg-red-400' : 'bg-primary-500'}`}
+          style={{ height: 256 }}
+        >
           {pet.photos && pet.photos.length > 0 ? (
-            <Image source={{ uri: pet.photos[0] }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+            <Image source={{ uri: pet.photos[0] }} style={{ width: '100%', height: 256 }} contentFit="cover" />
           ) : (
             <Text className="text-8xl">{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
           )}
@@ -191,6 +234,22 @@ export default function PetDetailScreen() {
               <Text className="text-white text-xs font-bold">🔍 EXTRAVIADA — Publicada</Text>
             </View>
           )}
+          {/* Change / upload photo */}
+          <TouchableOpacity
+            onPress={changePhoto}
+            disabled={uploadingPhoto}
+            style={{
+              position: 'absolute', bottom: 12, right: 12,
+              backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 20,
+              flexDirection: 'row', alignItems: 'center', gap: 6,
+              paddingHorizontal: 12, paddingVertical: 8,
+            }}
+          >
+            <Text style={{ fontSize: 16 }}>📷</Text>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: '#2D6A4F' }}>
+              {uploadingPhoto ? 'Subiendo...' : pet.photos?.length ? 'Cambiar foto' : 'Subir foto'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <TouchableOpacity className="absolute top-10 left-4 bg-white/80 rounded-full p-2" onPress={() => router.back()}>

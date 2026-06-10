@@ -211,6 +211,9 @@ export interface LostPet {
   lastSeenLocation: string;
   contactPhone: string;
   contactEmail: string;
+  // Coordinates where the pet was reported lost (for the map view)
+  lat?: number;
+  lng?: number;
   isFound: boolean;
   foundBy?: string;
   foundAt?: string;

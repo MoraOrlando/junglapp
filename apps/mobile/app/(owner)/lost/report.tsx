@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { doc, getDoc, addDoc, collection } from 'firebase/firestore';
+import * as Location from 'expo-location';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import type { Pet } from '@junglapp/types';
@@ -53,6 +54,18 @@ export default function ReportLostPetScreen() {
     }
     setSaving(true);
     try {
+      // Capture reporter coordinates so the lost pet appears on the map
+      let lat: number | null = null;
+      let lng: number | null = null;
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          lat = pos.coords.latitude;
+          lng = pos.coords.longitude;
+        }
+      } catch {}
+
       await addDoc(collection(db, COLLECTIONS.LOST_PETS), {
         petId: pet.id,
         ownerId: user.uid,
@@ -71,6 +84,8 @@ export default function ReportLostPetScreen() {
         lastSeenLocation,
         contactPhone,
         contactEmail: user.email,
+        lat,
+        lng,
         isFound: false,
         reportedAt: new Date().toISOString(),
       });

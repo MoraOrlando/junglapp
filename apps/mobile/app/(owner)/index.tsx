@@ -33,22 +33,33 @@ export default function OwnerHomeScreen() {
     return unsub;
   }, [user?.uid]);
 
-  // In-app notification of upcoming vet controls (within the next 7 days)
+  // All pending vet control reminders (used for the banner and per-pet health icon)
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, COLLECTIONS.REMINDERS), where('ownerId', '==', user.uid));
     const unsub = onSnapshot(q, (snap) => {
-      const today = new Date().toISOString().split('T')[0];
-      const limitDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       setReminders(
         snap.docs
           .map((d) => ({ id: d.id, ...d.data() } as any))
-          .filter((r) => r.type === 'vet_control' && !r.done && r.date >= today && r.date <= limitDate)
+          .filter((r) => r.type === 'vet_control' && !r.done)
           .sort((a, b) => a.date.localeCompare(b.date))
       );
     });
     return unsub;
   }, [user?.uid]);
+
+  const today = new Date().toISOString().split('T')[0];
+  const weekAhead = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  // Banner: controls coming up in the next 7 days
+  const upcomingReminders = reminders.filter((r) => r.date >= today && r.date <= weekAhead);
+
+  // Health status per pet: overdue control → pending; control within 7 days → near; else healthy
+  function petHealth(petId: string): { emoji: string; label: string; bg: string; color: string } {
+    const petReminders = reminders.filter((r) => r.petId === petId);
+    if (petReminders.some((r) => r.date < today)) return { emoji: '⏰', label: 'Control pendiente', bg: '#FEE2E2', color: '#DC2626' };
+    if (petReminders.some((r) => r.date >= today && r.date <= weekAhead)) return { emoji: '🔔', label: 'Control cercano', bg: '#FEF3C7', color: '#B45309' };
+    return { emoji: '💚', label: 'Saludable', bg: '#D1FAE5', color: '#047857' };
+  }
 
   const initials = user?.name
     ? user.name.split(' ').slice(0, 2).map((p) => p[0]).join('').toUpperCase()
@@ -90,11 +101,11 @@ export default function OwnerHomeScreen() {
       </View>
 
       {/* Upcoming vet control reminders */}
-      {reminders.length > 0 && (
+      {upcomingReminders.length > 0 && (
         <View style={{ paddingHorizontal: 24, marginBottom: 12 }}>
-          {reminders.map((r) => {
+          {upcomingReminders.map((r) => {
             const petName = pets.find((p) => p.id === r.petId)?.name ?? 'tu mascota';
-            const isToday = r.date === new Date().toISOString().split('T')[0];
+            const isToday = r.date === today;
             return (
               <TouchableOpacity
                 key={r.id}
@@ -122,6 +133,24 @@ export default function OwnerHomeScreen() {
         </View>
       )}
 
+      {/* Lost pets access */}
+      <TouchableOpacity
+        onPress={() => router.push('/(owner)/lost' as any)}
+        activeOpacity={0.85}
+        style={{
+          marginHorizontal: 24, marginBottom: 14, backgroundColor: '#FEF2F2',
+          borderWidth: 1, borderColor: '#FECACA', borderRadius: 16,
+          padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
+        }}
+      >
+        <Text style={{ fontSize: 28 }}>🔍</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontWeight: '700', color: '#DC2626', fontSize: 15 }}>Mascotas extraviadas</Text>
+          <Text style={{ color: '#F87171', fontSize: 12, marginTop: 1 }}>Mira el mapa y ayuda a encontrarlas cerca de ti</Text>
+        </View>
+        <Text style={{ color: '#FCA5A5', fontSize: 20 }}>›</Text>
+      </TouchableOpacity>
+
       <Text className="px-6 text-gray-700 font-semibold text-base mb-2">Mis Mascotas</Text>
 
       <ScrollView
@@ -144,36 +173,58 @@ export default function OwnerHomeScreen() {
           </View>
         ) : (
           <View className="gap-4 pb-6">
-            {pets.map((pet) => (
-              <TouchableOpacity
-                key={pet.id}
-                className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex-row items-center gap-4"
-                onPress={() => router.push(`/(owner)/pets/${pet.id}` as any)}
-              >
-                {pet.photos && pet.photos.length > 0 ? (
-                  <Image
-                    source={{ uri: pet.photos[0] }}
-                    style={{ width: 64, height: 64, borderRadius: 16 }}
-                    contentFit="cover"
-                  />
-                ) : (
-                  <View className="bg-primary-100 rounded-2xl w-16 h-16 items-center justify-center">
-                    <Text className="text-3xl">{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
+            {pets.map((pet) => {
+              const health = petHealth(pet.id!);
+              return (
+                <TouchableOpacity
+                  key={pet.id}
+                  className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100"
+                  onPress={() => router.push(`/(owner)/pets/${pet.id}` as any)}
+                  activeOpacity={0.9}
+                >
+                  {/* Large photo */}
+                  <View style={{ height: 170, backgroundColor: '#D8F3DC' }}>
+                    {pet.photos && pet.photos.length > 0 ? (
+                      <Image
+                        source={{ uri: pet.photos[0] }}
+                        style={{ width: '100%', height: 170 }}
+                        contentFit="cover"
+                      />
+                    ) : (
+                      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 64 }}>{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
+                      </View>
+                    )}
+                    {/* Health status badge */}
+                    <View style={{
+                      position: 'absolute', top: 10, right: 10,
+                      backgroundColor: health.bg, borderRadius: 14,
+                      flexDirection: 'row', alignItems: 'center', gap: 4,
+                      paddingHorizontal: 10, paddingVertical: 4,
+                    }}>
+                      <Text style={{ fontSize: 13 }}>{health.emoji}</Text>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: health.color }}>{health.label}</Text>
+                    </View>
+                    {pet.lookingForPartner && (
+                      <View style={{ position: 'absolute', top: 10, left: 10, backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 14, paddingHorizontal: 8, paddingVertical: 4 }}>
+                        <Text style={{ fontSize: 13 }}>💕</Text>
+                      </View>
+                    )}
                   </View>
-                )}
-                <View className="flex-1">
-                  <View className="flex-row items-center gap-2">
-                    <Text className="font-bold text-gray-800 text-lg">{pet.name}</Text>
-                    {pet.lookingForPartner && <Text>💕</Text>}
+
+                  <View className="flex-row items-center p-4">
+                    <View className="flex-1">
+                      <Text className="font-bold text-gray-800 text-lg">{pet.name}</Text>
+                      <Text className="text-gray-500 text-sm">{pet.breed} · {pet.color}</Text>
+                      <Text className="text-gray-400 text-xs mt-0.5">
+                        {pet.chipNumber ? `Chip: ${pet.chipNumber}` : 'Sin chip registrado'}
+                      </Text>
+                    </View>
+                    <Text className="text-gray-300 text-xl">›</Text>
                   </View>
-                  <Text className="text-gray-500 text-sm">{pet.breed} · {pet.color}</Text>
-                  <Text className="text-gray-400 text-xs mt-0.5">
-                    {pet.chipNumber ? `Chip: ${pet.chipNumber}` : 'Sin chip registrado'}
-                  </Text>
-                </View>
-                <Text className="text-gray-300 text-xl">›</Text>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
       </ScrollView>
