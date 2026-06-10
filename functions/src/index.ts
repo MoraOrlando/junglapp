@@ -17,7 +17,7 @@ function generateTempPassword(): string {
 
 function createTransporter() {
   const config = functions.config();
-  return nodemailer.createTransporter({
+  return nodemailer.createTransport({
     service: 'gmail',
     auth: {
       user: config.email?.user || process.env.EMAIL_USER,
@@ -41,7 +41,7 @@ export const sendTempPassword = functions.https.onCall(async (data, context) => 
   // Rate limiting: 5-minute cooldown per email address
   const cooldownRef = admin.firestore().collection('_passwordResetCooldowns').doc(normalizedEmail);
   const cooldownDoc = await cooldownRef.get();
-  if (cooldownDoc.exists()) {
+  if (cooldownDoc.exists) {
     const lastSent: FirebaseFirestore.Timestamp = cooldownDoc.data()!.lastSentAt;
     if (Date.now() - lastSent.toMillis() < 5 * 60 * 1000) {
       // Silently succeed — don't reveal rate limiting to callers

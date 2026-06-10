@@ -84,9 +84,9 @@ service firebase.storage {
 
     // ── Lost pet photos ────────────────────────────────────────────────────
     // Path: lostPets/{ownerUid}/{lostPetId}/{fileName}
-    // Public read (community search); only the owner can upload.
+    // Auth-gated read; only the owner can upload.
     match /lostPets/{ownerUid}/{lostPetId}/{fileName} {
-      allow read: if true;
+      allow read: if isAuth();
       allow write: if isAuth()
         && request.auth.uid == ownerUid
         && isImageOrPdf()

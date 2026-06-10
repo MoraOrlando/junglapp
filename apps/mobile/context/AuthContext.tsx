@@ -166,6 +166,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function logOut() {
+    // Remove biometric-stored credentials so they don't survive an explicit logout
+    try {
+      const SecureStore = require('expo-secure-store');
+      await SecureStore.deleteItemAsync('junglapp_saved_creds');
+    } catch {}
     await signOut(auth);
     setUser(null);
   }

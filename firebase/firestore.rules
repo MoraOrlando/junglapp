@@ -238,7 +238,8 @@ service cloud.firestore {
 
     // ── Lost pets ──────────────────────────────────────────────────────────
     match /lostPets/{lostPetId} {
-      allow read: if true;
+      // Contains contact PII (phone/email) — auth required to read
+      allow read: if isAuth();
       allow create: if isAuth()
         && request.resource.data.ownerId == request.auth.uid;
       allow update: if isAuth() && (
