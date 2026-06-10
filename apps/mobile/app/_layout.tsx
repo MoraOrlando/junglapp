@@ -27,6 +27,11 @@ function RouteGuard() {
     }
 
     if (user) {
+      const u = user as any;
+      if (u.profileComplete === false && segments[1] !== 'complete-profile') {
+        router.replace('/(auth)/complete-profile');
+        return;
+      }
       const role = user.role;
       if (inAuth) {
         if (role === 'owner') router.replace('/(owner)');

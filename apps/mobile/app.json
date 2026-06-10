@@ -13,14 +13,24 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.junglapp.app"
+      "bundleIdentifier": "com.junglapp.app",
+      "infoPlist": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "499650328037-j4edei7e54rpebd04ebpdv1iooilj10a"
+            ]
+          }
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#2D6A4F"
       },
-      "package": "com.junglapp.app"
+      "package": "com.junglapp.app",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "bundler": "metro",

@@ -110,7 +110,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         region: '',
         city: '',
         createdAt: new Date().toISOString(),
-      };
+        profileComplete: false,
+      } as any;
       await setDoc(ref, newUser);
       setUser(newUser);
     } else {
