@@ -46,6 +46,7 @@ export default function LoginScreen() {
   const { signIn, signInWithGoogle, signInWithMicrosoft } = useAuth();
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<'google' | 'microsoft' | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricType, setBiometricType] = useState('Biométrico');
   const [hasSavedCreds, setHasSavedCreds] = useState(false);
@@ -227,16 +228,24 @@ export default function LoginScreen() {
                 control={control}
                 name="password"
                 render={({ field: { onChange, value } }) => (
-                  <TextInput
-                    style={inputStyle}
-                    placeholder="••••••••"
-                    placeholderTextColor="#9CA3AF"
-                    secureTextEntry
-                    autoComplete="password"
-                    textContentType="password"
-                    onChangeText={onChange}
-                    value={value}
-                  />
+                  <View style={{ position: 'relative' }}>
+                    <TextInput
+                      style={{ ...inputStyle, paddingRight: 48 }}
+                      placeholder="••••••••"
+                      placeholderTextColor="#9CA3AF"
+                      secureTextEntry={!showPassword}
+                      autoComplete="password"
+                      textContentType="password"
+                      onChangeText={onChange}
+                      value={value}
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowPassword((v) => !v)}
+                      style={{ position: 'absolute', right: 14, top: 0, bottom: 0, justifyContent: 'center' }}
+                    >
+                      <Text style={{ fontSize: 18 }}>{showPassword ? '🙈' : '👁️'}</Text>
+                    </TouchableOpacity>
+                  </View>
                 )}
               />
               {errors.password && <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>{errors.password.message}</Text>}

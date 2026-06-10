@@ -34,6 +34,7 @@ export default function RegisterOwnerScreen() {
   const { signUp, signInWithGoogle, signInWithMicrosoft } = useAuth();
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<'google' | 'microsoft' | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [region, setRegion] = useState('Metropolitana');
   const [regionOpen, setRegionOpen] = useState(false);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -129,15 +130,33 @@ export default function RegisterOwnerScreen() {
                   control={control}
                   name={f.name}
                   render={({ field: { onChange, value } }) => (
-                    <TextInput
-                      className="border border-gray-200 rounded-xl px-4 py-3 bg-white text-base"
-                      placeholder={f.placeholder}
-                      keyboardType={f.keyboard || 'default'}
-                      autoCapitalize={f.keyboard === 'email-address' ? 'none' : 'words'}
-                      secureTextEntry={f.secure}
-                      onChangeText={onChange}
-                      value={value}
-                    />
+                    f.secure ? (
+                      <View style={{ position: 'relative' }}>
+                        <TextInput
+                          className="border border-gray-200 rounded-xl px-4 py-3 bg-white text-base"
+                          style={{ paddingRight: 48 }}
+                          placeholder={f.placeholder}
+                          secureTextEntry={!showPassword}
+                          onChangeText={onChange}
+                          value={value}
+                        />
+                        <TouchableOpacity
+                          onPress={() => setShowPassword((v) => !v)}
+                          style={{ position: 'absolute', right: 14, top: 0, bottom: 0, justifyContent: 'center' }}
+                        >
+                          <Text style={{ fontSize: 18 }}>{showPassword ? '🙈' : '👁️'}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TextInput
+                        className="border border-gray-200 rounded-xl px-4 py-3 bg-white text-base"
+                        placeholder={f.placeholder}
+                        keyboardType={f.keyboard || 'default'}
+                        autoCapitalize={f.keyboard === 'email-address' ? 'none' : 'words'}
+                        onChangeText={onChange}
+                        value={value}
+                      />
+                    )
                   )}
                 />
                 {errors[f.name] && (

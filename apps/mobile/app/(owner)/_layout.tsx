@@ -1,19 +1,44 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Tabs } from 'expo-router';
-import { Text, Alert } from 'react-native';
+import { Text, Alert, View } from 'react-native';
 import { ref, onValue, remove } from 'firebase/database';
-import { initFirebase, RTDB_PATHS } from '@junglapp/firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { initFirebase, RTDB_PATHS, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 
-const { rtdb } = initFirebase();
+const { rtdb, db } = initFirebase();
 
-function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
-  return <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.6 }}>{emoji}</Text>;
+function TabIcon({ emoji, focused, badge }: { emoji: string; focused: boolean; badge?: number }) {
+  return (
+    <View>
+      <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.6 }}>{emoji}</Text>
+      {!!badge && badge > 0 && (
+        <View style={{ position: 'absolute', top: -4, right: -8, backgroundColor: '#EF4444', borderRadius: 8, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }}>
+          <Text style={{ color: '#fff', fontSize: 9, fontWeight: '700' }}>{badge > 99 ? '99+' : badge}</Text>
+        </View>
+      )}
+    </View>
+  );
 }
 
 export default function OwnerLayout() {
   const { user } = useAuth();
   const listenedRef = useRef<string | null>(null);
+  const [unreadChats, setUnreadChats] = useState(0);
+  const [matchCount, setMatchCount] = useState(0);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    const q = query(collection(db, COLLECTIONS.CHATS), where('participants', 'array-contains', user.uid));
+    const unsub = onSnapshot(q, (snap) => {
+      setUnreadChats(snap.docs.filter((d) => {
+        const data = d.data();
+        return data.lastMessage && data.lastMessageAt && data.lastReadAt?.[user.uid] < data.lastMessageAt;
+      }).length);
+      setMatchCount(snap.docs.filter((d) => d.data().matchId).length);
+    });
+    return unsub;
+  }, [user?.uid]);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -80,7 +105,14 @@ export default function OwnerLayout() {
         name="match"
         options={{
           title: 'Match',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="💚" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon emoji="💚" focused={focused} badge={matchCount} />,
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'Mensajes',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="💬" focused={focused} badge={unreadChats} />,
         }}
       />
       <Tabs.Screen
@@ -93,7 +125,6 @@ export default function OwnerLayout() {
 
       {/* ── Hidden routes ── */}
       <Tabs.Screen name="pets"      options={{ href: null }} />
-      <Tabs.Screen name="chat"      options={{ href: null }} />
       <Tabs.Screen name="lost"      options={{ href: null }} />
       <Tabs.Screen name="vets"      options={{ href: null }} />
       <Tabs.Screen name="store"     options={{ href: null }} />

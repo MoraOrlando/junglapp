@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import type { Pet } from '@junglapp/types';
@@ -16,19 +16,18 @@ export default function OwnerHomeScreen() {
   const [pets, setPets] = useState<Pet[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  async function loadPets() {
+  useEffect(() => {
     if (!user) return;
-    const snap = await getDocs(
-      query(collection(db, COLLECTIONS.PETS), where('ownerId', '==', user.uid))
-    );
-    setPets(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)));
-  }
-
-  useEffect(() => { loadPets(); }, [user]);
+    const q = query(collection(db, COLLECTIONS.PETS), where('ownerId', '==', user.uid));
+    const unsub = onSnapshot(q, (snap) => {
+      setPets(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)));
+    });
+    return unsub;
+  }, [user?.uid]);
 
   async function onRefresh() {
     setRefreshing(true);
-    await loadPets();
+    await new Promise((r) => setTimeout(r, 500));
     setRefreshing(false);
   }
 
