@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useNavigation } from 'expo-router';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 
@@ -38,6 +38,7 @@ const inputStyle = {
 
 export default function SearchOwnerScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const [searchType, setSearchType] = useState<'email' | 'rut'>('email');
   const [searchValue, setSearchValue] = useState('');
   const [loading, setLoading] = useState(false);
@@ -90,7 +91,7 @@ export default function SearchOwnerScreen() {
   return (
     <SafeAreaView className="flex-1 bg-background">
       <ScrollView className="px-6" keyboardShouldPersistTaps="handled">
-        <TouchableOpacity onPress={() => router.back()} className="mt-4 mb-6">
+        <TouchableOpacity onPress={() => navigation.canGoBack() ? navigation.goBack() : router.back()} className="mt-4 mb-6">
           <Text className="text-primary-500 text-base">← Volver</Text>
         </TouchableOpacity>
 

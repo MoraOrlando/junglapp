@@ -18,7 +18,6 @@ import {
   setDoc,
   updateDoc,
 } from 'firebase/firestore';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import * as AuthSession from 'expo-auth-session';
@@ -32,6 +31,7 @@ const { app, db } = initFirebase();
 // Initialize auth with AsyncStorage persistence so session survives app restarts
 let auth: import('firebase/auth').Auth;
 try {
+  const AsyncStorage = require('@react-native-async-storage/async-storage').default;
   auth = initializeAuth(app, {
     persistence: getReactNativePersistence(AsyncStorage),
   });

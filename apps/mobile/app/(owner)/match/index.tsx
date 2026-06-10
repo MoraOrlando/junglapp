@@ -25,8 +25,8 @@ export default function MatchScreen() {
   useEffect(() => {
     if (!user) return;
     loadMyPets();
-    const q = query(collection(db, COLLECTIONS.CHATS), where('participants', 'array-contains', user.uid), where('matchId', '!=', null));
-    const unsub = onSnapshot(q, (snap) => setMatchCount(snap.size));
+    const q = query(collection(db, COLLECTIONS.CHATS), where('participants', 'array-contains', user.uid));
+    const unsub = onSnapshot(q, (snap) => setMatchCount(snap.docs.filter((d) => !!d.data().matchId).length));
     return unsub;
   }, [user?.uid]);
 
