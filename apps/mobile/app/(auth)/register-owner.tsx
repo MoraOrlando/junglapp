@@ -46,20 +46,32 @@ export default function RegisterOwnerScreen() {
   });
 
   async function captureLocation() {
-    setLocating(true);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permiso denegado', 'No podremos geolocalizarte automáticamente, pero puedes continuar.');
-        return;
-      }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-    } catch {
-      Alert.alert('Error', 'No se pudo obtener tu ubicación.');
-    } finally {
-      setLocating(false);
-    }
+    Alert.alert(
+      '📍 Acceso a tu ubicación',
+      'JunglApp usará tu ubicación para mostrarte servicios y tiendas cercanas. ¿Deseas permitir el acceso?',
+      [
+        { text: 'No por ahora', style: 'cancel' },
+        {
+          text: 'Permitir',
+          onPress: async () => {
+            setLocating(true);
+            try {
+              const { status } = await Location.requestForegroundPermissionsAsync();
+              if (status !== 'granted') {
+                Alert.alert('Permiso denegado', 'No podremos geolocalizarte automáticamente, pero puedes continuar.');
+                return;
+              }
+              const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+              setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+            } catch {
+              Alert.alert('Error', 'No se pudo obtener tu ubicación.');
+            } finally {
+              setLocating(false);
+            }
+          },
+        },
+      ]
+    );
   }
 
   async function handleGoogle() {

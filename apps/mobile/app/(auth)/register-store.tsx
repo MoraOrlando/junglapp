@@ -97,20 +97,32 @@ export default function RegisterStoreScreen() {
   const selectedCity = watch('city');
 
   async function captureLocation() {
-    setGettingLocation(true);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permiso denegado', 'Activa la ubicación para que los clientes te encuentren cerca.');
-        return;
-      }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-    } catch {
-      Alert.alert('Error', 'No se pudo obtener la ubicación. Puedes continuar sin ella.');
-    } finally {
-      setGettingLocation(false);
-    }
+    Alert.alert(
+      '📍 Ubicación de tu tienda',
+      'JunglApp usará tu ubicación para que clientes cercanos puedan encontrar tu tienda. ¿Deseas permitir el acceso?',
+      [
+        { text: 'No por ahora', style: 'cancel' },
+        {
+          text: 'Permitir',
+          onPress: async () => {
+            setGettingLocation(true);
+            try {
+              const { status } = await Location.requestForegroundPermissionsAsync();
+              if (status !== 'granted') {
+                Alert.alert('Permiso denegado', 'Puedes continuar el registro sin ubicación.');
+                return;
+              }
+              const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+              setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+            } catch {
+              Alert.alert('Error', 'No se pudo obtener la ubicación. Puedes continuar sin ella.');
+            } finally {
+              setGettingLocation(false);
+            }
+          },
+        },
+      ]
+    );
   }
 
   async function onSubmit(data: FormData) {
