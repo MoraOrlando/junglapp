@@ -1,18 +1,76 @@
-import { View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Alert, Platform, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import { doc, updateDoc } from 'firebase/firestore';
+import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 
-export default function ProfileScreen() {
-  const { user, logOut } = useAuth();
-  const router = useRouter();
+const { db } = initFirebase();
 
-  function confirmLogout() {
+export default function ProfileScreen() {
+  const { user, logOut, updateProfile } = useAuth();
+  const router = useRouter();
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  async function confirmLogout() {
+    // Alert.alert doesn't work on web — use confirm() as fallback
+    if (Platform.OS === 'web') {
+      if (window.confirm('¿Seguro que deseas cerrar sesión?')) {
+        await logOut();
+      }
+      return;
+    }
     Alert.alert('Cerrar sesión', '¿Seguro que deseas salir de tu cuenta?', [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Salir', style: 'destructive', onPress: () => logOut() },
     ]);
+  }
+
+  function pickPhoto() {
+    if (Platform.OS === 'web') {
+      // On web use the image library only (no camera)
+      ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8, allowsEditing: true, aspect: [1, 1] })
+        .then((r) => { if (!r.canceled) saveProfilePhoto(r.assets[0].uri); });
+      return;
+    }
+    Alert.alert('📷 Foto de perfil', '¿Cómo quieres agregar la foto?', [
+      {
+        text: 'Tomar foto', onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') return;
+          const r = await ImagePicker.launchCameraAsync({ quality: 0.8, allowsEditing: true, aspect: [1, 1] });
+          if (!r.canceled) saveProfilePhoto(r.assets[0].uri);
+        },
+      },
+      {
+        text: 'Elegir de galería', onPress: async () => {
+          const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8, allowsEditing: true, aspect: [1, 1] });
+          if (!r.canceled) saveProfilePhoto(r.assets[0].uri);
+        },
+      },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  }
+
+  async function saveProfilePhoto(uri: string) {
+    if (!user) return;
+    setUploadingPhoto(true);
+    try {
+      const url = await uploadImage(uri);
+      await updateDoc(doc(db, COLLECTIONS.USERS, user.uid), { photoUrl: url });
+      await updateProfile({ photoUrl: url });
+    } catch (e: any) {
+      if (Platform.OS === 'web') {
+        window.alert(`Error: ${e.message}`);
+      } else {
+        Alert.alert('Error', e.message);
+      }
+    } finally {
+      setUploadingPhoto(false);
+    }
   }
 
   const initials = user?.name
@@ -40,13 +98,36 @@ export default function ProfileScreen() {
           >
             <Text className="text-white font-semibold">← Volver</Text>
           </TouchableOpacity>
-          {user?.photoUrl ? (
-            <Image source={{ uri: user.photoUrl }} style={{ width: 96, height: 96, borderRadius: 48 }} contentFit="cover" />
-          ) : (
-            <View className="w-24 h-24 rounded-full bg-white/25 items-center justify-center">
-              <Text className="text-white text-3xl font-bold">{initials}</Text>
+
+          {/* Avatar — tappable to change photo */}
+          <TouchableOpacity onPress={pickPhoto} disabled={uploadingPhoto} activeOpacity={0.8}>
+            <View style={{ width: 96, height: 96, borderRadius: 48, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.25)' }}>
+              {user?.photoUrl ? (
+                <Image
+                  source={{ uri: user.photoUrl }}
+                  style={{ width: 96, height: 96 }}
+                  contentFit="cover"
+                  contentPosition="top"
+                />
+              ) : (
+                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ color: '#fff', fontSize: 32, fontWeight: 'bold' }}>{initials}</Text>
+                </View>
+              )}
             </View>
-          )}
+            {/* Camera badge */}
+            <View style={{
+              position: 'absolute', bottom: 0, right: 0,
+              backgroundColor: '#fff', borderRadius: 14, width: 28, height: 28,
+              alignItems: 'center', justifyContent: 'center',
+              borderWidth: 2, borderColor: '#2D6A4F',
+            }}>
+              {uploadingPhoto
+                ? <ActivityIndicator size="small" color="#2D6A4F" />
+                : <Text style={{ fontSize: 13 }}>📷</Text>}
+            </View>
+          </TouchableOpacity>
+
           <Text className="text-white text-2xl font-bold mt-3">{user?.name || 'Family Lover'}</Text>
           <Text className="text-white/70 text-sm mt-0.5">Dueño de mascota 🐾</Text>
         </View>
