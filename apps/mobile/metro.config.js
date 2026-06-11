@@ -18,4 +18,15 @@ config.resolver.nodeModulesPaths = [
 // (causes "Component auth has not been registered yet"). Disable it.
 config.resolver.unstable_enablePackageExports = false;
 
+// react-native-maps has no web implementation — stub it out for the web bundle
+// so the bundler doesn't fail when processing screens that import it conditionally.
+const originalResolver = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (platform === 'web' && moduleName === 'react-native-maps') {
+    return { type: 'sourceFile', filePath: path.resolve(projectRoot, 'stubs/maps-stub.js') };
+  }
+  if (originalResolver) return originalResolver(context, moduleName, platform);
+  return context.resolveRequest(context, moduleName, platform);
+};
+
 module.exports = withNativeWind(config, { input: './global.css' });
