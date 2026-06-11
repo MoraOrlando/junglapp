@@ -25,7 +25,11 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (platform === 'web' && moduleName === 'react-native-maps') {
     return { type: 'sourceFile', filePath: path.resolve(projectRoot, 'stubs/maps-stub.js') };
   }
-
+  // expo/AppEntry.js tries to import "../../App" — in a monorepo expo may be hoisted
+  // to the workspace root, making that path unresolvable. Redirect to our local App.js stub.
+  if (moduleName === '../../App' && context.originModulePath?.includes(`${path.sep}expo${path.sep}AppEntry`)) {
+    return { type: 'sourceFile', filePath: path.resolve(projectRoot, 'App.js') };
+  }
   if (originalResolver) return originalResolver(context, moduleName, platform);
   return context.resolveRequest(context, moduleName, platform);
 };
