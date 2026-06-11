@@ -30,6 +30,7 @@
         "backgroundColor": "#2D6A4F"
       },
       "package": "com.junglapp.app",
+      "googleServicesFile": "./google-services.json",
       "versionCode": 1,
       "permissions": [
         "android.permission.CAMERA",
