@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
@@ -14,11 +14,45 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }>
   rejected: { bg: '#FEF2F2', text: '#EF4444', label: '❌ Rechazado' },
 };
 
+function RejectModal({ visible, onConfirm, onCancel }: { visible: boolean; onConfirm: (reason: string) => void; onCancel: () => void }) {
+  const [reason, setReason] = useState('');
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', paddingHorizontal: 24 }}>
+        <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 24 }}>
+          <Text style={{ fontWeight: '700', fontSize: 16, color: '#1F2937', marginBottom: 8 }}>❌ Rechazar veterinario</Text>
+          <Text style={{ color: '#6B7280', fontSize: 13, marginBottom: 16 }}>Indica el motivo del rechazo. El veterinario recibirá esta información.</Text>
+          <TextInput
+            style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, minHeight: 80, textAlignVertical: 'top', marginBottom: 16 }}
+            placeholder="Ej: Credencial no válida, datos incompletos..."
+            placeholderTextColor="#9CA3AF"
+            multiline
+            value={reason}
+            onChangeText={setReason}
+          />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity onPress={onCancel} style={{ flex: 1, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}>
+              <Text style={{ color: '#374151', fontWeight: '600' }}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => { if (!reason.trim()) { Alert.alert('', 'Ingresa un motivo de rechazo'); return; } onConfirm(reason.trim()); setReason(''); }}
+              style={{ flex: 1, backgroundColor: '#EF4444', borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700' }}>Rechazar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export default function VetsAdminScreen() {
   const [vets, setVets] = useState<Veterinarian[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [rejectTarget, setRejectTarget] = useState<string | null>(null);
 
   async function loadVets() {
     const snap = await getDocs(collection(db, COLLECTIONS.VETERINARIANS));
@@ -30,17 +64,20 @@ export default function VetsAdminScreen() {
   useEffect(() => { loadVets().finally(() => setLoading(false)); }, []);
   async function onRefresh() { setRefreshing(true); await loadVets(); setRefreshing(false); }
 
-  async function setStatus(id: string, status: 'approved' | 'rejected') {
-    const label = status === 'approved' ? 'aprobar' : 'rechazar';
-    Alert.alert(`¿${label.charAt(0).toUpperCase() + label.slice(1)}?`, `¿Deseas ${label} este veterinario?`, [
+  async function approve(id: string) {
+    Alert.alert('Confirmar', '¿Aprobar este veterinario?', [
       { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Confirmar', onPress: async () => {
-          await updateDoc(doc(db, COLLECTIONS.VETERINARIANS, id), { status });
-          setVets((prev) => prev.map((v) => v.id === id ? { ...v, status } : v));
-        }
-      }
+      { text: 'Aprobar', onPress: async () => {
+        await updateDoc(doc(db, COLLECTIONS.VETERINARIANS, id), { status: 'approved', rejectionReason: null });
+        setVets((prev) => prev.map((v) => v.id === id ? { ...v, status: 'approved' } : v));
+      }},
     ]);
+  }
+
+  async function rejectWithReason(id: string, reason: string) {
+    await updateDoc(doc(db, COLLECTIONS.VETERINARIANS, id), { status: 'rejected', rejectionReason: reason });
+    setVets((prev) => prev.map((v) => v.id === id ? { ...v, status: 'rejected' } : v));
+    setRejectTarget(null);
   }
 
   const filtered = filter === 'all' ? vets : vets.filter((v) => v.status === filter);
@@ -82,18 +119,21 @@ export default function VetsAdminScreen() {
               {v.credentialUrl && (
                 <Text style={{ color: PURPLE, fontSize: 12, marginTop: 4 }}>🔗 Credencial cargada</Text>
               )}
+              {(v as any).rejectionReason && (
+                <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>Motivo: {(v as any).rejectionReason}</Text>
+              )}
               {v.status === 'pending' && (
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-                  <TouchableOpacity onPress={() => setStatus(v.id, 'approved')} style={{ flex: 1, backgroundColor: '#ECFDF5', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
+                  <TouchableOpacity onPress={() => approve(v.id)} style={{ flex: 1, backgroundColor: '#ECFDF5', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
                     <Text style={{ color: '#059669', fontWeight: '700' }}>✅ Aprobar</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setStatus(v.id, 'rejected')} style={{ flex: 1, backgroundColor: '#FEF2F2', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
+                  <TouchableOpacity onPress={() => setRejectTarget(v.id)} style={{ flex: 1, backgroundColor: '#FEF2F2', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
                     <Text style={{ color: '#EF4444', fontWeight: '700' }}>❌ Rechazar</Text>
                   </TouchableOpacity>
                 </View>
               )}
               {v.status !== 'pending' && (
-                <TouchableOpacity onPress={() => setStatus(v.id, v.status === 'approved' ? 'rejected' : 'approved')} style={{ marginTop: 10, backgroundColor: '#F3F4F6', borderRadius: 10, paddingVertical: 8, alignItems: 'center' }}>
+                <TouchableOpacity onPress={() => v.status === 'approved' ? setRejectTarget(v.id) : approve(v.id)} style={{ marginTop: 10, backgroundColor: '#F3F4F6', borderRadius: 10, paddingVertical: 8, alignItems: 'center' }}>
                   <Text style={{ color: '#374151', fontSize: 13 }}>{v.status === 'approved' ? '❌ Revocar aprobación' : '✅ Reactivar'}</Text>
                 </TouchableOpacity>
               )}
@@ -102,6 +142,12 @@ export default function VetsAdminScreen() {
         })}
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <RejectModal
+        visible={rejectTarget !== null}
+        onConfirm={(reason) => rejectTarget && rejectWithReason(rejectTarget, reason)}
+        onCancel={() => setRejectTarget(null)}
+      />
     </SafeAreaView>
   );
 }

@@ -31,6 +31,7 @@ export default function VetCalendarScreen() {
   const [availability, setAvailability] = useState<Record<string, string[]>>({});
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [consultationFee, setConsultationFee] = useState('');
+  const [slotDuration, setSlotDuration] = useState(30);
   const [saving, setSaving] = useState(false);
 
   const days = getNextDays(14);
@@ -43,6 +44,7 @@ export default function VetCalendarScreen() {
         setVetId(snap.docs[0].id);
         setAvailability(vet.availability || {});
         if (vet.consultationFee) setConsultationFee(String(vet.consultationFee));
+        if ((vet as any).slotDuration) setSlotDuration((vet as any).slotDuration);
       }
     });
   }, [user]);
@@ -56,12 +58,16 @@ export default function VetCalendarScreen() {
   }
 
   async function saveAll() {
-    if (!vetId) return;
+    if (!vetId) {
+      Alert.alert('Error', 'No se encontró tu perfil de veterinario. Contacta a soporte.');
+      return;
+    }
     setSaving(true);
     try {
       const fee = parseFloat(consultationFee.replace(/\./g, '').replace(',', '.'));
       await updateDoc(doc(db, COLLECTIONS.VETERINARIANS, vetId), {
         availability,
+        slotDuration,
         ...(isNaN(fee) ? {} : { consultationFee: fee }),
       });
       Alert.alert('✅', 'Agenda guardada correctamente');
@@ -84,6 +90,42 @@ export default function VetCalendarScreen() {
         <Text style={{ color: '#94A3B8', fontSize: 13 }}>
           Gestiona tu disponibilidad y tarifa
         </Text>
+      </View>
+
+      {/* Duration selector */}
+      <View style={{
+        marginHorizontal: 24,
+        marginBottom: 12,
+        backgroundColor: '#EFF6FF',
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: '#BFDBFE',
+      }}>
+        <Text style={{ fontSize: 13, fontWeight: '600', color: '#1D4ED8', marginBottom: 8 }}>
+          ⏱️ Duración de cada consulta
+        </Text>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {[30, 45, 60].map((d) => (
+            <TouchableOpacity
+              key={d}
+              onPress={() => setSlotDuration(d)}
+              style={{
+                flex: 1,
+                borderRadius: 12,
+                paddingVertical: 10,
+                alignItems: 'center',
+                borderWidth: 2,
+                borderColor: slotDuration === d ? '#1D4ED8' : '#BFDBFE',
+                backgroundColor: slotDuration === d ? '#1D4ED8' : '#FFFFFF',
+              }}
+            >
+              <Text style={{ fontWeight: '700', fontSize: 14, color: slotDuration === d ? '#FFFFFF' : '#1D4ED8' }}>
+                {d} min
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
       {/* Consultation fee */}

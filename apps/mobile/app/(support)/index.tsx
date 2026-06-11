@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
+import { useRouter } from 'expo-router';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 
@@ -10,6 +11,7 @@ const PURPLE = '#7C3AED';
 
 export default function SupportDashboard() {
   const { user, logOut } = useAuth();
+  const router = useRouter();
   const [stats, setStats] = useState({ users: 0, owners: 0, vets: 0, stores: 0, trainers: 0, pendingVets: 0, pendingStores: 0, pendingTrainers: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -71,13 +73,51 @@ export default function SupportDashboard() {
         </View>
 
         <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
-          {/* Pending approvals alert */}
+          {/* Pending approvals — tappable cards */}
           {(stats.pendingVets + stats.pendingStores + stats.pendingTrainers) > 0 && (
-            <View style={{ backgroundColor: '#FEF3C7', borderRadius: 16, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#FDE68A' }}>
-              <Text style={{ fontWeight: '700', color: '#92400E', fontSize: 14, marginBottom: 8 }}>⚠️ Validaciones pendientes</Text>
-              {pendingCards.filter((p) => p.value > 0).map((p) => (
-                <Text key={p.label} style={{ color: '#78350F', fontSize: 13, marginTop: 2 }}>• {p.label}: {p.value}</Text>
-              ))}
+            <View style={{ marginBottom: 20 }}>
+              <Text style={{ fontWeight: '700', color: '#374151', fontSize: 15, marginBottom: 10 }}>⚠️ Validaciones pendientes</Text>
+              {stats.pendingVets > 0 && (
+                <TouchableOpacity
+                  onPress={() => router.navigate('/(support)/vets')}
+                  style={{ backgroundColor: '#EFF6FF', borderRadius: 14, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: '#BFDBFE', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Text style={{ fontSize: 24 }}>🩺</Text>
+                    <View>
+                      <Text style={{ fontWeight: '700', color: '#1D4ED8', fontSize: 15 }}>{stats.pendingVets}</Text>
+                      <Text style={{ color: '#1D4ED8', fontSize: 12 }}>Veterinarios pendientes</Text>
+                    </View>
+                  </View>
+                  <Text style={{ color: '#1D4ED8', fontSize: 20 }}>›</Text>
+                </TouchableOpacity>
+              )}
+              {stats.pendingStores > 0 && (
+                <TouchableOpacity
+                  onPress={() => router.navigate('/(support)/stores')}
+                  style={{ backgroundColor: '#FFFBEB', borderRadius: 14, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: '#FDE68A', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Text style={{ fontSize: 24 }}>🛒</Text>
+                    <View>
+                      <Text style={{ fontWeight: '700', color: '#D97706', fontSize: 15 }}>{stats.pendingStores}</Text>
+                      <Text style={{ color: '#D97706', fontSize: 12 }}>Tiendas pendientes</Text>
+                    </View>
+                  </View>
+                  <Text style={{ color: '#D97706', fontSize: 20 }}>›</Text>
+                </TouchableOpacity>
+              )}
+              {stats.pendingTrainers > 0 && (
+                <View style={{ backgroundColor: '#F0FDF4', borderRadius: 14, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: '#BBF7D0', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Text style={{ fontSize: 24 }}>🐕</Text>
+                    <View>
+                      <Text style={{ fontWeight: '700', color: '#15803D', fontSize: 15 }}>{stats.pendingTrainers}</Text>
+                      <Text style={{ color: '#15803D', fontSize: 12 }}>Adiestradores pendientes</Text>
+                    </View>
+                  </View>
+                </View>
+              )}
             </View>
           )}
 

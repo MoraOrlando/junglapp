@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator
+  ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator,
+  Modal, FlatList,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,6 +15,51 @@ import { initFirebase, handleEmailAlreadyInUse } from '@junglapp/firebase';
 import * as Location from 'expo-location';
 
 const { db } = initFirebase();
+
+const REGIONS: Record<string, string[]> = {
+  'Arica y Parinacota': ['Arica', 'Camarones', 'Putre', 'General Lagos'],
+  'Tarapacá': ['Iquique', 'Alto Hospicio', 'Pozo Almonte', 'Camiña', 'Colchane', 'Huara', 'Pica'],
+  'Antofagasta': ['Antofagasta', 'Mejillones', 'Sierra Gorda', 'Taltal', 'Calama', 'Ollagüe', 'San Pedro de Atacama', 'Tocopilla', 'María Elena'],
+  'Atacama': ['Copiapó', 'Caldera', 'Tierra Amarilla', 'Chañaral', 'Diego de Almagro', 'Vallenar', 'Alto del Carmen', 'Freirina', 'Huasco'],
+  'Coquimbo': ['La Serena', 'Coquimbo', 'Andacollo', 'La Higuera', 'Paiguano', 'Vicuña', 'Illapel', 'Canela', 'Los Vilos', 'Salamanca', 'Ovalle', 'Combarbalá', 'Monte Patria', 'Punitaqui', 'Río Hurtado'],
+  'Valparaíso': ['Valparaíso', 'Casablanca', 'Concón', 'Juan Fernández', 'Puchuncaví', 'Quintero', 'Viña del Mar', 'Isla de Pascua', 'Los Andes', 'Calle Larga', 'Rinconada', 'San Esteban', 'La Ligua', 'Cabildo', 'Papudo', 'Petorca', 'Zapallar', 'Quillota', 'Calera', 'Hijuelas', 'La Cruz', 'Nogales', 'San Antonio', 'Algarrobo', 'Cartagena', 'El Quisco', 'El Tabo', 'Santo Domingo', 'San Felipe', 'Catemu', 'Llaillay', 'Panquehue', 'Putaendo', 'Santa María', 'Quilpué', 'Limache', 'Olmué', 'Villa Alemana'],
+  'Metropolitana de Santiago': ['Santiago', 'Cerrillos', 'Cerro Navia', 'Conchalí', 'El Bosque', 'Estación Central', 'Huechuraba', 'Independencia', 'La Cisterna', 'La Florida', 'La Granja', 'La Pintana', 'La Reina', 'Las Condes', 'Lo Barnechea', 'Lo Espejo', 'Lo Prado', 'Macul', 'Maipú', 'Ñuñoa', 'Pedro Aguirre Cerda', 'Peñalolén', 'Providencia', 'Pudahuel', 'Quilicura', 'Quinta Normal', 'Recoleta', 'Renca', 'San Joaquín', 'San Miguel', 'San Ramón', 'Vitacura', 'Puente Alto', 'Pirque', 'San José de Maipo', 'Colina', 'Lampa', 'Tiltil', 'San Bernardo', 'Buin', 'Calera de Tango', 'Paine', 'Melipilla', 'Alhué', 'Curacaví', 'María Pinto', 'San Pedro', 'Talagante', 'El Monte', 'Isla de Maipo', 'Padre Hurtado', 'Peñaflor'],
+  "O'Higgins": ['Rancagua', 'Codegua', 'Coinco', 'Coltauco', 'Doñihue', 'Graneros', 'Las Cabras', 'Machalí', 'Malloa', 'Mostazal', 'Olivar', 'Peumo', 'Pichidegua', 'Quinta de Tilcoco', 'Rengo', 'Requínoa', 'San Vicente', 'Pichilemu', 'La Estrella', 'Litueche', 'Marchihue', 'Navidad', 'Paredones', 'San Fernando', 'Chépica', 'Chimbarongo', 'Lolol', 'Nancagua', 'Palmilla', 'Peralillo', 'Placilla', 'Pumanque', 'Santa Cruz'],
+  'Maule': ['Talca', 'Constitución', 'Curepto', 'Empedrado', 'Maule', 'Pelarco', 'Pencahue', 'Río Claro', 'San Clemente', 'San Rafael', 'Cauquenes', 'Chanco', 'Pelluhue', 'Curicó', 'Hualañé', 'Licantén', 'Molina', 'Rauco', 'Romeral', 'Sagrada Familia', 'Teno', 'Vichuquén', 'Linares', 'Colbún', 'Longaví', 'Parral', 'Retiro', 'San Javier', 'Villa Alegre', 'Yerbas Buenas'],
+  'Ñuble': ['Chillán', 'Bulnes', 'Chillán Viejo', 'El Carmen', 'Pemuco', 'Pinto', 'Quillón', 'San Ignacio', 'Yungay', 'Cobquecura', 'Coelemu', 'Ninhue', 'Portezuelo', 'Quirihue', 'Ránquil', 'Trehuaco', 'Coihueco', 'Ñiquén', 'San Carlos', 'San Fabián', 'San Nicolás'],
+  'Biobío': ['Concepción', 'Coronel', 'Chiguayante', 'Florida', 'Hualpén', 'Hualqui', 'Lota', 'Penco', 'San Pedro de la Paz', 'Santa Juana', 'Talcahuano', 'Tomé', 'Los Ángeles', 'Antuco', 'Cabrero', 'Laja', 'Mulchén', 'Nacimiento', 'Negrete', 'Quilaco', 'Quilleco', 'San Rosendo', 'Santa Bárbara', 'Tucapel', 'Yumbel', 'Arauco', 'Cañete', 'Contulmo', 'Curanilahue', 'Lebu', 'Los Álamos', 'Tirúa'],
+  'La Araucanía': ['Temuco', 'Carahue', 'Cunco', 'Curarrehue', 'Freire', 'Galvarino', 'Gorbea', 'Lautaro', 'Loncoche', 'Melipeuco', 'Nueva Imperial', 'Padre Las Casas', 'Perquenco', 'Pitrufquén', 'Pucón', 'Saavedra', 'Teodoro Schmidt', 'Toltén', 'Vilcún', 'Villarrica', 'Cholchol', 'Angol', 'Collipulli', 'Curacautín', 'Ercilla', 'Lonquimay', 'Los Sauces', 'Lumaco', 'Purén', 'Renaico', 'Traiguén', 'Victoria'],
+  'Los Ríos': ['Valdivia', 'Corral', 'Futrono', 'La Unión', 'Lago Ranco', 'Lanco', 'Los Lagos', 'Máfil', 'Mariquina', 'Paillaco', 'Panguipulli', 'Río Bueno'],
+  'Los Lagos': ['Puerto Montt', 'Calbuco', 'Cochamó', 'Fresia', 'Frutillar', 'Los Muermos', 'Llanquihue', 'Maullín', 'Puerto Varas', 'Castro', 'Ancud', 'Chonchi', 'Curaco de Vélez', 'Dalcahue', 'Puqueldón', 'Queilén', 'Quellón', 'Quemchi', 'Quinchao', 'Osorno', 'Puerto Octay', 'Purranque', 'Puyehue', 'Río Negro', 'San Juan de la Costa', 'San Pablo', 'Chaitén', 'Futaleufú', 'Hualaihué', 'Palena'],
+  'Aysén': ['Coyhaique', 'Lago Verde', 'Aysén', 'Cisnes', 'Guaitecas', 'Cochrane', "O'Higgins", 'Tortel', 'Chile Chico', 'Río Ibáñez'],
+  'Magallanes': ['Punta Arenas', 'Laguna Blanca', 'Río Verde', 'San Gregorio', 'Cabo de Hornos', 'Antártica', 'Porvenir', 'Primavera', 'Timaukel', 'Natales', 'Torres del Paine'],
+};
+const REGION_NAMES = Object.keys(REGIONS);
+
+function PickerModal({ visible, title, options, onSelect, onClose }: {
+  visible: boolean; title: string; options: string[]; onSelect: (v: string) => void; onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }} activeOpacity={1} onPress={onClose} />
+      <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '60%', position: 'absolute', bottom: 0, left: 0, right: 0 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}>
+          <Text style={{ fontWeight: '700', fontSize: 16, color: '#1F2937' }}>{title}</Text>
+          <TouchableOpacity onPress={onClose}><Text style={{ color: '#9CA3AF', fontSize: 22 }}>✕</Text></TouchableOpacity>
+        </View>
+        <FlatList
+          data={options}
+          keyExtractor={(item) => item}
+          renderItem={({ item }) => (
+            <TouchableOpacity onPress={() => { onSelect(item); onClose(); }} style={{ paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F9FAFB' }}>
+              <Text style={{ fontSize: 15, color: '#374151' }}>{item}</Text>
+            </TouchableOpacity>
+          )}
+        />
+      </View>
+    </Modal>
+  );
+}
 
 const schema = z.object({
   name: z.string().min(2, 'Nombre requerido'),
@@ -39,10 +85,16 @@ export default function RegisterStoreScreen() {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [gettingLocation, setGettingLocation] = useState(false);
+  const [showRegionPicker, setShowRegionPicker] = useState(false);
+  const [showCityPicker, setShowCityPicker] = useState(false);
 
-  const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
+  const { control, handleSubmit, formState: { errors }, setValue, watch } = useForm<FormData>({
     resolver: zodResolver(schema),
+    defaultValues: { region: '', city: '' },
   });
+
+  const selectedRegion = watch('region');
+  const selectedCity = watch('city');
 
   async function captureLocation() {
     setGettingLocation(true);
@@ -87,6 +139,8 @@ export default function RegisterStoreScreen() {
           name: data.storeName,
           description: data.storeDescription,
           address: data.address,
+          region: data.region,
+          city: data.city,
           phone: data.phone,
           email: data.email,
           ...(location ? { location } : {}),
@@ -96,6 +150,11 @@ export default function RegisterStoreScreen() {
           createdAt: new Date().toISOString(),
         });
       }
+
+      Alert.alert(
+        '✅ Solicitud enviada',
+        'Tu tienda está siendo revisada. Recibirás una notificación cuando sea aprobada. Mientras tanto, ya puedes explorar la app.'
+      );
     } catch (e: any) {
       if (e.code === 'auth/email-already-in-use') {
         await handleEmailAlreadyInUse(data.email);
@@ -108,7 +167,7 @@ export default function RegisterStoreScreen() {
     }
   }
 
-  const fields: Array<{
+  const baseFields: Array<{
     name: keyof FormData; label: string; placeholder: string;
     keyboard?: any; secure?: boolean; multiline?: boolean;
   }> = [
@@ -120,8 +179,6 @@ export default function RegisterStoreScreen() {
     { name: 'email', label: 'Correo electrónico', placeholder: 'tienda@ejemplo.com', keyboard: 'email-address' },
     { name: 'password', label: 'Contraseña', placeholder: '••••••••', secure: true },
     { name: 'address', label: 'Dirección de la tienda', placeholder: 'Av. Comercial 456' },
-    { name: 'region', label: 'Región', placeholder: 'Metropolitana' },
-    { name: 'city', label: 'Ciudad / Comuna', placeholder: 'Providencia' },
   ];
 
   return (
@@ -138,7 +195,7 @@ export default function RegisterStoreScreen() {
           </View>
 
           <View style={{ gap: 16 }}>
-            {fields.map((f) => (
+            {baseFields.map((f) => (
               <View key={f.name}>
                 <Text style={{ fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 4 }}>{f.label}</Text>
                 <Controller
@@ -168,6 +225,45 @@ export default function RegisterStoreScreen() {
                 )}
               </View>
             ))}
+
+            {/* Region picker */}
+            <View>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 4 }}>Región</Text>
+              <TouchableOpacity
+                onPress={() => setShowRegionPicker(true)}
+                style={{
+                  borderWidth: 1, borderColor: errors.region ? '#EF4444' : '#E5E7EB',
+                  borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14,
+                  backgroundColor: '#fff', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 15, color: selectedRegion ? '#1F2937' : '#9CA3AF' }}>
+                  {selectedRegion || 'Selecciona tu región'}
+                </Text>
+                <Text style={{ color: '#9CA3AF' }}>›</Text>
+              </TouchableOpacity>
+              {errors.region && <Text style={{ color: '#EF4444', fontSize: 11, marginTop: 3 }}>{errors.region.message}</Text>}
+            </View>
+
+            {/* City picker */}
+            <View>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 4 }}>Ciudad / Comuna</Text>
+              <TouchableOpacity
+                onPress={() => selectedRegion ? setShowCityPicker(true) : Alert.alert('', 'Selecciona una región primero')}
+                style={{
+                  borderWidth: 1, borderColor: errors.city ? '#EF4444' : '#E5E7EB',
+                  borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14,
+                  backgroundColor: selectedRegion ? '#fff' : '#F9FAFB',
+                  flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 15, color: selectedCity ? '#1F2937' : '#9CA3AF' }}>
+                  {selectedCity || 'Selecciona tu comuna'}
+                </Text>
+                <Text style={{ color: '#9CA3AF' }}>›</Text>
+              </TouchableOpacity>
+              {errors.city && <Text style={{ color: '#EF4444', fontSize: 11, marginTop: 3 }}>{errors.city.message}</Text>}
+            </View>
           </View>
 
           {/* Geolocalización */}
@@ -235,6 +331,21 @@ export default function RegisterStoreScreen() {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <PickerModal
+        visible={showRegionPicker}
+        title="Selecciona tu región"
+        options={REGION_NAMES}
+        onSelect={(v) => { setValue('region', v, { shouldValidate: true }); setValue('city', '', { shouldValidate: false }); }}
+        onClose={() => setShowRegionPicker(false)}
+      />
+      <PickerModal
+        visible={showCityPicker}
+        title="Selecciona tu comuna"
+        options={selectedRegion ? (REGIONS[selectedRegion] || []) : []}
+        onSelect={(v) => setValue('city', v, { shouldValidate: true })}
+        onClose={() => setShowCityPicker(false)}
+      />
     </SafeAreaView>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
@@ -14,11 +14,45 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }>
   rejected: { bg: '#FEF2F2', text: '#EF4444', label: '❌ Rechazada' },
 };
 
+function RejectModal({ visible, onConfirm, onCancel }: { visible: boolean; onConfirm: (reason: string) => void; onCancel: () => void }) {
+  const [reason, setReason] = useState('');
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', paddingHorizontal: 24 }}>
+        <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 24 }}>
+          <Text style={{ fontWeight: '700', fontSize: 16, color: '#1F2937', marginBottom: 8 }}>❌ Rechazar tienda</Text>
+          <Text style={{ color: '#6B7280', fontSize: 13, marginBottom: 16 }}>Indica el motivo del rechazo. El responsable recibirá esta información.</Text>
+          <TextInput
+            style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, minHeight: 80, textAlignVertical: 'top', marginBottom: 16 }}
+            placeholder="Ej: Documentación incompleta, RUT inválido..."
+            placeholderTextColor="#9CA3AF"
+            multiline
+            value={reason}
+            onChangeText={setReason}
+          />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity onPress={onCancel} style={{ flex: 1, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}>
+              <Text style={{ color: '#374151', fontWeight: '600' }}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => { if (!reason.trim()) { Alert.alert('', 'Ingresa un motivo de rechazo'); return; } onConfirm(reason.trim()); setReason(''); }}
+              style={{ flex: 1, backgroundColor: '#EF4444', borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700' }}>Rechazar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export default function StoresAdminScreen() {
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [rejectTarget, setRejectTarget] = useState<string | null>(null);
 
   async function loadStores() {
     const snap = await getDocs(collection(db, COLLECTIONS.STORES));
@@ -30,17 +64,20 @@ export default function StoresAdminScreen() {
   useEffect(() => { loadStores().finally(() => setLoading(false)); }, []);
   async function onRefresh() { setRefreshing(true); await loadStores(); setRefreshing(false); }
 
-  async function setStatus(id: string, status: 'approved' | 'rejected') {
-    const label = status === 'approved' ? 'aprobar' : 'rechazar';
-    Alert.alert('Confirmar', `¿Deseas ${label} esta tienda?`, [
+  async function approve(id: string) {
+    Alert.alert('Confirmar', '¿Aprobar esta tienda?', [
       { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Sí', onPress: async () => {
-          await updateDoc(doc(db, COLLECTIONS.STORES, id), { status });
-          setStores((prev) => prev.map((s) => s.id === id ? { ...s, status } : s));
-        }
-      }
+      { text: 'Aprobar', onPress: async () => {
+        await updateDoc(doc(db, COLLECTIONS.STORES, id), { status: 'approved', rejectionReason: null });
+        setStores((prev) => prev.map((s) => s.id === id ? { ...s, status: 'approved' } : s));
+      }},
     ]);
+  }
+
+  async function rejectWithReason(id: string, reason: string) {
+    await updateDoc(doc(db, COLLECTIONS.STORES, id), { status: 'rejected', rejectionReason: reason });
+    setStores((prev) => prev.map((s) => s.id === id ? { ...s, status: 'rejected' } : s));
+    setRejectTarget(null);
   }
 
   const filtered = filter === 'all' ? stores : stores.filter((s) => s.status === filter);
@@ -79,18 +116,21 @@ export default function StoresAdminScreen() {
               <Text style={{ color: '#9CA3AF', fontSize: 12 }}>🏷️ {(s as any).rut || 'Sin RUT'} · {s.category}</Text>
               <Text style={{ color: '#9CA3AF', fontSize: 12, marginTop: 2 }}>📍 {s.address}</Text>
               <Text style={{ color: '#9CA3AF', fontSize: 12, marginTop: 2 }}>📧 {(s as any).email || '—'}</Text>
+              {(s as any).rejectionReason && (
+                <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>Motivo: {(s as any).rejectionReason}</Text>
+              )}
               {s.status === 'pending' && (
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-                  <TouchableOpacity onPress={() => setStatus(s.id, 'approved')} style={{ flex: 1, backgroundColor: '#ECFDF5', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
+                  <TouchableOpacity onPress={() => approve(s.id)} style={{ flex: 1, backgroundColor: '#ECFDF5', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
                     <Text style={{ color: '#059669', fontWeight: '700' }}>✅ Aprobar</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setStatus(s.id, 'rejected')} style={{ flex: 1, backgroundColor: '#FEF2F2', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
+                  <TouchableOpacity onPress={() => setRejectTarget(s.id)} style={{ flex: 1, backgroundColor: '#FEF2F2', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
                     <Text style={{ color: '#EF4444', fontWeight: '700' }}>❌ Rechazar</Text>
                   </TouchableOpacity>
                 </View>
               )}
               {s.status !== 'pending' && (
-                <TouchableOpacity onPress={() => setStatus(s.id, s.status === 'approved' ? 'rejected' : 'approved')} style={{ marginTop: 10, backgroundColor: '#F3F4F6', borderRadius: 10, paddingVertical: 8, alignItems: 'center' }}>
+                <TouchableOpacity onPress={() => s.status === 'approved' ? setRejectTarget(s.id) : approve(s.id)} style={{ marginTop: 10, backgroundColor: '#F3F4F6', borderRadius: 10, paddingVertical: 8, alignItems: 'center' }}>
                   <Text style={{ color: '#374151', fontSize: 13 }}>{s.status === 'approved' ? '❌ Revocar' : '✅ Reactivar'}</Text>
                 </TouchableOpacity>
               )}
@@ -99,6 +139,12 @@ export default function StoresAdminScreen() {
         })}
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <RejectModal
+        visible={rejectTarget !== null}
+        onConfirm={(reason) => rejectTarget && rejectWithReason(rejectTarget, reason)}
+        onCancel={() => setRejectTarget(null)}
+      />
     </SafeAreaView>
   );
 }

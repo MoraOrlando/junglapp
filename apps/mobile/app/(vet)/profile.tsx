@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert, ActivityInd
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, addDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import type { Veterinarian, ClinicService } from '@junglapp/types';
@@ -52,7 +52,17 @@ export default function VetProfileScreen() {
         setOpeningHours(v.openingHours || '');
         setClinicServices(v.clinicServices || []);
       } else {
-        setLoadError(true);
+        const newDoc = await addDoc(collection(db, COLLECTIONS.VETERINARIANS), {
+          userId: user.uid,
+          email: user.email || '',
+          name: user.name || '',
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+        });
+        const newData = { userId: user.uid, email: user.email || '', name: user.name || '', status: 'pending', createdAt: new Date().toISOString() } as unknown as Veterinarian;
+        setVet({ id: newDoc.id, ...newData } as Veterinarian);
+        setVetDocId(newDoc.id);
+        setName(user.name || '');
       }
     }).catch(() => setLoadError(true));
   }, [user]);
