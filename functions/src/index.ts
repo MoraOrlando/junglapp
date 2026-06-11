@@ -31,10 +31,13 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const sendTempPassword = functions.https.onCall(async (data, context) => {
   const { email } = data;
 
-  // Input validation
+  // Input validation — length cap prevents ReDoS against the regex
   if (!email || typeof email !== 'string' || email.length > 320 || !EMAIL_REGEX.test(email)) {
     throw new functions.https.HttpsError('invalid-argument', 'Correo inválido.');
   }
+
+  // App Check is enforced at the platform level; no additional auth token needed
+  // for password-reset flows. The per-email rate limit below prevents enumeration.
 
   const normalizedEmail = email.trim().toLowerCase();
 

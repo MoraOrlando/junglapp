@@ -22,6 +22,15 @@
         ".read": "auth != null",
         ".write": "auth != null && $uid === auth.uid"
       }
+    },
+    "notifications": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null",
+        "$notifId": {
+          ".validate": "newData.hasChildren(['type']) && newData.child('type').isString()"
+        }
+      }
     }
   }
 }

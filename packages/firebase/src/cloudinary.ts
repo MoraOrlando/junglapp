@@ -30,6 +30,8 @@ export async function uploadImage(uri: string): Promise<string> {
 
   const form = new FormData();
   form.append('upload_preset', UPLOAD_PRESET);
+  // Restrict allowed formats server-side so Cloudinary rejects unexpected content types
+  form.append('allowed_formats', 'jpg,jpeg,png,webp,pdf');
   form.append('file', { uri, type: mimeType, name: `upload.${resolvedExt}` } as any);
 
   const res = await fetch(uploadUrl, { method: 'POST', body: form });

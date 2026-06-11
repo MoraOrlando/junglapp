@@ -59,6 +59,14 @@ export default function AppointmentDetailScreen() {
       const apptSnap = await getDoc(doc(db, COLLECTIONS.APPOINTMENTS, id!));
       if (!apptSnap.exists()) return;
       const appt = { id: apptSnap.id, ...apptSnap.data() } as Appointment;
+
+      // IDOR guard: vet must own this appointment
+      if (appt.vetId !== user!.uid) {
+        Alert.alert('No autorizado', 'Esta cita no te pertenece.');
+        router.replace('/(vet)' as any);
+        return;
+      }
+
       setAppointment(appt);
 
       if (appt.consultation) {
@@ -136,6 +144,11 @@ export default function AppointmentDetailScreen() {
 
   async function saveConsultation() {
     if (!id || !appointment || !pet) return;
+    // Role guard — only vets can complete consultations
+    if (user?.role !== 'vet') {
+      Alert.alert('No autorizado', 'Solo veterinarios pueden completar consultas.');
+      return;
+    }
     if (!symptoms.trim() || !diagnosis.trim() || !treatmentDone.trim()) {
       Alert.alert('Requerido', 'Completa síntomas, diagnóstico y tratamiento realizado');
       return;

@@ -177,8 +177,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function updateProfile(data: Partial<User>) {
     if (!firebaseUser) return;
-    // Strip immutable / privilege-escalation fields before writing
-    const { role, uid, createdAt, ...safeData } = data as any;
+    // Strip all privilege-escalation and immutable fields before writing
+    const { role, uid, createdAt, mustChangePassword, tempPasswordExpiresAt, ...safeData } = data as any;
+    // Additional guard: never allow writing an empty object
+    if (Object.keys(safeData).length === 0) return;
     await updateDoc(doc(db, 'users', firebaseUser.uid), safeData);
     setUser((prev) => (prev ? { ...prev, ...safeData } : null));
   }
