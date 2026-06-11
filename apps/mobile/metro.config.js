@@ -25,6 +25,7 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (platform === 'web' && moduleName === 'react-native-maps') {
     return { type: 'sourceFile', filePath: path.resolve(projectRoot, 'stubs/maps-stub.js') };
   }
+
   if (originalResolver) return originalResolver(context, moduleName, platform);
   return context.resolveRequest(context, moduleName, platform);
 };
