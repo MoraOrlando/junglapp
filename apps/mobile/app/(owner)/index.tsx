@@ -189,6 +189,7 @@ export default function OwnerHomeScreen() {
                         source={{ uri: pet.photos[0] }}
                         style={{ width: '100%', height: 170 }}
                         contentFit="cover"
+                        contentPosition="top"
                       />
                     ) : (
                       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
