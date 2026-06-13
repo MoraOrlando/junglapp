@@ -37,7 +37,7 @@ export default function VetProfileScreen() {
 
   useEffect(() => {
     if (!user) return;
-    getDocs(query(collection(db, COLLECTIONS.VETERINARIANS), where('userId', '==', user.uid))).then((snap) => {
+    getDocs(query(collection(db, COLLECTIONS.VETERINARIANS), where('userId', '==', user.uid))).then(async (snap) => {
       if (!snap.empty) {
         const v = { id: snap.docs[0].id, ...snap.docs[0].data() } as Veterinarian;
         setVet(v);
