@@ -77,6 +77,16 @@
         {
           "locationWhenInUsePermission": "JunglApp usa tu ubicación para mostrarte veterinarios, tiendas y mascotas extraviadas cercanas."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/adaptive-icon.png",
+          "color": "#2D6A4F",
+          "sounds": [],
+          "androidMode": "default",
+          "androidCollapsedTitle": "JunglApp"
+        }
       ]
     ],
     "experiments": {

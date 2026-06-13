@@ -27,6 +27,7 @@
     "expo-secure-store": "~14.0.0",
     "expo-crypto": "~14.0.0",
     "expo-location": "~19.0.0",
+    "expo-notifications": "~0.29.0",
     "expo-web-browser": "~14.1.0",
     "expo-router": "~6.0.0",
     "expo-splash-screen": "~31.0.0",
