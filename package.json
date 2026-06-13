@@ -23,7 +23,6 @@
   "overrides": {
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "react-native-reanimated": "3.16.1",
     "lightningcss": "^1.29.1",
     "react-native-css-interop": {
       "lightningcss": "^1.29.1"
