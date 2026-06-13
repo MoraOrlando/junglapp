@@ -39,7 +39,9 @@
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.READ_CALENDAR",
         "android.permission.WRITE_CALENDAR",
-        "android.permission.USE_BIOMETRIC"
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.RECORD_AUDIO"
       ],
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
@@ -92,6 +94,13 @@
     "experiments": {
       "typedRoutes": true
     },
-    "scheme": "junglapp"
+    "scheme": "junglapp",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "f180251b-69ce-4b38-a310-b8de516042fa"
+      }
+    },
+    "owner": "vetapp"
   }
 }

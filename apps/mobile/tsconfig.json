@@ -3,15 +3,23 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@/*": ["./*"],
-      "@junglapp/types": ["../../packages/types/src/index.ts"],
-      "@junglapp/firebase": ["../../packages/firebase/src/index.ts"]
+      "@/*": [
+        "./*"
+      ],
+      "@junglapp/types": [
+        "../../packages/types/src/index.ts"
+      ],
+      "@junglapp/firebase": [
+        "../../packages/firebase/src/index.ts"
+      ]
     }
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",
     ".expo/types/**/*.d.ts",
-    "expo-env.d.ts"
+    "expo-env.d.ts",
+    "nativewind-env.d.ts",
+    ".expo/types/**/*.ts"
   ]
 }
