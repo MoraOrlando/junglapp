@@ -7,6 +7,7 @@ import { collection, query, where, getDocs, doc, updateDoc, addDoc } from 'fireb
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import type { Veterinarian, ClinicService } from '@junglapp/types';
+import PlanSelector, { type AccountPlan } from '../../components/PlanSelector';
 
 const CLINIC_SERVICES: { id: ClinicService; label: string }[] = [
   { id: 'veterinaria', label: '🩺 Veterinaria' },
@@ -32,6 +33,7 @@ export default function VetProfileScreen() {
   const [is24_7, setIs24_7] = useState(false);
   const [openingHours, setOpeningHours] = useState('');
   const [clinicServices, setClinicServices] = useState<ClinicService[]>([]);
+  const [plan, setPlan] = useState<AccountPlan>('free');
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
@@ -51,12 +53,14 @@ export default function VetProfileScreen() {
         setIs24_7(!!v.is24_7);
         setOpeningHours(v.openingHours || '');
         setClinicServices(v.clinicServices || []);
+        setPlan((v as any).plan || 'free');
       } else {
         const newDoc = await addDoc(collection(db, COLLECTIONS.VETERINARIANS), {
           userId: user.uid,
           email: user.email || '',
           name: user.name || '',
           status: 'pending',
+          plan: 'free',
           createdAt: new Date().toISOString(),
         });
         const newData = { userId: user.uid, email: user.email || '', name: user.name || '', status: 'pending', createdAt: new Date().toISOString() } as unknown as Veterinarian;
@@ -91,7 +95,7 @@ export default function VetProfileScreen() {
       const numFee = Number(fee) || 0;
       await updateDoc(doc(db, COLLECTIONS.VETERINARIANS, vetDocId), {
         name, phone, address, licenseNumber, specialties, consultationFee: numFee,
-        is24_7, openingHours, clinicServices,
+        is24_7, openingHours, clinicServices, plan,
       });
       Alert.alert('✅', 'Perfil actualizado correctamente');
     } catch (e: any) {
@@ -229,6 +233,13 @@ export default function VetProfileScreen() {
               );
             })}
           </View>
+        </View>
+
+        {/* Plan */}
+        <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#F3F4F6' }}>
+          <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15, marginBottom: 4 }}>Plan de cuenta</Text>
+          <Text style={{ color: '#9CA3AF', fontSize: 12, marginBottom: 14 }}>Elige el plan que mejor se adapte a tu práctica.</Text>
+          <PlanSelector value={plan} onChange={setPlan} />
         </View>
 
         {/* Read-only info */}

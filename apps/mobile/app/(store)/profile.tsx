@@ -9,6 +9,7 @@ import * as Location from 'expo-location';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import type { Store } from '@junglapp/types';
+import PlanSelector, { type AccountPlan } from '../../components/PlanSelector';
 
 const { db } = initFirebase();
 const AMBER = '#D97706';
@@ -22,6 +23,7 @@ export default function StoreProfileScreen() {
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [plan, setPlan] = useState<AccountPlan>('free');
   const [saving, setSaving] = useState(false);
   const [gettingLocation, setGettingLocation] = useState(false);
 
@@ -37,6 +39,7 @@ export default function StoreProfileScreen() {
         setPhone(s.phone);
         setAddress(s.address);
         if (s.location) setLocation(s.location);
+        setPlan((s as any).plan || 'free');
       }
     });
   }, [user]);
@@ -62,7 +65,7 @@ export default function StoreProfileScreen() {
     if (!storeDocId) return;
     setSaving(true);
     try {
-      const updates: any = { name, description, phone, address };
+      const updates: any = { name, description, phone, address, plan };
       if (location) updates.location = location;
       await updateDoc(doc(db, COLLECTIONS.STORES, storeDocId), updates);
       Alert.alert('✅', 'Tienda actualizada correctamente');
@@ -136,6 +139,13 @@ export default function StoreProfileScreen() {
               />
             </View>
           ))}
+        </View>
+
+        {/* Plan */}
+        <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#F3F4F6' }}>
+          <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15, marginBottom: 4 }}>Plan de cuenta</Text>
+          <Text style={{ color: '#9CA3AF', fontSize: 12, marginBottom: 14 }}>Elige el plan que mejor se adapte a tu tienda.</Text>
+          <PlanSelector value={plan} onChange={setPlan} />
         </View>
 
         {/* Geolocalización */}

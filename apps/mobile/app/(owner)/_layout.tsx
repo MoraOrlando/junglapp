@@ -8,10 +8,10 @@ import { useAuth } from '../../context/AuthContext';
 
 const { rtdb, db } = initFirebase();
 
-function TabIcon({ emoji, focused, badge }: { emoji: string; focused: boolean; badge?: number }) {
+function TabIcon({ emoji, focused, badge, dim }: { emoji: string; focused: boolean; badge?: number; dim?: boolean }) {
   return (
     <View>
-      <Text style={{ fontSize: focused ? 24 : 20, opacity: focused ? 1 : 0.6 }}>{emoji}</Text>
+      <Text style={{ fontSize: focused ? 24 : 20, opacity: dim ? 0.3 : focused ? 1 : 0.6 }}>{emoji}</Text>
       {!!badge && badge > 0 && (
         <View style={{ position: 'absolute', top: -4, right: -8, backgroundColor: '#EF4444', borderRadius: 8, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }}>
           <Text style={{ color: '#fff', fontSize: 9, fontWeight: '700' }}>{badge > 99 ? '99+' : badge}</Text>
@@ -26,11 +26,21 @@ export default function OwnerLayout() {
   const listenedRef = useRef<string | null>(null);
   const [unreadChats, setUnreadChats] = useState(0);
   const [matchCount, setMatchCount] = useState(0);
+  const [hasMatchPets, setHasMatchPets] = useState(false);
 
   useEffect(() => {
     if (!user?.uid) return;
-    const q = query(collection(db, COLLECTIONS.CHATS), where('participants', 'array-contains', user.uid));
-    const unsub = onSnapshot(q, (snap) => {
+    // Listen for match-eligible pets
+    const petsQ = query(
+      collection(db, COLLECTIONS.PETS),
+      where('ownerId', '==', user.uid),
+      where('lookingForPartner', '==', true),
+    );
+    const unsubPets = onSnapshot(petsQ, (snap) => setHasMatchPets(!snap.empty));
+
+    // Listen for chats (unread + match count)
+    const chatsQ = query(collection(db, COLLECTIONS.CHATS), where('participants', 'array-contains', user.uid));
+    const unsubChats = onSnapshot(chatsQ, (snap) => {
       setUnreadChats(snap.docs.filter((d) => {
         const data = d.data();
         if (!data.lastMessage || !data.lastMessageAt) return false;
@@ -41,7 +51,8 @@ export default function OwnerLayout() {
       }).length);
       setMatchCount(snap.docs.filter((d) => !!d.data().matchId).length);
     });
-    return unsub;
+
+    return () => { unsubPets(); unsubChats(); };
   }, [user?.uid]);
 
   useEffect(() => {
@@ -50,18 +61,13 @@ export default function OwnerLayout() {
     listenedRef.current = user.uid;
 
     const notifPath = ref(rtdb, `${RTDB_PATHS.NOTIFICATIONS}/${user.uid}`);
-
     const unsubscribe = onValue(notifPath, (snapshot) => {
       if (!snapshot.exists()) return;
       const notifications = snapshot.val() as Record<string, any>;
-
       Object.entries(notifications).forEach(([apptId, notif]) => {
         if (notif.read) return;
-
         if (notif.type === 'vet_arrived') {
-          // Mark as read immediately so it doesn't fire again
           remove(ref(rtdb, `${RTDB_PATHS.NOTIFICATIONS}/${user.uid}/${apptId}`));
-
           Alert.alert(
             '🩺 Tu veterinario llegó',
             `${notif.vetName} ha llegado a la consulta.\n\nPor favor verifica su identidad antes de comenzar.`,
@@ -70,7 +76,6 @@ export default function OwnerLayout() {
         }
       });
     });
-
     return () => unsubscribe();
   }, [user?.uid]);
 
@@ -109,7 +114,14 @@ export default function OwnerLayout() {
         name="match"
         options={{
           title: 'Match',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="💚" focused={focused} badge={matchCount} />,
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="🔥" focused={focused} badge={matchCount} dim={!hasMatchPets} />
+          ),
+          tabBarLabel: ({ focused }) => (
+            <Text style={{ fontSize: 11, fontWeight: '500', color: hasMatchPets ? (focused ? '#2D6A4F' : '#9CA3AF') : '#D1D5DB' }}>
+              Match
+            </Text>
+          ),
         }}
       />
       <Tabs.Screen
@@ -119,8 +131,7 @@ export default function OwnerLayout() {
           tabBarIcon: ({ focused }) => <TabIcon emoji="💬" focused={focused} badge={unreadChats} />,
         }}
       />
-      {/* ── Hidden routes ── */}
-      {/* Profile is reached by tapping the avatar on the home header */}
+      {/* Hidden routes */}
       <Tabs.Screen name="profile"   options={{ href: null }} />
       <Tabs.Screen name="pets"      options={{ href: null }} />
       <Tabs.Screen name="lost"      options={{ href: null }} />
