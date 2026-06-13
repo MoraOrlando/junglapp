@@ -54,5 +54,11 @@
     "@babel/core": "^7.25.0",
     "@types/react": "~19.1.0",
     "typescript": "~5.9.2"
+  },
+  "optionalDependencies": {
+    "lightningcss-linux-x64-gnu": "*",
+    "lightningcss-linux-arm64-gnu": "*",
+    "lightningcss-darwin-x64": "*",
+    "lightningcss-darwin-arm64": "*"
   }
 }
