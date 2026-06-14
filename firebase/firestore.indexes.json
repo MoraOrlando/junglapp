@@ -1,0 +1,23 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "matches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "pet1Id", "order": "ASCENDING" },
+        { "fieldPath": "pet2Id", "order": "ASCENDING" },
+        { "fieldPath": "owner2Id", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "matches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "owner1Id", "order": "ASCENDING" },
+        { "fieldPath": "pet1Id", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

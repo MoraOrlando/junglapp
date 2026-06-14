@@ -63,9 +63,13 @@ export default function MatchScreen() {
       query(collection(db, COLLECTIONS.PETS), where('lookingForPartner', '==', true))
     );
     const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet));
-    // Exclude already-liked pets
+    // Exclude already-liked pets (owner1Id filter satisfies security rules)
     const likedSnap = await getDocs(
-      query(collection(db, COLLECTIONS.MATCHES), where('pet1Id', '==', myPet.id))
+      query(
+        collection(db, COLLECTIONS.MATCHES),
+        where('owner1Id', '==', user.uid),
+        where('pet1Id', '==', myPet.id),
+      )
     );
     const likedIds = new Set(likedSnap.docs.map((d) => d.data().pet2Id as string));
     setCandidates(all.filter((p) => p.ownerId !== user.uid && !likedIds.has(p.id)));
@@ -78,11 +82,13 @@ export default function MatchScreen() {
 
     if (liked) {
       // Check for mutual match: candidate already liked our pet
+      // owner2Id filter is required for Firestore security rules evaluation
       const mutualSnap = await getDocs(
         query(
           collection(db, COLLECTIONS.MATCHES),
           where('pet1Id', '==', candidate.id),
           where('pet2Id', '==', selectedMyPet.id),
+          where('owner2Id', '==', user.uid),
           where('status', '==', 'pending'),
           limit(1),
         )
