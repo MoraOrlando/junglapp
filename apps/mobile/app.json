@@ -14,11 +14,13 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.junglapp.app",
+      "buildNumber": "1",
       "infoPlist": {
         "CFBundleURLTypes": [
           {
             "CFBundleURLSchemes": [
-              "com.googleusercontent.apps.499650328037-j4edei7e54rpebd04ebpdv1iooilj10a"
+              "com.googleusercontent.apps.499650328037-j4edei7e54rpebd04ebpdv1iooilj10a",
+              "junglapp"
             ]
           }
         ]

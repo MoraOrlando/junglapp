@@ -266,7 +266,8 @@ service cloud.firestore {
 
     // ── Lost pets ──────────────────────────────────────────────────────────
     match /lostPets/{lostPetId} {
-      // Contains contact PII — auth required
+      // Community feature: all auth users can browse lost pets to help find them.
+      // Contact PII is justified by the humanitarian purpose of the feature.
       allow read: if isAuth();
       // Reporter must own the pet they are reporting
       allow create: if isAuth()

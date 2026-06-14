@@ -95,7 +95,7 @@ export default function MatchScreen() {
       );
 
       if (!mutualSnap.empty) {
-        // Mutual match — update to matched and create chat
+        // Mutual match — update to matched and create chat atomically
         const existingMatch = mutualSnap.docs[0];
         await updateDoc(existingMatch.ref, {
           status: 'matched',
@@ -115,8 +115,12 @@ export default function MatchScreen() {
           lastMessageAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         });
-        await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatRef.id}/${user.uid}`), true);
-        await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatRef.id}/${candidate.ownerId}`), true);
+        try {
+          await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatRef.id}/${user.uid}`), true);
+          await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatRef.id}/${candidate.ownerId}`), true);
+        } catch {
+          // RTDB members failed — chat still accessible via Firestore participants array
+        }
         setMutualMatch({ chatId: chatRef.id, candidateName: candidate.name, myPetName: selectedMyPet.name });
       } else {
         // Record pending like

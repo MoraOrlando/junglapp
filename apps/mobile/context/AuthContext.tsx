@@ -72,7 +72,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (googleResponse?.type === 'success') {
-      const { id_token } = googleResponse.params;
+      const id_token = googleResponse.params?.id_token;
+      if (!id_token) return;
       const credential = GoogleAuthProvider.credential(id_token);
       signInWithCredential(auth, credential)
         .then(async ({ user: fbUser }) => { await ensureUserDoc(fbUser, 'owner'); })
