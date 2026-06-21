@@ -34,4 +34,14 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   return context.resolveRequest(context, moduleName, platform);
 };
 
-module.exports = withNativeWind(config, { input: './global.css' });
+const finalConfig = withNativeWind(config, { input: './global.css' });
+
+// Inject polyfill before all modules to fix non-writable globals (Hermes + RN 0.81 compat)
+const originalGetPolyfills = finalConfig.serializer?.getPolyfills;
+finalConfig.serializer = finalConfig.serializer || {};
+finalConfig.serializer.getPolyfills = (ctx) => {
+  const base = originalGetPolyfills ? originalGetPolyfills(ctx) : [];
+  return [path.resolve(projectRoot, 'polyfills/fix-non-writable-globals.js'), ...base];
+};
+
+module.exports = finalConfig;
