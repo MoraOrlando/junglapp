@@ -120,7 +120,7 @@ export default function ChatRoomScreen() {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ImagePicker.MediaType.Images,
       quality: 0.8,
     });
     if (result.canceled || !result.assets[0]) return;

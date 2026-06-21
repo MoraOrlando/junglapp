@@ -41,7 +41,7 @@ export default function RegisterTrainerScreen() {
 
   async function pickIdImage() {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ImagePicker.MediaType.Images,
       quality: 0.9,
     });
     if (!result.canceled) setIdImage(result.assets[0].uri);

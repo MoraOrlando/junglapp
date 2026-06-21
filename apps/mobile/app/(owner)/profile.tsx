@@ -32,7 +32,7 @@ export default function ProfileScreen() {
   function pickPhoto() {
     if (Platform.OS === 'web') {
       // On web use the image library only (no camera)
-      ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8, allowsEditing: true, aspect: [1, 1] })
+      ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaType.Images, quality: 0.8, allowsEditing: true, aspect: [1, 1] })
         .then((r) => { if (!r.canceled) saveProfilePhoto(r.assets[0].uri); });
       return;
     }
@@ -47,7 +47,7 @@ export default function ProfileScreen() {
       },
       {
         text: 'Elegir de galería', onPress: async () => {
-          const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8, allowsEditing: true, aspect: [1, 1] });
+          const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaType.Images, quality: 0.8, allowsEditing: true, aspect: [1, 1] });
           if (!r.canceled) saveProfilePhoto(r.assets[0].uri);
         },
       },

@@ -31,7 +31,7 @@ export default function VetLayout() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
       }}
     >
-      <Tabs.Screen name="appointment" options={{ href: null }} />
+      <Tabs.Screen name="appointment/[id]" options={{ href: null }} />
       <Tabs.Screen
         name="index"
         options={{

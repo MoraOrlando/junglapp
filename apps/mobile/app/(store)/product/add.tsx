@@ -28,7 +28,7 @@ export default function AddProductScreen() {
 
   async function pickPhoto() {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ImagePicker.MediaType.Images,
       allowsMultipleSelection: true,
       quality: 0.8,
     });

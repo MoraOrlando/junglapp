@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
@@ -8,12 +8,17 @@ import type { Veterinarian } from '@junglapp/types';
 
 const { db } = initFirebase();
 
-const ALL_TIME_SLOTS = [
-  '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
-  '11:00', '11:30', '12:00', '12:30', '13:00', '13:30',
-  '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
-  '17:00', '17:30', '18:00',
-];
+function generateSlots(durationMin: number): string[] {
+  const slots: string[] = [];
+  let minutes = 0;
+  while (minutes < 24 * 60) {
+    const h = Math.floor(minutes / 60).toString().padStart(2, '0');
+    const m = (minutes % 60).toString().padStart(2, '0');
+    slots.push(`${h}:${m}`);
+    minutes += durationMin;
+  }
+  return slots;
+}
 
 function getNextDays(n: number): string[] {
   const days: string[] = [];
@@ -33,6 +38,8 @@ export default function VetCalendarScreen() {
   const [consultationFee, setConsultationFee] = useState('');
   const [slotDuration, setSlotDuration] = useState(30);
   const [saving, setSaving] = useState(false);
+
+  const ALL_TIME_SLOTS = useMemo(() => generateSlots(slotDuration), [slotDuration]);
 
   const days = getNextDays(14);
 
@@ -59,7 +66,7 @@ export default function VetCalendarScreen() {
 
   async function saveAll() {
     if (!vetId) {
-      Alert.alert('Error', 'No se encontró tu perfil de veterinario. Contacta a soporte.');
+      Alert.alert('Error', 'Completa tu perfil veterinario primero en la pestaña Mi Perfil');
       return;
     }
     setSaving(true);
@@ -257,6 +264,38 @@ export default function VetCalendarScreen() {
             <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#CBD5E1' }} />
             <Text style={{ color: '#64748B', fontSize: 12 }}>No disponible</Text>
           </View>
+        </View>
+
+        {/* Range selector buttons */}
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+          <TouchableOpacity
+            onPress={() => setAvailability({ ...availability, [selectedDate]: ALL_TIME_SLOTS })}
+            style={{
+              flex: 1,
+              borderRadius: 12,
+              paddingVertical: 12,
+              alignItems: 'center',
+              backgroundColor: '#2563EB',
+            }}
+          >
+            <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>
+              Seleccionar todo el día
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setAvailability({ ...availability, [selectedDate]: [] })}
+            style={{
+              flex: 1,
+              borderRadius: 12,
+              paddingVertical: 12,
+              alignItems: 'center',
+              backgroundColor: '#94A3B8',
+            }}
+          >
+            <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>
+              Limpiar día
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <TouchableOpacity

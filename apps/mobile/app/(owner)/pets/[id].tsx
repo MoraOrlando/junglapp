@@ -142,7 +142,7 @@ export default function PetDetailScreen() {
       },
       {
         text: 'Elegir de galería', onPress: async () => {
-          const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+          const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaType.Images, quality: 0.8, allowsEditing: true, aspect: [1, 1] });
           if (!r.canceled) await savePhoto(r.assets[0].uri);
         },
       },
