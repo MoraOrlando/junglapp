@@ -95,7 +95,7 @@
     ],
     "experiments": {
       "typedRoutes": true,
-      "newArchEnabled": false
+      "newArchEnabled": true
     },
     "scheme": "junglapp",
     "extra": {
