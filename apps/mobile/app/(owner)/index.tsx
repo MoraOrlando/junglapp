@@ -29,7 +29,7 @@ export default function OwnerHomeScreen() {
     const q = query(collection(db, COLLECTIONS.PETS), where('ownerId', '==', user.uid));
     const unsub = onSnapshot(q, (snap) => {
       setPets(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)));
-    });
+    }, (err) => { if (__DEV__) console.log('pets listener:', err.code); });
     return unsub;
   }, [user?.uid]);
 
@@ -44,7 +44,7 @@ export default function OwnerHomeScreen() {
           .filter((r) => r.type === 'vet_control' && !r.done)
           .sort((a, b) => a.date.localeCompare(b.date))
       );
-    });
+    }, (err) => { if (__DEV__) console.log('reminders listener:', err.code); });
     return unsub;
   }, [user?.uid]);
 

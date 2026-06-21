@@ -36,7 +36,7 @@ export default function OwnerLayout() {
       where('ownerId', '==', user.uid),
       where('lookingForPartner', '==', true),
     );
-    const unsubPets = onSnapshot(petsQ, (snap) => setHasMatchPets(!snap.empty));
+    const unsubPets = onSnapshot(petsQ, (snap) => setHasMatchPets(!snap.empty), (err) => { if (__DEV__) console.log('match pets listener:', err.code); });
 
     // Listen for chats (unread + match count)
     const chatsQ = query(collection(db, COLLECTIONS.CHATS), where('participants', 'array-contains', user.uid));
@@ -50,7 +50,7 @@ export default function OwnerLayout() {
         return lastReadStr < lastMsg;
       }).length);
       setMatchCount(snap.docs.filter((d) => !!d.data().matchId).length);
-    });
+    }, (err) => { if (__DEV__) console.log('chats listener:', err.code); });
 
     return () => { unsubPets(); unsubChats(); };
   }, [user?.uid]);

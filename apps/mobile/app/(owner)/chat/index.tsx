@@ -37,7 +37,7 @@ export default function ChatListScreen() {
     const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Chat));
       setChats(data.sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')));
-    });
+    }, (err) => { if (__DEV__) console.log('chats list listener:', err.code); });
     return unsub;
   }, [user?.uid]);
 

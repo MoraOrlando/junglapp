@@ -34,7 +34,7 @@ export default function MatchScreen() {
     if (!user) return;
     loadMyPets();
     const q = query(collection(db, COLLECTIONS.CHATS), where('participants', 'array-contains', user.uid));
-    const unsub = onSnapshot(q, (snap) => setMatchCount(snap.docs.filter((d) => !!d.data().matchId).length));
+    const unsub = onSnapshot(q, (snap) => setMatchCount(snap.docs.filter((d) => !!d.data().matchId).length), (err) => { if (__DEV__) console.log('match listener:', err.code); });
     return unsub;
   }, [user?.uid]);
 
