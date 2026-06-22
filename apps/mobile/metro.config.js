@@ -18,10 +18,28 @@ config.resolver.nodeModulesPaths = [
 // (causes "Component auth has not been registered yet"). Disable it.
 config.resolver.unstable_enablePackageExports = false;
 
+// Deduplicate react-native: the root node_modules may have a different version than
+// apps/mobile/node_modules. Force all react-native imports to resolve from apps/mobile
+// so Metro never bundles two copies (which causes "property is not writable" crashes).
+const rnDir = path.resolve(projectRoot, 'node_modules', 'react-native');
+config.resolver.extraNodeModules = {
+  'react-native': rnDir,
+};
+
 // react-native-maps has no web implementation — stub it out for the web bundle
 // so the bundler doesn't fail when processing screens that import it conditionally.
 const originalResolver = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  // Force react-native and all its subpaths to apps/mobile version.
+  // We redirect by faking the origin to apps/mobile so Metro's own resolver
+  // walks up from there and finds apps/mobile/node_modules/react-native first.
+  if (moduleName === 'react-native' || moduleName.startsWith('react-native/')) {
+    return context.resolveRequest(
+      { ...context, originModulePath: path.join(projectRoot, '_sentinel.js') },
+      moduleName,
+      platform
+    );
+  }
   if (platform === 'web' && moduleName === 'react-native-maps') {
     return { type: 'sourceFile', filePath: path.resolve(projectRoot, 'stubs/maps-stub.js') };
   }
