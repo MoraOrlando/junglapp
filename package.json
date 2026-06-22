@@ -15,10 +15,10 @@
     "web": "cd apps/web && npm run dev"
   },
   "devDependencies": {
-    "metro": "^0.83.1",
-    "metro-runtime": "~0.81.0",
     "turbo": "^2.0.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "metro-runtime": "~0.81.0",
+    "metro": "~0.81.0"
   },
   "overrides": {
     "react": "19.1.0",
