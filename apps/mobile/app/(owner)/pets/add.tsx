@@ -172,7 +172,7 @@ export default function AddPetScreen() {
         text: 'Galería',
         onPress: async () => {
           const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaType.Images,
+            mediaTypes: 'images',
             allowsMultipleSelection: true, quality: 0.8,
           });
           if (!result.canceled) setPhotos((p) => [...p, ...result.assets.map((a) => a.uri)]);

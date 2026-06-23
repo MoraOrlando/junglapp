@@ -186,7 +186,7 @@ export default function RegisterVetScreen() {
         licenseNumber: licenseNumber.trim(),
         photoUrl: photoUrl || null,
         credentialUrl,
-        status: 'approved',
+        status: 'pending',
         specialties: [],
         availability: {},
         consultationFee: 0,

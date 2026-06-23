@@ -1,16 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Alert,
-  Animated, Modal
+  Animated, Modal, Linking
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import {
   doc, getDoc, updateDoc, collection, query, where, getDocs
 } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
+import { useAuth } from '../../../context/AuthContext';
 import type { Pet } from '@junglapp/types';
 
 const { db } = initFirebase();
@@ -30,12 +31,14 @@ interface VisitEntry {
 export default function PetDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { user } = useAuth();
   const [pet, setPet] = useState<Pet | null>(null);
   const [visits, setVisits] = useState<VisitEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [isLost, setIsLost] = useState(false);
   const [showFlame, setShowFlame] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [selectedVisit, setSelectedVisit] = useState<VisitEntry | null>(null);
 
   const flameScale = useRef(new Animated.Value(0)).current;
   const flameOpacity = useRef(new Animated.Value(0)).current;
@@ -45,45 +48,75 @@ export default function PetDetailScreen() {
     getDoc(doc(db, COLLECTIONS.PETS, id)).then((snap) => {
       if (snap.exists()) setPet({ id: snap.id, ...snap.data() } as Pet);
       setLoading(false);
-    });
-    // Filter isFound in JS to avoid requiring a composite Firestore index
+    }).catch(() => setLoading(false));
     getDocs(query(
       collection(db, COLLECTIONS.LOST_PETS),
       where('petId', '==', id)
     )).then((snap) => {
       setIsLost(snap.docs.some((d) => d.data().isFound === false));
-    });
-
-    // Visit history: owner-registered visits + vet-completed in-app consultations
-    Promise.all([
-      getDocs(query(collection(db, COLLECTIONS.MEDICAL_VISITS), where('petId', '==', id))),
-      getDocs(query(collection(db, COLLECTIONS.APPOINTMENTS), where('petId', '==', id))),
-    ]).then(([visitsSnap, apptsSnap]) => {
-      const ownerVisits: VisitEntry[] = visitsSnap.docs.map((d) => {
-        const v = d.data();
-        return {
-          id: d.id, source: 'owner',
-          date: v.date ?? '', vetName: v.vetName ?? 'Veterinario',
-          notes: v.notes, prescriptionUrl: v.prescriptionUrl,
-          nextControlDate: v.nextControlDate,
-        };
-      });
-      // Vet flow: only appointments the vet already completed are visible in the history
-      const vetVisits: VisitEntry[] = apptsSnap.docs
-        .filter((d) => d.data().status === 'completed' && d.data().consultation)
-        .map((d) => {
-          const a = d.data();
-          return {
-            id: d.id, source: 'vet',
-            date: a.date ?? '', vetName: a.vetName ?? 'Veterinario JunglApp',
-            diagnosis: a.consultation?.diagnosis,
-            treatment: a.consultation?.treatmentDone || a.consultation?.treatment,
-            prescriptionUrl: a.consultation?.prescriptionImageUrl,
-          };
-        });
-      setVisits([...ownerVisits, ...vetVisits].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? '')));
-    });
+    }).catch(() => {});
   }, [id]);
+
+  // Reload visit history every time this screen comes into focus (e.g. after adding a visit).
+  useFocusEffect(useCallback(() => {
+    if (!id || !user) return;
+    let cancelled = false;
+
+    async function loadVisits() {
+      const ownerVisits: VisitEntry[] = [];
+      const vetVisits: VisitEntry[] = [];
+
+      // Medical visits registered by the owner
+      try {
+        const visitsSnap = await getDocs(query(
+          collection(db, COLLECTIONS.MEDICAL_VISITS),
+          where('petId', '==', id),
+          where('ownerId', '==', user.uid),
+        ));
+        visitsSnap.docs.forEach((d) => {
+          const v = d.data();
+          ownerVisits.push({
+            id: d.id, source: 'owner',
+            date: v.date ?? '', vetName: v.vetName ?? 'Veterinario',
+            notes: v.notes, prescriptionUrl: v.prescriptionUrl,
+            nextControlDate: v.nextControlDate,
+          });
+        });
+      } catch (e: any) {
+        if (__DEV__) console.log('medicalVisits query error:', e.code, e.message);
+      }
+
+      // Completed vet appointments that include a consultation record
+      try {
+        const apptsSnap = await getDocs(query(
+          collection(db, COLLECTIONS.APPOINTMENTS),
+          where('petId', '==', id),
+          where('ownerId', '==', user.uid),
+        ));
+        apptsSnap.docs
+          .filter((d) => d.data().status === 'completed' && d.data().consultation)
+          .forEach((d) => {
+            const a = d.data();
+            vetVisits.push({
+              id: d.id, source: 'vet',
+              date: a.date ?? '', vetName: a.vetName ?? 'Veterinario JunglApp',
+              diagnosis: a.consultation?.diagnosis,
+              treatment: a.consultation?.treatmentDone || a.consultation?.treatment,
+              prescriptionUrl: a.consultation?.prescriptionImageUrl,
+            });
+          });
+      } catch (e: any) {
+        if (__DEV__) console.log('appointments query error:', e.code, e.message);
+      }
+
+      if (!cancelled) {
+        setVisits([...ownerVisits, ...vetVisits].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? '')));
+      }
+    }
+
+    loadVisits();
+    return () => { cancelled = true; };
+  }, [id, user?.uid]));
 
   function triggerFlameAndNavigate() {
     setShowFlame(true);
@@ -142,7 +175,7 @@ export default function PetDetailScreen() {
       },
       {
         text: 'Elegir de galería', onPress: async () => {
-          const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaType.Images, quality: 0.8, allowsEditing: true, aspect: [1, 1] });
+          const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.8, allowsEditing: true, aspect: [1, 1] });
           if (!r.canceled) await savePhoto(r.assets[0].uri);
         },
       },
@@ -215,6 +248,95 @@ export default function PetDetailScreen() {
           <Animated.Text style={{ fontSize: 22, color: '#fff', fontWeight: 'bold', marginTop: 12, opacity: flameOpacity }}>
             ¡A buscar pareja!
           </Animated.Text>
+        </View>
+      </Modal>
+
+      {/* Visit detail modal */}
+      <Modal
+        visible={!!selectedVisit}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setSelectedVisit(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: '85%' }}>
+            {/* Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ fontSize: 17, fontWeight: '800', color: '#1E293B' }}>
+                🩺 Detalle de consulta
+              </Text>
+              <TouchableOpacity onPress={() => setSelectedVisit(null)} style={{ padding: 4 }}>
+                <Text style={{ fontSize: 22, color: '#94A3B8' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {selectedVisit && (
+                <View style={{ gap: 12 }}>
+                  {/* Vet + date */}
+                  <View style={{ backgroundColor: '#F8FAFC', borderRadius: 12, padding: 12 }}>
+                    <Text style={{ fontSize: 13, color: '#64748B', marginBottom: 2 }}>Veterinario</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#1E293B' }}>{selectedVisit.vetName}</Text>
+                    <Text style={{ fontSize: 12, color: '#94A3B8', marginTop: 4 }}>{selectedVisit.date}</Text>
+                    <Text style={{ fontSize: 11, color: selectedVisit.source === 'vet' ? '#3B82F6' : '#94A3B8', marginTop: 2 }}>
+                      {selectedVisit.source === 'vet' ? 'Consulta agendada vía JunglApp ✓' : 'Registrada por ti'}
+                    </Text>
+                  </View>
+
+                  {/* Diagnosis */}
+                  {selectedVisit.diagnosis ? (
+                    <View style={{ backgroundColor: '#EFF6FF', borderRadius: 12, padding: 12 }}>
+                      <Text style={{ fontSize: 12, color: '#3B82F6', fontWeight: '600', marginBottom: 4 }}>Diagnóstico</Text>
+                      <Text style={{ fontSize: 14, color: '#1E293B' }}>{selectedVisit.diagnosis}</Text>
+                    </View>
+                  ) : null}
+
+                  {/* Treatment */}
+                  {selectedVisit.treatment ? (
+                    <View style={{ backgroundColor: '#F0FDF4', borderRadius: 12, padding: 12 }}>
+                      <Text style={{ fontSize: 12, color: '#16A34A', fontWeight: '600', marginBottom: 4 }}>Tratamiento</Text>
+                      <Text style={{ fontSize: 14, color: '#1E293B' }}>{selectedVisit.treatment}</Text>
+                    </View>
+                  ) : null}
+
+                  {/* Notes */}
+                  {selectedVisit.notes ? (
+                    <View style={{ backgroundColor: '#FAFAFA', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                      <Text style={{ fontSize: 12, color: '#64748B', fontWeight: '600', marginBottom: 4 }}>Notas</Text>
+                      <Text style={{ fontSize: 14, color: '#1E293B' }}>{selectedVisit.notes}</Text>
+                    </View>
+                  ) : null}
+
+                  {/* Next control */}
+                  {selectedVisit.nextControlDate ? (
+                    <View style={{ backgroundColor: '#FFFBEB', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#FDE68A' }}>
+                      <Text style={{ fontSize: 12, color: '#B45309', fontWeight: '600', marginBottom: 4 }}>📅 Próximo control</Text>
+                      <Text style={{ fontSize: 14, color: '#92400E', fontWeight: '700' }}>{selectedVisit.nextControlDate}</Text>
+                    </View>
+                  ) : null}
+
+                  {/* Prescription */}
+                  {selectedVisit.prescriptionUrl ? (
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL(selectedVisit.prescriptionUrl!)}
+                      style={{ backgroundColor: '#F0FDF4', borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: '#BBF7D0' }}
+                    >
+                      <Text style={{ fontSize: 24 }}>📄</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontWeight: '700', color: '#166534', fontSize: 14 }}>Ver receta médica</Text>
+                        <Text style={{ fontSize: 11, color: '#4ADE80', marginTop: 2 }}>Toca para abrir el archivo</Text>
+                      </View>
+                      <Text style={{ color: '#4ADE80', fontSize: 18 }}>›</Text>
+                    </TouchableOpacity>
+                  ) : null}
+
+                  {!selectedVisit.diagnosis && !selectedVisit.treatment && !selectedVisit.notes && !selectedVisit.prescriptionUrl && (
+                    <Text style={{ color: '#94A3B8', textAlign: 'center', paddingVertical: 16 }}>Sin detalles adicionales registrados</Text>
+                  )}
+                </View>
+              )}
+            </ScrollView>
+          </View>
         </View>
       </Modal>
 
@@ -354,12 +476,14 @@ export default function PetDetailScreen() {
               <View className="items-center py-4">
                 <Text className="text-gray-300 text-4xl mb-2">💉</Text>
                 <Text className="text-gray-400 text-sm">Sin vacunas registradas</Text>
-                <TouchableOpacity
-                  className="mt-3 border border-primary-300 rounded-xl px-4 py-2"
-                  onPress={() => router.push(`/(owner)/pets/add-visit?petId=${id}` as any)}
-                >
-                  <Text className="text-primary-600 text-xs font-medium">Registrar primera visita</Text>
-                </TouchableOpacity>
+                {visits.length === 0 && (
+                  <TouchableOpacity
+                    className="mt-3 border border-primary-300 rounded-xl px-4 py-2"
+                    onPress={() => router.push(`/(owner)/pets/add-visit?petId=${id}` as any)}
+                  >
+                    <Text className="text-primary-600 text-xs font-medium">Registrar primera visita</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             ) : (
               (pet.medicalRecord?.vaccinations ?? []).map((v, i) => (
@@ -392,19 +516,25 @@ export default function PetDetailScreen() {
               <Text className="text-gray-400 text-sm text-center py-3">Sin visitas registradas aún</Text>
             ) : (
               visits.map((v) => (
-                <View key={`${v.source}-${v.id}`} className="py-2.5 border-b border-gray-50">
-                  <View className="flex-row justify-between items-center">
-                    <Text className="font-semibold text-gray-800 text-sm">🩺 {v.vetName}</Text>
-                    <Text className="text-gray-400 text-xs">{v.date}</Text>
+                <TouchableOpacity
+                  key={`${v.source}-${v.id}`}
+                  onPress={() => setSelectedVisit(v)}
+                  activeOpacity={0.7}
+                  style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}
+                >
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ fontWeight: '700', color: '#1E293B', fontSize: 13 }}>🩺 {v.vetName}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ color: '#94A3B8', fontSize: 12 }}>{v.date}</Text>
+                      <Text style={{ color: '#CBD5E1', fontSize: 16 }}>›</Text>
+                    </View>
                   </View>
-                  <Text className={`text-xs mt-0.5 ${v.source === 'vet' ? 'text-blue-500' : 'text-gray-400'}`}>
+                  <Text style={{ fontSize: 11, marginTop: 2, color: v.source === 'vet' ? '#3B82F6' : '#94A3B8' }}>
                     {v.source === 'vet' ? 'Consulta agendada vía JunglApp ✓' : 'Registrada por ti'}
                   </Text>
-                  {v.diagnosis ? <Text className="text-gray-600 text-xs mt-1">Diagnóstico: {v.diagnosis}</Text> : null}
-                  {v.treatment ? <Text className="text-gray-600 text-xs mt-0.5">Tratamiento: {v.treatment}</Text> : null}
-                  {v.notes ? <Text className="text-gray-600 text-xs mt-1">{v.notes}</Text> : null}
-                  {v.nextControlDate ? <Text className="text-amber-600 text-xs mt-1">📅 Próximo control: {v.nextControlDate}</Text> : null}
-                </View>
+                  {v.diagnosis ? <Text style={{ color: '#64748B', fontSize: 11, marginTop: 2 }} numberOfLines={1}>Diagnóstico: {v.diagnosis}</Text> : null}
+                  {v.prescriptionUrl ? <Text style={{ color: '#059669', fontSize: 11, marginTop: 2 }}>📎 Ver receta</Text> : null}
+                </TouchableOpacity>
               ))
             )}
           </View>

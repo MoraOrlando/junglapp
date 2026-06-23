@@ -72,7 +72,7 @@ export default function VetProfileScreen() {
   }, [user]);
 
   async function pickPhoto() {
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaType.Images, quality: 0.8 });
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.8 });
     if (!result.canceled && vetDocId) {
       setUploadingPhoto(true);
       try {

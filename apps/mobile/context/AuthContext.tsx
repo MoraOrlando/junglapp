@@ -44,7 +44,7 @@ interface AuthContextType {
   firebaseUser: import('firebase/auth').User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<import('firebase/auth').User>;
-  signUp: (email: string, password: string, userData: Omit<User, 'uid' | 'createdAt'>) => Promise<void>;
+  signUp: (email: string, password: string, userData: Omit<User, 'uid' | 'createdAt'>) => Promise<{ firebaseUser: import('firebase/auth').User }>;
   signInWithGoogle: () => Promise<void>;
   signInWithMicrosoft: () => Promise<void>;
   logOut: () => Promise<void>;
@@ -164,6 +164,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
     await setDoc(doc(db, 'users', fbUser.uid), newUser);
     setUser(newUser);
+    return { firebaseUser: fbUser };
   }
 
   async function logOut() {

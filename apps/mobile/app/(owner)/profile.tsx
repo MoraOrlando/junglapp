@@ -4,11 +4,8 @@ import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { doc, updateDoc } from 'firebase/firestore';
-import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
+import { uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
-
-const { db } = initFirebase();
 
 export default function ProfileScreen() {
   const { user, logOut, updateProfile } = useAuth();
@@ -32,7 +29,7 @@ export default function ProfileScreen() {
   function pickPhoto() {
     if (Platform.OS === 'web') {
       // On web use the image library only (no camera)
-      ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaType.Images, quality: 0.8, allowsEditing: true, aspect: [1, 1] })
+      ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.8, allowsEditing: true, aspect: [1, 1] })
         .then((r) => { if (!r.canceled) saveProfilePhoto(r.assets[0].uri); });
       return;
     }
@@ -47,7 +44,7 @@ export default function ProfileScreen() {
       },
       {
         text: 'Elegir de galería', onPress: async () => {
-          const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaType.Images, quality: 0.8, allowsEditing: true, aspect: [1, 1] });
+          const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.8, allowsEditing: true, aspect: [1, 1] });
           if (!r.canceled) saveProfilePhoto(r.assets[0].uri);
         },
       },
@@ -60,13 +57,13 @@ export default function ProfileScreen() {
     setUploadingPhoto(true);
     try {
       const url = await uploadImage(uri);
-      await updateDoc(doc(db, COLLECTIONS.USERS, user.uid), { photoUrl: url });
       await updateProfile({ photoUrl: url });
     } catch (e: any) {
+      const msg = e?.message ?? 'Error desconocido al subir la foto';
       if (Platform.OS === 'web') {
-        window.alert(`Error: ${e.message}`);
+        window.alert(msg);
       } else {
-        Alert.alert('Error', e.message);
+        Alert.alert('Error al subir foto', msg);
       }
     } finally {
       setUploadingPhoto(false);

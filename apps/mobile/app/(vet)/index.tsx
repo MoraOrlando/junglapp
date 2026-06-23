@@ -94,7 +94,15 @@ export default function VetDashboardScreen() {
     ? completedCount * (vetProfile.consultationFee || 0)
     : 0;
 
-  if (vetProfile?.status === 'pending') {
+  const isPending = vetProfile?.status === 'pending';
+  const createdAtMs = vetProfile?.createdAt ? new Date(vetProfile.createdAt).getTime() : 0;
+  const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+  const isTempActive = createdAtMs > 0 && Date.now() - createdAtMs < ninetyDaysMs;
+  const daysRemaining = createdAtMs > 0
+    ? Math.max(0, Math.ceil((createdAtMs + ninetyDaysMs - Date.now()) / (24 * 60 * 60 * 1000)))
+    : 0;
+
+  if (isPending && !isTempActive) {
     return (
       <SafeAreaView className="flex-1 bg-white items-center justify-center px-6">
         <Text className="text-5xl mb-4">⏳</Text>
@@ -112,6 +120,14 @@ export default function VetDashboardScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
+      {isPending && isTempActive && (
+        <View style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 16 }}>⏳</Text>
+          <Text style={{ flex: 1, color: '#92400E', fontSize: 12, fontWeight: '600' }}>
+            Cuenta en revisión — acceso provisional por {daysRemaining} días más
+          </Text>
+        </View>
+      )}
       {/* ── Header ── */}
       <View style={{ backgroundColor: '#1B4332' }} className="px-5 pt-4 pb-6">
         <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-1">

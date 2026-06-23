@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   KeyboardAvoidingView, Platform, Alert
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { collection, addDoc, query, where, getDocs, getDoc, doc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import { initFirebase, COLLECTIONS, uploadImages } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
@@ -26,9 +26,20 @@ export default function AddProductScreen() {
   const [price, setPrice] = useState('');
   const [stock, setStock] = useState('');
 
+  // Reset form every time this screen comes into focus so data from a previous
+  // submission doesn't persist when the component is kept in the navigator cache.
+  useFocusEffect(useCallback(() => {
+    setCategory(CATEGORIES[0]);
+    setPhotos([]);
+    setName('');
+    setDescription('');
+    setPrice('');
+    setStock('');
+  }, []));
+
   async function pickPhoto() {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaType.Images,
+      mediaTypes: 'images',
       allowsMultipleSelection: true,
       quality: 0.8,
     });
@@ -46,12 +57,27 @@ export default function AddProductScreen() {
     if (!user) return;
     setLoading(true);
     try {
-      const storeSnap = await getDocs(query(collection(db, COLLECTIONS.STORES), where('userId', '==', user.uid)));
-      if (storeSnap.empty) { Alert.alert('Error', 'Tienda no encontrada'); return; }
-      const storeId = storeSnap.docs[0].id;
+      // Stores are created with the user's UID as document ID — use getDoc directly
+      // for reliability instead of a collection query (avoids race conditions on new accounts)
+      let storeId: string | null = null;
+      const directDoc = await getDoc(doc(db, COLLECTIONS.STORES, user.uid));
+      if (directDoc.exists()) {
+        storeId = directDoc.id;
+      } else {
+        // Fallback: query by userId field for accounts with non-uid document IDs
+        const storeSnap = await getDocs(query(collection(db, COLLECTIONS.STORES), where('userId', '==', user.uid)));
+        if (!storeSnap.empty) storeId = storeSnap.docs[0].id;
+      }
+
+      if (!storeId) {
+        Alert.alert('Error', 'Tienda no encontrada. Cierra sesión e ingresa de nuevo.');
+        return;
+      }
+
       const photoUrls = photos.length > 0 ? await uploadImages(photos) : [];
       await addDoc(collection(db, COLLECTIONS.PRODUCTS), {
         storeId,
+        userId: user.uid,
         name: name.trim(),
         description: description.trim(),
         price: Number(price),
@@ -63,7 +89,7 @@ export default function AddProductScreen() {
       });
       router.back();
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      Alert.alert('Error al publicar', e.message);
     } finally {
       setLoading(false);
     }

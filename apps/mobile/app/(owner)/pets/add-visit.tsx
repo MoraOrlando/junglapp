@@ -47,6 +47,7 @@ export default function AddVisitScreen() {
   const [vetAvailability, setVetAvailability] = useState<string[] | null>(null);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [reminderAdded, setReminderAdded] = useState(false);
 
   // Autocomplete: search registered vets by name or email as user types
   useEffect(() => {
@@ -69,6 +70,7 @@ export default function AddVisitScreen() {
     setNextControlDate(day.dateString);
     setShowCalendar(false);
     setVetAvailability(null);
+    setReminderAdded(false);
     if (!selectedVet) return;
 
     setCheckingAvailability(true);
@@ -399,12 +401,21 @@ export default function AddVisitScreen() {
                   <View className="bg-blue-50 border border-blue-100 rounded-xl p-4">
                     <Text className="text-blue-700 text-sm font-semibold">Veterinario no registrado en JunglApp</Text>
                     <Text className="text-blue-500 text-xs mt-1">¿Quieres agregar un recordatorio a tu calendario?</Text>
-                    <TouchableOpacity
-                      className="bg-blue-500 rounded-xl py-2 items-center mt-3"
-                      onPress={addToDeviceCalendar}
-                    >
-                      <Text className="text-white font-semibold text-sm">📲 Agregar recordatorio</Text>
-                    </TouchableOpacity>
+                    {reminderAdded ? (
+                      <View className="bg-green-50 border border-green-200 rounded-xl py-2 items-center mt-3">
+                        <Text className="text-green-700 font-semibold text-sm">✅ Recordatorio guardado</Text>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        className="bg-blue-500 rounded-xl py-2 items-center mt-3"
+                        onPress={async () => {
+                          const ok = await addToDeviceCalendar();
+                          if (ok) setReminderAdded(true);
+                        }}
+                      >
+                        <Text className="text-white font-semibold text-sm">📲 Agregar recordatorio</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 ) : null}
               </View>

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import type { Pet } from '@junglapp/types';
@@ -17,11 +17,22 @@ interface ControlReminder {
   vetName?: string | null;
 }
 
+interface AppointmentSummary {
+  id: string;
+  petId: string;
+  vetName?: string;
+  date: string;
+  time: string;
+  reason?: string;
+  status: string;
+}
+
 export default function OwnerHomeScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const [pets, setPets] = useState<Pet[]>([]);
   const [reminders, setReminders] = useState<ControlReminder[]>([]);
+  const [appointments, setAppointments] = useState<AppointmentSummary[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -47,6 +58,41 @@ export default function OwnerHomeScreen() {
     }, (err) => { if (__DEV__) console.log('reminders listener:', err.code); });
     return unsub;
   }, [user?.uid]);
+
+  // Upcoming scheduled appointments with vets
+  useEffect(() => {
+    if (!user) return;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const q = query(
+      collection(db, COLLECTIONS.APPOINTMENTS),
+      where('ownerId', '==', user.uid),
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      const upcoming = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as AppointmentSummary))
+        .filter((a) => ['pending', 'confirmed'].includes(a.status) && a.date >= todayStr)
+        .sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? ''));
+      setAppointments(upcoming);
+    }, (err) => { if (__DEV__) console.log('appointments listener:', err.code); });
+    return unsub;
+  }, [user?.uid]);
+
+  function handleCancelAppointment(appt: AppointmentSummary) {
+    Alert.alert(
+      'Cancelar cita',
+      `¿Cancelar la cita del ${appt.date} a las ${appt.time}?`,
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Sí, cancelar',
+          style: 'destructive',
+          onPress: () => {
+            updateDoc(doc(db, COLLECTIONS.APPOINTMENTS, appt.id), { status: 'cancelled' }).catch(() => {});
+          },
+        },
+      ]
+    );
+  }
 
   const today = new Date().toISOString().split('T')[0];
   const weekAhead = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -133,12 +179,54 @@ export default function OwnerHomeScreen() {
         </View>
       )}
 
+      {/* Upcoming vet appointments */}
+      {appointments.length > 0 && (
+        <View style={{ paddingHorizontal: 24, marginBottom: 12 }}>
+          {appointments.map((appt) => {
+            const petName = pets.find((p) => p.id === appt.petId)?.name ?? 'tu mascota';
+            const isToday = appt.date === today;
+            return (
+              <View
+                key={appt.id}
+                style={{
+                  backgroundColor: isToday ? '#EFF6FF' : '#F0FDF4',
+                  borderWidth: 1, borderColor: isToday ? '#BFDBFE' : '#BBF7D0',
+                  borderRadius: 14, padding: 12, marginBottom: 6,
+                  flexDirection: 'row', alignItems: 'center', gap: 10,
+                }}
+              >
+                <Text style={{ fontSize: 22 }}>📅</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: '700', fontSize: 13, color: isToday ? '#1D4ED8' : '#166534' }}>
+                    {isToday ? '¡Cita veterinaria HOY!' : 'Cita agendada con veterinario'}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: isToday ? '#3B82F6' : '#16A34A', marginTop: 1 }}>
+                    {petName} — {appt.date} {appt.time ? `· ${appt.time}` : ''}{appt.vetName ? ` · ${appt.vetName}` : ''}
+                  </Text>
+                  {appt.reason ? (
+                    <Text style={{ fontSize: 11, color: '#64748B', marginTop: 2 }} numberOfLines={1}>
+                      {appt.reason}
+                    </Text>
+                  ) : null}
+                </View>
+                <TouchableOpacity
+                  onPress={() => handleCancelAppointment(appt)}
+                  style={{ padding: 6 }}
+                >
+                  <Text style={{ fontSize: 11, color: '#EF4444', fontWeight: '600' }}>Cancelar</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
       {/* Lost pets access */}
       <TouchableOpacity
         onPress={() => router.push('/(owner)/lost' as any)}
         activeOpacity={0.85}
         style={{
-          marginHorizontal: 24, marginBottom: 14, backgroundColor: '#FEF2F2',
+          marginHorizontal: 24, marginBottom: 10, backgroundColor: '#FEF2F2',
           borderWidth: 1, borderColor: '#FECACA', borderRadius: 16,
           padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
         }}
@@ -149,6 +237,24 @@ export default function OwnerHomeScreen() {
           <Text style={{ color: '#F87171', fontSize: 12, marginTop: 1 }}>Mira el mapa y ayuda a encontrarlas cerca de ti</Text>
         </View>
         <Text style={{ color: '#FCA5A5', fontSize: 20 }}>›</Text>
+      </TouchableOpacity>
+
+      {/* Haz crecer tu familia */}
+      <TouchableOpacity
+        onPress={() => router.push('/(owner)/litter' as any)}
+        activeOpacity={0.85}
+        style={{
+          marginHorizontal: 24, marginBottom: 14, backgroundColor: '#F0FDF4',
+          borderWidth: 1, borderColor: '#BBF7D0', borderRadius: 16,
+          padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
+        }}
+      >
+        <Text style={{ fontSize: 28 }}>🌱</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontWeight: '700', color: '#065F46', fontSize: 15 }}>Haz crecer tu familia</Text>
+          <Text style={{ color: '#34D399', fontSize: 12, marginTop: 1 }}>Adopta o compra mascotas de la comunidad</Text>
+        </View>
+        <Text style={{ color: '#6EE7B7', fontSize: 20 }}>›</Text>
       </TouchableOpacity>
 
       <Text className="px-6 text-gray-700 font-semibold text-base mb-2">Mis Mascotas</Text>
@@ -189,7 +295,7 @@ export default function OwnerHomeScreen() {
                         source={{ uri: pet.photos[0] }}
                         style={{ width: '100%', height: 170 }}
                         contentFit="cover"
-                        contentPosition="top"
+                        contentPosition="center"
                       />
                     ) : (
                       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>

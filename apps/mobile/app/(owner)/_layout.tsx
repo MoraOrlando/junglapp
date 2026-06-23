@@ -138,6 +138,7 @@ export default function OwnerLayout() {
       <Tabs.Screen name="vets"      options={{ href: null }} />
       <Tabs.Screen name="store"     options={{ href: null }} />
       <Tabs.Screen name="trainers"  options={{ href: null }} />
+      <Tabs.Screen name="litter"    options={{ href: null }} />
     </Tabs>
   );
 }

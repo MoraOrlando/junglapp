@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
+import { useAuth } from '../../../context/AuthContext';
 import type { Veterinarian, Store } from '@junglapp/types';
 
 const { db } = initFirebase();
@@ -41,23 +42,35 @@ interface NearItem {
   clinicServices?: string[];
 }
 
+const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+
 export default function NearScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const [items, setItems] = useState<NearItem[]>([]);
   const [category, setCategory] = useState<Category>('all');
   const [refreshing, setRefreshing] = useState(false);
 
   async function loadData() {
+    if (!user) return;
+    const now = Date.now();
     const [vetsSnap, storesSnap] = await Promise.all([
-      getDocs(query(collection(db, COLLECTIONS.VETERINARIANS), where('status', '==', 'approved'))),
+      // Include approved AND pending vets (pending vets get 90-day provisional access)
+      getDocs(query(collection(db, COLLECTIONS.VETERINARIANS), where('status', 'in', ['approved', 'pending']))),
       getDocs(query(collection(db, COLLECTIONS.STORES), where('status', '==', 'approved'))),
     ]);
 
-    const vets: NearItem[] = vetsSnap.docs.map((d) => {
-      const v = { id: d.id, ...d.data() } as Veterinarian;
-      return {
+    const vets: NearItem[] = vetsSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() } as Veterinarian))
+      .filter((v) => {
+        if ((v as any).status === 'approved') return true;
+        // Pending vet: only show if within the 90-day provisional window
+        const created = (v as any).createdAt ? new Date((v as any).createdAt).getTime() : 0;
+        return created > 0 && now - created < NINETY_DAYS_MS;
+      })
+      .map((v) => ({
         id: v.id,
-        kind: 'vet',
+        kind: 'vet' as const,
         name: `Dr. ${v.name}`,
         address: v.address,
         emoji: '🩺',
@@ -69,14 +82,13 @@ export default function NearScreen() {
         is24_7: v.is24_7,
         openingHours: v.openingHours,
         clinicServices: v.clinicServices,
-      };
-    });
+      }));
 
     const stores: NearItem[] = storesSnap.docs.map((d) => {
       const s = { id: d.id, ...d.data() } as Store;
       return {
         id: s.id,
-        kind: 'store',
+        kind: 'store' as const,
         name: s.name,
         address: s.address,
         emoji: '🛒',
@@ -88,11 +100,14 @@ export default function NearScreen() {
     setItems([...vets, ...stores]);
   }
 
-  useEffect(() => { loadData(); }, []);
+  // Load on focus (e.g. when user switches back to this tab)
+  useFocusEffect(useCallback(() => { loadData().catch(() => {}); }, [user?.uid]));
+  // Also load when auth resolves while screen is already focused
+  useEffect(() => { if (user) loadData().catch(() => {}); }, [user?.uid]);
 
   async function onRefresh() {
     setRefreshing(true);
-    await loadData();
+    await loadData().catch(() => {});
     setRefreshing(false);
   }
 

@@ -30,6 +30,27 @@ const LOOKING_FOR = [
   { id: 'touch', emoji: '🔥', label: 'Touch & Go', desc: 'Citas cortas, sin compromiso' },
 ];
 
+const PREFERRED_AGE = [
+  { id: 'any', label: '🐾 Cualquier edad' },
+  { id: 'puppy', label: '🍼 Cachorro (0-1 año)' },
+  { id: 'young', label: '⚡ Joven (1-3 años)' },
+  { id: 'adult', label: '🌿 Adulto (3-7 años)' },
+  { id: 'senior', label: '👴 Senior (7+ años)' },
+];
+
+const PREFERRED_GENDER = [
+  { id: 'any', label: '🐾 Sin preferencia' },
+  { id: 'male', label: '♂️ Macho' },
+  { id: 'female', label: '♀️ Hembra' },
+];
+
+const PREFERRED_SIZE = [
+  { id: 'any', label: '🐾 Cualquier tamaño' },
+  { id: 'small', label: '🐭 Pequeño (< 10 kg)' },
+  { id: 'medium', label: '🐕 Mediano (10-25 kg)' },
+  { id: 'large', label: '🦮 Grande (> 25 kg)' },
+];
+
 const PERSONALITY = [
   { id: 'energetic', label: '⚡ Energético' },
   { id: 'calm', label: '😌 Tranquilo' },
@@ -53,6 +74,9 @@ export default function MatchProfileScreen() {
   const [hobbies, setHobbies] = useState<string[]>([]);
   const [personality, setPersonality] = useState<string[]>([]);
   const [lookingFor, setLookingFor] = useState<string>('');
+  const [preferredAge, setPreferredAge] = useState<string>('any');
+  const [preferredGender, setPreferredGender] = useState<string>('any');
+  const [preferredSize, setPreferredSize] = useState<string>('any');
 
   useEffect(() => {
     if (!petId) return;
@@ -66,6 +90,9 @@ export default function MatchProfileScreen() {
           setHobbies(mp.hobbies || []);
           setPersonality(mp.personality || []);
           setLookingFor(mp.lookingFor || '');
+          setPreferredAge(mp.preferredAge || 'any');
+          setPreferredGender(mp.preferredGender || 'any');
+          setPreferredSize(mp.preferredSize || 'any');
         }
       }
       setLoading(false);
@@ -82,7 +109,7 @@ export default function MatchProfileScreen() {
     try {
       await updateDoc(doc(db, COLLECTIONS.PETS, petId!), {
         lookingForPartner: true,
-        matchProfile: { about, hobbies, personality, lookingFor, updatedAt: new Date().toISOString() },
+        matchProfile: { about, hobbies, personality, lookingFor, preferredAge, preferredGender, preferredSize, updatedAt: new Date().toISOString() },
       });
       Alert.alert('¡Listo! 🔥', `${pet?.name} ya está en modo Match. ¡Buena suerte!`, [
         { text: 'Ver Match', onPress: () => router.replace('/(owner)/match' as any) },
@@ -186,6 +213,85 @@ export default function MatchProfileScreen() {
                     <Text className="text-gray-400 text-xs mt-0.5">{opt.desc}</Text>
                   </View>
                   {lookingFor === opt.id && <Text className="text-pink-500 text-xl">✓</Text>}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Sección 4: ¿Qué buscas en la pareja? */}
+          <View style={{ marginBottom: 28 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#1F2937', marginBottom: 4 }}>
+              🔍 ¿Qué buscas en la pareja?
+            </Text>
+            <Text style={{ color: '#9CA3AF', fontSize: 12, marginBottom: 16 }}>
+              Ayúdanos a encontrar el match ideal para {pet?.name}
+            </Text>
+
+            {/* Edad preferida */}
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 }}>
+              Rango de edad
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              {PREFERRED_AGE.map((opt) => (
+                <TouchableOpacity
+                  key={opt.id}
+                  onPress={() => setPreferredAge(opt.id)}
+                  style={{
+                    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
+                    borderWidth: 1.5,
+                    backgroundColor: preferredAge === opt.id ? '#EC4899' : '#fff',
+                    borderColor: preferredAge === opt.id ? '#EC4899' : '#E5E7EB',
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: preferredAge === opt.id ? '#fff' : '#6B7280' }}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Sexo preferido */}
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 }}>
+              Sexo
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+              {PREFERRED_GENDER.map((opt) => (
+                <TouchableOpacity
+                  key={opt.id}
+                  onPress={() => setPreferredGender(opt.id)}
+                  style={{
+                    flex: 1, paddingVertical: 10, borderRadius: 16, borderWidth: 1.5,
+                    alignItems: 'center',
+                    backgroundColor: preferredGender === opt.id ? '#EC4899' : '#fff',
+                    borderColor: preferredGender === opt.id ? '#EC4899' : '#E5E7EB',
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: preferredGender === opt.id ? '#fff' : '#6B7280' }}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Tamaño preferido */}
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 }}>
+              Tamaño
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {PREFERRED_SIZE.map((opt) => (
+                <TouchableOpacity
+                  key={opt.id}
+                  onPress={() => setPreferredSize(opt.id)}
+                  style={{
+                    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
+                    borderWidth: 1.5,
+                    backgroundColor: preferredSize === opt.id ? '#EC4899' : '#fff',
+                    borderColor: preferredSize === opt.id ? '#EC4899' : '#E5E7EB',
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: preferredSize === opt.id ? '#fff' : '#6B7280' }}>
+                    {opt.label}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>

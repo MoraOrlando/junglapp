@@ -104,6 +104,7 @@
         "projectId": "f180251b-69ce-4b38-a310-b8de516042fa"
       }
     },
-    "owner": "vetapp"
+    "owner": "vetapp",
+    "privacyPolicyUrl": "https://moraorlando.github.io/junglapp/privacy-policy.html"
   }
 }

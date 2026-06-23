@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import type { Veterinarian } from '@junglapp/types';
 
 const { db } = initFirebase();
+const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 
 export default function VetsScreen() {
   const router = useRouter();
@@ -16,15 +17,22 @@ export default function VetsScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   async function loadVets() {
+    const now = Date.now();
     const snap = await getDocs(
-      query(collection(db, COLLECTIONS.VETERINARIANS), where('status', '==', 'approved'))
+      query(collection(db, COLLECTIONS.VETERINARIANS), where('status', 'in', ['approved', 'pending']))
     );
-    const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Veterinarian));
+    const data = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() } as Veterinarian))
+      .filter((v) => {
+        if ((v as any).status === 'approved') return true;
+        const created = (v as any).createdAt ? new Date((v as any).createdAt).getTime() : 0;
+        return created > 0 && now - created < NINETY_DAYS_MS;
+      });
     setVets(data);
     setFiltered(data);
   }
 
-  useEffect(() => { loadVets(); }, []);
+  useFocusEffect(useCallback(() => { loadVets().catch(() => {}); }, []));
 
   useEffect(() => {
     if (!search) { setFiltered(vets); return; }
@@ -37,7 +45,7 @@ export default function VetsScreen() {
 
   async function onRefresh() {
     setRefreshing(true);
-    await loadVets();
+    await loadVets().catch(() => {});
     setRefreshing(false);
   }
 

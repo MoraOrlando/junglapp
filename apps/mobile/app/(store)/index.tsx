@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, RefreshControl, Alert } from 
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { collection, query, where, getDocs, doc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, deleteDoc, updateDoc, getDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import type { Product, Store } from '@junglapp/types';
@@ -20,11 +20,18 @@ export default function StoreProductsScreen() {
 
   async function loadData() {
     if (!user) return;
-    const storeSnap = await getDocs(query(collection(db, COLLECTIONS.STORES), where('userId', '==', user.uid)));
-    if (!storeSnap.empty) {
-      const s = { id: storeSnap.docs[0].id, ...storeSnap.docs[0].data() } as Store;
-      setStore(s);
-      const prodSnap = await getDocs(query(collection(db, COLLECTIONS.PRODUCTS), where('storeId', '==', s.id)));
+    // Store document ID always equals user.uid — direct lookup is faster and reliable for new accounts
+    let storeData: Store | null = null;
+    const directDoc = await getDoc(doc(db, COLLECTIONS.STORES, user.uid));
+    if (directDoc.exists()) {
+      storeData = { id: directDoc.id, ...directDoc.data() } as Store;
+    } else {
+      const storeSnap = await getDocs(query(collection(db, COLLECTIONS.STORES), where('userId', '==', user.uid)));
+      if (!storeSnap.empty) storeData = { id: storeSnap.docs[0].id, ...storeSnap.docs[0].data() } as Store;
+    }
+    if (storeData) {
+      setStore(storeData);
+      const prodSnap = await getDocs(query(collection(db, COLLECTIONS.PRODUCTS), where('storeId', '==', storeData.id)));
       setProducts(prodSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Product)));
     }
   }
@@ -55,13 +62,21 @@ export default function StoreProductsScreen() {
     ]);
   }
 
-  if (store?.status === 'pending') {
+  const isPending = store?.status === 'pending';
+  const createdAtMs = (store as any)?.createdAt ? new Date((store as any).createdAt).getTime() : 0;
+  const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+  const isTempActive = createdAtMs > 0 && Date.now() - createdAtMs < NINETY_DAYS_MS;
+  const daysRemaining = createdAtMs > 0
+    ? Math.max(0, Math.ceil((createdAtMs + NINETY_DAYS_MS - Date.now()) / (24 * 60 * 60 * 1000)))
+    : 0;
+
+  if (isPending && !isTempActive) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
         <Text style={{ fontSize: 48, marginBottom: 12 }}>⏳</Text>
         <Text style={{ fontSize: 20, fontWeight: '700', color: '#374151', textAlign: 'center' }}>Tienda en revisión</Text>
         <Text style={{ color: '#9CA3AF', fontSize: 13, marginTop: 8, textAlign: 'center' }}>
-          Tu tienda está siendo validada. Te avisaremos cuando esté aprobada.
+          Tu tienda está siendo validada por el equipo de JunglApp. Te avisaremos cuando esté aprobada.
         </Text>
         <TouchableOpacity
           style={{ marginTop: 24, backgroundColor: '#F3F4F6', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 8 }}
@@ -75,6 +90,16 @@ export default function StoreProductsScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
+      {/* Provisional access banner for pending stores */}
+      {isPending && isTempActive && (
+        <View style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 16 }}>⏳</Text>
+          <Text style={{ flex: 1, color: '#92400E', fontSize: 12, fontWeight: '600' }}>
+            Tienda en revisión — acceso provisional por {daysRemaining} días más
+          </Text>
+        </View>
+      )}
+
       {/* Header */}
       <View style={{ backgroundColor: AMBER, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 24, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>

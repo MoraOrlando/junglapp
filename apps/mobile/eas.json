@@ -12,7 +12,21 @@
       "distribution": "internal"
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyAV0SiNLjr3J3QxxQ6ei5Teh4lNhybYFxU",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "junglapp-80ea1.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "junglapp-80ea1",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "junglapp-80ea1.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "499650328037",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:499650328037:web:96eb4eade04830a54fab0c",
+        "EXPO_PUBLIC_FIREBASE_DATABASE_URL": "https://junglapp-80ea1-default-rtdb.firebaseio.com",
+        "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "dhfhv1a3l",
+        "EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET": "junglapp_uploads",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "499650328037-qqh7jqqbjpe7a2946mubh306968cvpvu.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "499650328037-j4edei7e54rpebd04ebpdv1iooilj10a.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "499650328037-fiarjon3kdjukk47ec2ve7cc67qlm16g.apps.googleusercontent.com"
+      }
     }
   },
   "submit": {
