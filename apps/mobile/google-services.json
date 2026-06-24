@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "499650328037",
+    "firebase_url": "https://junglapp-80ea1-default-rtdb.firebaseio.com",
+    "project_id": "junglapp-80ea1",
+    "storage_bucket": "junglapp-80ea1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:499650328037:android:7b88304f3af58cdc4fab0c",
+        "android_client_info": {
+          "package_name": "com.junglapp.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "499650328037-7d7smgcnuat87husvq40cjiipdau3c5f.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAZa8-UtT_g8jw8E92rLb27tre-9mGnlSs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "499650328037-7d7smgcnuat87husvq40cjiipdau3c5f.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "499650328037-bs1b98jq1sch3snmc26jhin2h343jmds.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "junglapp-app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
