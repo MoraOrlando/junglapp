@@ -12,7 +12,6 @@
       "distribution": "internal"
     },
     "production": {
-      "prebuildCommand": "npx expo prebuild --clean && (test -d android/app && cp google-services.json android/app/google-services.json || true)",
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyAV0SiNLjr3J3QxxQ6ei5Teh4lNhybYFxU",
