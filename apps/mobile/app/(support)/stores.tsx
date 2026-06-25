@@ -113,7 +113,7 @@ export default function StoresAdminScreen() {
                   <Text style={{ color: sc.text, fontSize: 11, fontWeight: '600' }}>{sc.label}</Text>
                 </View>
               </View>
-              <Text style={{ color: '#9CA3AF', fontSize: 12 }}>🏷️ {(s as any).rut || 'Sin RUT'} · {s.category}</Text>
+              <Text style={{ color: '#9CA3AF', fontSize: 12 }}>🏷️ {(s as any).rut || 'Sin RUT'} · {(s as any).category}</Text>
               <Text style={{ color: '#9CA3AF', fontSize: 12, marginTop: 2 }}>📍 {s.address}</Text>
               <Text style={{ color: '#9CA3AF', fontSize: 12, marginTop: 2 }}>📧 {(s as any).email || '—'}</Text>
               {(s as any).rejectionReason && (

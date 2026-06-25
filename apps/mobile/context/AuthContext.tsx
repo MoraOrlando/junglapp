@@ -9,9 +9,8 @@ import {
   signInWithCredential,
   initializeAuth,
   getAuth,
-  getReactNativePersistence,
-  FirebaseError,
 } from 'firebase/auth';
+import { FirebaseError } from 'firebase/app';
 import {
   doc,
   getDoc,
@@ -32,6 +31,7 @@ const { app, db } = initFirebase();
 let auth: import('firebase/auth').Auth;
 try {
   const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+  const { getReactNativePersistence } = require('firebase/auth');
   auth = initializeAuth(app, {
     persistence: getReactNativePersistence(AsyncStorage),
   });

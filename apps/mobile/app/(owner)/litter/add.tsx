@@ -42,7 +42,7 @@ export default function AddLitterScreen() {
     getDocs(query(collection(db, COLLECTIONS.PETS), where('ownerId', '==', user.uid))).then((snap) => {
       setPets(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)));
       setLoadingPets(false);
-    });
+    }).catch(() => { setLoadingPets(false); });
   }, [user?.uid]);
 
   async function pickPhotos() {

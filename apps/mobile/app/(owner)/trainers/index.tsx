@@ -20,10 +20,12 @@ export default function TrainersScreen() {
   const [loading, setLoading] = useState(true);
 
   async function loadTrainers() {
-    const snap = await getDocs(query(collection(db, COLLECTIONS.TRAINERS), where('status', '==', 'approved')));
-    const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Trainer));
-    setTrainers(all);
-    setFiltered(all);
+    try {
+      const snap = await getDocs(query(collection(db, COLLECTIONS.TRAINERS), where('status', '==', 'approved')));
+      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Trainer));
+      setTrainers(all);
+      setFiltered(all);
+    } catch {}
   }
 
   useEffect(() => { loadTrainers().finally(() => setLoading(false)); }, []);

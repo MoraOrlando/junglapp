@@ -35,6 +35,8 @@ export default function AddVisitScreen() {
   const router = useRouter();
   const { user } = useAuth();
 
+  const [visitReason, setVisitReason] = useState('');
+  const [showReasonDropdown, setShowReasonDropdown] = useState(false);
   const [vetName, setVetName] = useState('');
   const [vetEmail, setVetEmail] = useState('');
   const [vetSuggestions, setVetSuggestions] = useState<Veterinarian[]>([]);
@@ -48,6 +50,8 @@ export default function AddVisitScreen() {
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reminderAdded, setReminderAdded] = useState(false);
+
+  const VISIT_REASONS = ['Vacunas', 'Control', 'Operación', 'Otro'];
 
   // Autocomplete: search registered vets by name or email as user types
   useEffect(() => {
@@ -160,6 +164,7 @@ export default function AddVisitScreen() {
 
   function handleSave() {
     if (!petId) return;
+    if (!visitReason) { Alert.alert('Faltan datos', 'Por favor selecciona el motivo de la visita.'); return; }
     if (rating === 0) { Alert.alert('Faltan datos', 'Por favor califica el servicio.'); return; }
 
     // Vet entered manually and not found among registered vets → offer to invite
@@ -188,6 +193,7 @@ export default function AddVisitScreen() {
         petId,
         ownerId: user?.uid ?? null,
         date: new Date().toISOString().split('T')[0],
+        visitReason,
         vetName: selectedVet?.name || vetName,
         vetId: selectedVet?.id || null,
         rating,
@@ -235,6 +241,37 @@ export default function AddVisitScreen() {
           </TouchableOpacity>
 
           <Text className="text-2xl font-bold text-primary-700 mb-6">🏥 Registrar Visita</Text>
+
+          {/* Visit reason */}
+          <View className="mb-5">
+            <Text className="text-sm font-semibold text-gray-700 mb-2">Motivo de la visita <Text className="text-red-400">*</Text></Text>
+            <TouchableOpacity
+              className={`bg-white border rounded-xl px-4 py-3 flex-row items-center justify-between ${visitReason ? 'border-primary-400' : 'border-gray-200'}`}
+              onPress={() => setShowReasonDropdown(!showReasonDropdown)}
+            >
+              <View className="flex-row items-center gap-2">
+                <Text className="text-xl">🏥</Text>
+                <Text className={visitReason ? 'text-gray-800 font-semibold' : 'text-gray-400'}>
+                  {visitReason || 'Seleccionar motivo...'}
+                </Text>
+              </View>
+              <Text className="text-gray-400">{showReasonDropdown ? '▲' : '▼'}</Text>
+            </TouchableOpacity>
+            {showReasonDropdown && (
+              <View className="bg-white border border-gray-200 rounded-xl mt-1 overflow-hidden">
+                {VISIT_REASONS.map((reason) => (
+                  <TouchableOpacity
+                    key={reason}
+                    className={`px-4 py-3 border-b border-gray-50 flex-row items-center gap-3 ${visitReason === reason ? 'bg-primary-50' : ''}`}
+                    onPress={() => { setVisitReason(reason); setShowReasonDropdown(false); }}
+                  >
+                    <Text className={`text-base ${visitReason === reason ? 'text-primary-700 font-semibold' : 'text-gray-700'}`}>{reason}</Text>
+                    {visitReason === reason && <Text className="text-primary-500 ml-auto">✓</Text>}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
 
           {/* Prescription photo */}
           <View className="mb-5">

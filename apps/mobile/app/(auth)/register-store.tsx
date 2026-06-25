@@ -11,7 +11,9 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuth } from '../../context/AuthContext';
 import { doc, setDoc } from 'firebase/firestore';
-import { initFirebase, handleEmailAlreadyInUse } from '@junglapp/firebase';
+import { initFirebase, handleEmailAlreadyInUse, uploadImage } from '@junglapp/firebase';
+import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'expo-image';
 import * as Location from 'expo-location';
 
 const { db } = initFirebase();
@@ -84,6 +86,7 @@ export default function RegisterStoreScreen() {
   const [loading, setLoading] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [showRegionPicker, setShowRegionPicker] = useState(false);
   const [showCityPicker, setShowCityPicker] = useState(false);
@@ -145,6 +148,7 @@ export default function RegisterStoreScreen() {
 
       const uid = firebaseUser?.uid;
       if (uid) {
+        const photoUrl = photoUri ? await uploadImage(photoUri) : null;
         await setDoc(doc(db, 'stores', uid), {
           userId: uid,
           rut: data.rut,
@@ -155,6 +159,7 @@ export default function RegisterStoreScreen() {
           city: data.city,
           phone: data.phone,
           email: data.email,
+          ...(photoUrl ? { photoUrl } : {}),
           ...(location ? { location } : {}),
           status: 'pending',
           categories: [],
@@ -204,6 +209,29 @@ export default function RegisterStoreScreen() {
           <View style={{ marginBottom: 24 }}>
             <Text style={{ fontSize: 28, fontWeight: '800', color: AMBER }}>🏪 Tienda Pet Shop</Text>
             <Text style={{ color: '#6B7280', marginTop: 4 }}>Tu tienda será revisada antes de activarse</Text>
+          </View>
+
+          {/* Store photo */}
+          <View style={{ alignItems: 'center', marginBottom: 20 }}>
+            <TouchableOpacity
+              onPress={async () => {
+                const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.8, mediaTypes: 'images' });
+                if (!result.canceled) setPhotoUri(result.assets[0].uri);
+              }}
+              activeOpacity={0.8}
+            >
+              {photoUri ? (
+                <Image source={{ uri: photoUri }} style={{ width: 100, height: 100, borderRadius: 16 }} contentFit="cover" />
+              ) : (
+                <View style={{ width: 100, height: 100, borderRadius: 16, backgroundColor: '#FEF3C7', borderWidth: 2, borderStyle: 'dashed', borderColor: AMBER, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 32 }}>🏪</Text>
+                </View>
+              )}
+              <View style={{ position: 'absolute', bottom: -6, right: -6, backgroundColor: AMBER, borderRadius: 12, width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: '#fff', fontSize: 14 }}>📷</Text>
+              </View>
+            </TouchableOpacity>
+            <Text style={{ color: '#9CA3AF', fontSize: 12, marginTop: 10 }}>Logo o foto de la tienda</Text>
           </View>
 
           <View style={{ gap: 16 }}>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { collection, query, where, getDocs, doc, updateDoc, addDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
@@ -21,10 +22,12 @@ const GREEN = '#2D6A4F';
 
 export default function VetProfileScreen() {
   const { user, logOut } = useAuth();
+  const router = useRouter();
   const [vet, setVet] = useState<Veterinarian | null>(null);
   const [vetDocId, setVetDocId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [name, setName] = useState('');
+  const [rut, setRut] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [licenseNumber, setLicenseNumber] = useState('');
@@ -45,6 +48,7 @@ export default function VetProfileScreen() {
         setVet(v);
         setVetDocId(snap.docs[0].id);
         setName(v.name || '');
+        setRut(v.rut || '');
         setPhone(v.phone || '');
         setAddress(v.address || '');
         setLicenseNumber(v.licenseNumber || '');
@@ -64,7 +68,8 @@ export default function VetProfileScreen() {
           createdAt: new Date().toISOString(),
         });
         const newData = { userId: user.uid, email: user.email || '', name: user.name || '', status: 'pending', createdAt: new Date().toISOString() } as unknown as Veterinarian;
-        setVet({ id: newDoc.id, ...newData } as Veterinarian);
+        const { id: _vetId, ...newDataRest } = newData as any;
+        setVet({ id: newDoc.id, ...newDataRest } as Veterinarian);
         setVetDocId(newDoc.id);
         setName(user.name || '');
       }
@@ -94,10 +99,12 @@ export default function VetProfileScreen() {
       const specialties = specialtyInput.split(',').map((s) => s.trim()).filter(Boolean);
       const numFee = Number(fee) || 0;
       await updateDoc(doc(db, COLLECTIONS.VETERINARIANS, vetDocId), {
-        name, phone, address, licenseNumber, specialties, consultationFee: numFee,
+        name, rut, phone, address, licenseNumber, specialties, consultationFee: numFee,
         is24_7, openingHours, clinicServices, plan,
       });
-      Alert.alert('✅', 'Perfil actualizado correctamente');
+      Alert.alert('✅', 'Perfil actualizado correctamente', [
+        { text: 'OK', onPress: () => router.replace('/(vet)' as any) },
+      ]);
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -151,6 +158,7 @@ export default function VetProfileScreen() {
           <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15, marginBottom: 14 }}>Información personal</Text>
           {[
             { label: 'Nombre', value: name, set: setName },
+            { label: 'RUT', value: rut, set: setRut, placeholder: '12.345.678-9' },
             { label: 'Teléfono', value: phone, set: setPhone, keyboard: 'phone-pad' },
             { label: 'Dirección de consulta', value: address, set: setAddress },
             { label: 'Nº Registro Profesional', value: licenseNumber, set: setLicenseNumber },
@@ -163,6 +171,8 @@ export default function VetProfileScreen() {
                 value={f.value}
                 onChangeText={f.set}
                 keyboardType={(f as any).keyboard || 'default'}
+                placeholder={(f as any).placeholder || ''}
+                placeholderTextColor="#9CA3AF"
               />
             </View>
           ))}
@@ -244,16 +254,12 @@ export default function VetProfileScreen() {
 
         {/* Read-only info */}
         <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#F3F4F6' }}>
-          <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15, marginBottom: 10 }}>Datos registrados</Text>
-          {[
-            { label: 'RUT', value: vet.rut },
-            { label: 'Correo', value: vet.email },
-          ].map((item) => (
-            <View key={item.label} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}>
-              <Text style={{ color: '#9CA3AF', fontSize: 13 }}>{item.label}</Text>
-              <Text style={{ color: '#374151', fontSize: 13, fontWeight: '500' }}>{item.value}</Text>
-            </View>
-          ))}
+          <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15, marginBottom: 10 }}>Datos de acceso</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 }}>
+            <Text style={{ color: '#9CA3AF', fontSize: 13 }}>Correo</Text>
+            <Text style={{ color: '#374151', fontSize: 13, fontWeight: '500' }}>{vet.email}</Text>
+          </View>
+          <Text style={{ color: '#D1D5DB', fontSize: 11, marginTop: 4 }}>El correo no puede modificarse desde la app.</Text>
         </View>
 
         <TouchableOpacity onPress={save} disabled={saving} style={{ backgroundColor: GREEN, borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 12, opacity: saving ? 0.7 : 1 }}>

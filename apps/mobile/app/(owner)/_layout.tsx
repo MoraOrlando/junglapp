@@ -27,6 +27,7 @@ export default function OwnerLayout() {
   const [unreadChats, setUnreadChats] = useState(0);
   const [matchCount, setMatchCount] = useState(0);
   const [hasMatchPets, setHasMatchPets] = useState(false);
+  const [pendingOrders, setPendingOrders] = useState(0);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -52,7 +53,11 @@ export default function OwnerLayout() {
       setMatchCount(snap.docs.filter((d) => !!d.data().matchId).length);
     }, (err) => { if (__DEV__) console.log('chats listener:', err.code); });
 
-    return () => { unsubPets(); unsubChats(); };
+    // Listen for owner's pending orders
+    const ordersQ = query(collection(db, COLLECTIONS.ORDERS), where('buyerId', '==', user.uid), where('status', '==', 'pending'));
+    const unsubOrders = onSnapshot(ordersQ, (snap) => setPendingOrders(snap.size), (err) => { if (__DEV__) console.log('orders listener:', err.code); });
+
+    return () => { unsubPets(); unsubChats(); unsubOrders(); };
   }, [user?.uid]);
 
   useEffect(() => {
@@ -122,6 +127,13 @@ export default function OwnerLayout() {
               Match
             </Text>
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="orders"
+        options={{
+          title: 'Pedidos',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🛍️" focused={focused} badge={pendingOrders} />,
         }}
       />
       <Tabs.Screen

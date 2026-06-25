@@ -83,6 +83,7 @@ export default function MatchProfileScreen() {
     getDoc(doc(db, COLLECTIONS.PETS, petId)).then((snap) => {
       if (snap.exists()) {
         const data = { id: snap.id, ...snap.data() } as Pet & { matchProfile?: any };
+
         setPet(data);
         const mp = (data as any).matchProfile;
         if (mp) {
@@ -96,7 +97,7 @@ export default function MatchProfileScreen() {
         }
       }
       setLoading(false);
-    });
+    }).catch(() => { setLoading(false); });
   }, [petId]);
 
   function toggleChip(list: string[], setList: (v: string[]) => void, id: string) {

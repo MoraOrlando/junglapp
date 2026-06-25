@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { collection, getDocs } from 'firebase/firestore';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 
@@ -39,7 +39,7 @@ export default function SupportDashboard() {
     });
   }
 
-  useEffect(() => { loadStats().finally(() => setLoading(false)); }, []);
+  useFocusEffect(useCallback(() => { loadStats().finally(() => setLoading(false)); }, []));
   async function onRefresh() { setRefreshing(true); await loadStats(); setRefreshing(false); }
 
   if (loading) return (

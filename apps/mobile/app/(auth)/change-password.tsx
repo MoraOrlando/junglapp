@@ -59,8 +59,8 @@ export default function ChangePasswordScreen() {
             if (user.role === 'owner') router.replace('/(owner)');
             else if (user.role === 'vet') router.replace('/(vet)');
             else if (user.role === 'store') router.replace('/(store)');
-            else if (user.role === 'walker') router.replace('/(walker)');
-            else if (user.role === 'grooming') router.replace('/(grooming)');
+            else if (user.role === 'walker') router.replace('/(walker)' as any);
+            else if (user.role === 'grooming') router.replace('/(grooming)' as any);
             else router.replace('/(auth)/login');
           },
         },

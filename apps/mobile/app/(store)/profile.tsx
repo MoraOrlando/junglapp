@@ -3,10 +3,12 @@ import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   Alert, ActivityIndicator
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import * as Location from 'expo-location';
-import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
+import * as ImagePicker from 'expo-image-picker';
+import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import type { Store } from '@junglapp/types';
 import PlanSelector, { type AccountPlan } from '../../components/PlanSelector';
@@ -24,6 +26,7 @@ export default function StoreProfileScreen() {
   const [address, setAddress] = useState('');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [plan, setPlan] = useState<AccountPlan>('free');
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [gettingLocation, setGettingLocation] = useState(false);
 
@@ -40,6 +43,7 @@ export default function StoreProfileScreen() {
         setAddress(s.address);
         if (s.location) setLocation(s.location);
         setPlan((s as any).plan || 'free');
+        if ((s as any).photoUrl) setPhotoUrl((s as any).photoUrl);
       }
     });
   }, [user]);
@@ -58,6 +62,22 @@ export default function StoreProfileScreen() {
       Alert.alert('Error', 'No se pudo obtener la ubicación.');
     } finally {
       setGettingLocation(false);
+    }
+  }
+
+  async function pickPhoto() {
+    const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.8, mediaTypes: 'images' });
+    if (result.canceled || !result.assets[0]) return;
+    setSaving(true);
+    try {
+      const url = await uploadImage(result.assets[0].uri);
+      setPhotoUrl(url);
+      if (storeDocId) await updateDoc(doc(db, COLLECTIONS.STORES, storeDocId), { photoUrl: url });
+      Alert.alert('✅', 'Foto actualizada');
+    } catch {
+      Alert.alert('Error', 'No se pudo subir la foto');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -93,9 +113,18 @@ export default function StoreProfileScreen() {
 
         {/* Store card */}
         <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 20, marginBottom: 16, alignItems: 'center', borderWidth: 1, borderColor: '#F3F4F6' }}>
-          <View style={{ backgroundColor: '#FEF3C7', borderRadius: 40, width: 80, height: 80, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-            <Text style={{ fontSize: 36 }}>🏪</Text>
-          </View>
+          <TouchableOpacity onPress={pickPhoto} activeOpacity={0.8} style={{ marginBottom: 12 }}>
+            {photoUrl ? (
+              <Image source={{ uri: photoUrl }} style={{ width: 90, height: 90, borderRadius: 16 }} contentFit="cover" />
+            ) : (
+              <View style={{ backgroundColor: '#FEF3C7', borderRadius: 16, width: 90, height: 90, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderStyle: 'dashed', borderColor: AMBER }}>
+                <Text style={{ fontSize: 36 }}>🏪</Text>
+              </View>
+            )}
+            <View style={{ position: 'absolute', bottom: -4, right: -4, backgroundColor: AMBER, borderRadius: 10, width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: '#fff', fontSize: 12 }}>📷</Text>
+            </View>
+          </TouchableOpacity>
           <Text style={{ fontSize: 18, fontWeight: '800', color: '#1F2937' }}>{store.name}</Text>
           <Text style={{ color: '#9CA3AF', fontSize: 13, marginTop: 2 }}>{store.email}</Text>
           <View style={{

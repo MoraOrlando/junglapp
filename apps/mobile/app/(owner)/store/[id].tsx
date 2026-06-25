@@ -37,10 +37,10 @@ export default function StoreDetailScreen() {
     if (!id) return;
     getDoc(doc(db, COLLECTIONS.STORES, id)).then((snap) => {
       if (snap.exists()) setStore({ id: snap.id, ...snap.data() } as Store);
-    });
+    }).catch(() => {});
     getDocs(query(collection(db, COLLECTIONS.PRODUCTS), where('storeId', '==', id), where('isActive', '==', true))).then((snap) => {
       setProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Product)));
-    });
+    }).catch(() => {});
   }, [id]);
 
   async function placeOrder() {
@@ -53,6 +53,8 @@ export default function StoreDetailScreen() {
     try {
       await addDoc(collection(db, COLLECTIONS.ORDERS), {
         buyerId: user.uid,
+        buyerName: user.name || '',
+        buyerPhone: user.phone || '',
         storeId: orderProduct.storeId,
         products: [{
           productId: orderProduct.id,
@@ -81,6 +83,8 @@ export default function StoreDetailScreen() {
     try {
       await addDoc(collection(db, COLLECTIONS.ORDERS), {
         buyerId: user.uid,
+        buyerName: user.name || '',
+        buyerPhone: user.phone || '',
         storeId: store.id,
         type: 'service',
         service: {
@@ -119,8 +123,8 @@ export default function StoreDetailScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
         {/* Hero */}
-        {store.logoUrl ? (
-          <Image source={{ uri: store.logoUrl }} style={{ width: '100%', height: 180 }} contentFit="cover" />
+        {((store as any).photoUrl || store.logoUrl) ? (
+          <Image source={{ uri: (store as any).photoUrl || store.logoUrl }} style={{ width: '100%', height: 180 }} contentFit="cover" />
         ) : (
           <View style={{ width: '100%', height: 160, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: 56 }}>🏪</Text>

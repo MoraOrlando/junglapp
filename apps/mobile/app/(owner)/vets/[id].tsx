@@ -69,7 +69,7 @@ export default function VetDetailScreen() {
     if (!id) return;
     getDoc(doc(db, COLLECTIONS.VETERINARIANS, id)).then((snap) => {
       if (snap.exists()) setVet({ id: snap.id, ...snap.data() } as Veterinarian);
-    });
+    }).catch(() => {});
 
     getDocs(
       query(collection(db, COLLECTIONS.REVIEWS), where('vetId', '==', id))
@@ -77,14 +77,13 @@ export default function VetDetailScreen() {
       const r = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Review));
       r.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
       setReviews(r.slice(0, 5));
-    });
+    }).catch(() => {});
 
     if (user) {
       getDocs(query(collection(db, COLLECTIONS.PETS), where('ownerId', '==', user.uid))).then((snap) => {
         setPets(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)));
-      });
+      }).catch(() => {});
 
-      // Check if user has a completed appointment and hasn't reviewed yet
       Promise.all([
         getDocs(query(
           collection(db, COLLECTIONS.APPOINTMENTS),
@@ -101,7 +100,7 @@ export default function VetDetailScreen() {
         if (!apptSnap.empty && reviewSnap.empty) {
           setCanReview(true);
         }
-      });
+      }).catch(() => {});
     }
   }, [id, user]);
 

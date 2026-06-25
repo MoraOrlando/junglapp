@@ -9,9 +9,16 @@ import type { Chat } from '@junglapp/types';
 
 const { db } = initFirebase();
 
-function isRecent(updatedAt: string | undefined): boolean {
-  if (!updatedAt) return false;
-  return Date.now() - new Date(updatedAt).getTime() < 60 * 60 * 1000; // < 1 hour
+function isUnread(chat: any, userId: string): boolean {
+  if (!chat.lastMessage || !chat.lastMessageAt) return false;
+  const lastMsg = typeof chat.lastMessageAt === 'string'
+    ? chat.lastMessageAt
+    : chat.lastMessageAt?.toDate?.().toISOString() ?? '';
+  const lastRead = chat.lastReadAt?.[userId];
+  const lastReadStr = typeof lastRead === 'string'
+    ? lastRead
+    : lastRead?.toDate?.().toISOString() ?? '';
+  return lastReadStr < lastMsg;
 }
 
 function formatTimestamp(ts: string | undefined): string {
@@ -55,13 +62,17 @@ export default function ChatListScreen() {
 
   function getChatEmoji(chat: any): string {
     if (chat.chatType === 'found_pet') return '🐾';
+    if (chat.chatType === 'vet') return '🩺';
+    if (chat.chatType === 'store') return '🛍️';
     if (chat.matchId) return '🐕';
     return '💬';
   }
 
   const matchChats = chats.filter((c: any) => c.matchId && c.chatType !== 'found_pet');
   const foundChats = chats.filter((c: any) => c.chatType === 'found_pet');
-  const allMessages = [...foundChats, ...matchChats];
+  const vetChats = chats.filter((c: any) => c.chatType === 'vet');
+  const storeChats = chats.filter((c: any) => c.chatType === 'store');
+  const allMessages = [...vetChats, ...storeChats, ...foundChats, ...matchChats];
 
   const filtered = search.trim()
     ? allMessages.filter(
@@ -157,7 +168,7 @@ export default function ChatListScreen() {
               {filtered.map((chat) => {
                 const emoji = getChatEmoji(chat);
                 const name = getOtherName(chat);
-                const hasNew = isRecent((chat as any).lastMessageAt || chat.updatedAt);
+                const hasNew = user ? isUnread(chat, user.uid) : false;
                 return (
                   <TouchableOpacity
                     key={chat.id}

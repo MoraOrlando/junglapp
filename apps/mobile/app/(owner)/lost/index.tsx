@@ -36,16 +36,18 @@ export default function LostPetsPublicScreen() {
   const bannerRef = useRef<ScrollView>(null);
 
   async function load() {
-    const snap = await getDocs(
-      query(collection(db, COLLECTIONS.LOST_PETS), where('isFound', '==', false))
-    );
-    const data = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() } as LostPet))
-      .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt));
-    setLostPets(data);
+    try {
+      const snap = await getDocs(
+        query(collection(db, COLLECTIONS.LOST_PETS), where('isFound', '==', false))
+      );
+      const data = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as LostPet))
+        .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt));
+      setLostPets(data);
+    } catch {}
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load().catch(() => {}); }, []);
 
   // User location → map centers on their surroundings
   useEffect(() => {

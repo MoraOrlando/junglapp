@@ -51,7 +51,7 @@ const inputStyle = {
 
 export default function RegisterWalkerScreen() {
   const router = useRouter();
-  const { signUp, firebaseUser } = useAuth();
+  const { signUp } = useAuth();
   const [loading, setLoading] = useState(false);
   const [profileUri, setProfileUri] = useState<string | null>(null);
   const [region, setRegion] = useState('Metropolitana');
@@ -90,7 +90,7 @@ export default function RegisterWalkerScreen() {
     if (!termsAccepted) { Alert.alert('Requerido', 'Debes aceptar los términos de uso para continuar.'); return; }
     setLoading(true);
     try {
-      await signUp(data.email, data.password, {
+      const { firebaseUser: newUser } = await signUp(data.email, data.password, {
         role: 'walker',
         name: data.name,
         rut: data.rut,
@@ -101,10 +101,10 @@ export default function RegisterWalkerScreen() {
         city: data.city,
       });
 
-      if (firebaseUser) {
+      if (newUser) {
         const photoUrl = profileUri ? await uploadImage(profileUri) : null;
-        await setDoc(doc(db, 'walkers', firebaseUser.uid), {
-          userId: firebaseUser.uid,
+        await setDoc(doc(db, 'walkers', newUser.uid), {
+          userId: newUser.uid,
           name: data.name,
           rut: data.rut,
           phone: data.phone,

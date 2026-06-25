@@ -45,7 +45,7 @@ export default function SplashAnimation({ onFinish, duration = 2800 }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import type { Store } from '@junglapp/types';
@@ -8,6 +9,7 @@ import type { Store } from '@junglapp/types';
 const { db } = initFirebase();
 
 export default function StoresPage() {
+  const router = useRouter();
   const [stores, setStores] = useState<Store[]>([]);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
   const [loading, setLoading] = useState(true);
@@ -29,7 +31,15 @@ export default function StoresPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold text-gray-800 mb-1">Tiendas 🏪</h1>
+      <div className="flex items-start justify-between mb-1">
+        <h1 className="text-3xl font-bold text-gray-800">Tiendas 🏪</h1>
+        <button
+          onClick={() => router.push('/dashboard/stores/import')}
+          className="bg-amber-50 border border-amber-200 text-amber-800 font-semibold px-4 py-2 rounded-xl hover:bg-amber-100 transition text-sm"
+        >
+          📊 Importar productos Excel
+        </button>
+      </div>
       <p className="text-gray-500 mb-6">Valida y gestiona las tiendas</p>
 
       <div className="flex gap-2 mb-6">

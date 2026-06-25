@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { collection, query, where, getDocs } from 'firebase/firestore';
@@ -32,6 +33,7 @@ interface NearItem {
   name: string;
   address: string;
   emoji: string;
+  photoUrl?: string;
   subtitle?: string;
   route: string;
   rating?: number;
@@ -55,16 +57,14 @@ export default function NearScreen() {
     if (!user) return;
     const now = Date.now();
     const [vetsSnap, storesSnap] = await Promise.all([
-      // Include approved AND pending vets (pending vets get 90-day provisional access)
       getDocs(query(collection(db, COLLECTIONS.VETERINARIANS), where('status', 'in', ['approved', 'pending']))),
-      getDocs(query(collection(db, COLLECTIONS.STORES), where('status', '==', 'approved'))),
+      getDocs(query(collection(db, COLLECTIONS.STORES), where('status', 'in', ['approved', 'pending']))),
     ]);
 
     const vets: NearItem[] = vetsSnap.docs
       .map((d) => ({ id: d.id, ...d.data() } as Veterinarian))
       .filter((v) => {
         if ((v as any).status === 'approved') return true;
-        // Pending vet: only show if within the 90-day provisional window
         const created = (v as any).createdAt ? new Date((v as any).createdAt).getTime() : 0;
         return created > 0 && now - created < NINETY_DAYS_MS;
       })
@@ -84,18 +84,23 @@ export default function NearScreen() {
         clinicServices: v.clinicServices,
       }));
 
-    const stores: NearItem[] = storesSnap.docs.map((d) => {
-      const s = { id: d.id, ...d.data() } as Store;
-      return {
+    const stores: NearItem[] = storesSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() } as Store))
+      .filter((s) => {
+        if ((s as any).status === 'approved') return true;
+        const created = (s as any).createdAt ? new Date((s as any).createdAt).getTime() : 0;
+        return created > 0 && now - created < NINETY_DAYS_MS;
+      })
+      .map((s) => ({
         id: s.id,
         kind: 'store' as const,
         name: s.name,
         address: s.address,
         emoji: '🛒',
+        photoUrl: (s as any).photoUrl ?? undefined,
         subtitle: 'Tienda de mascotas',
-        route: `/(owner)/store`,
-      };
-    });
+        route: `/(owner)/store/${s.id}`,
+      }));
 
     setItems([...vets, ...stores]);
   }
@@ -191,16 +196,24 @@ export default function NearScreen() {
                 }}
               >
                 {/* Icon */}
-                <View style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: 16,
-                  backgroundColor: it.kind === 'vet' ? '#EFF6FF' : '#FEF3C7',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}>
-                  <Text style={{ fontSize: 30 }}>{it.emoji}</Text>
-                </View>
+                {it.photoUrl ? (
+                  <Image
+                    source={{ uri: it.photoUrl }}
+                    style={{ width: 64, height: 64, borderRadius: 16 }}
+                    contentFit="cover"
+                  />
+                ) : (
+                  <View style={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: 16,
+                    backgroundColor: it.kind === 'vet' ? '#EFF6FF' : '#FEF3C7',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <Text style={{ fontSize: 30 }}>{it.emoji}</Text>
+                  </View>
+                )}
 
                 {/* Info */}
                 <View style={{ flex: 1 }}>

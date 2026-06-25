@@ -60,6 +60,7 @@ export default function StoreLayout() {
         }}
       />
       <Tabs.Screen name="product" options={{ href: null }} />
+      <Tabs.Screen name="chat"    options={{ href: null }} />
     </Tabs>
   );
 }

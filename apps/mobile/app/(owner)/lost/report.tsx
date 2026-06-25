@@ -43,7 +43,7 @@ export default function ReportLostPetScreen() {
         setDescription(p.description || '');
         setContactPhone(user?.phone || '');
       }
-    });
+    }).catch(() => {});
   }, [petId]);
 
   async function publish() {

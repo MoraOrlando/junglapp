@@ -12,7 +12,9 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "mobile": "cd apps/mobile && npx expo start",
-    "web": "cd apps/web && npm run dev"
+    "web": "cd apps/web && npm run dev",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
   "devDependencies": {
     "turbo": "^2.0.0",
@@ -32,5 +34,10 @@
   "packageManager": "npm@10.9.7",
   "engines": {
     "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "expo": "~54.0.35",
+    "react": "19.1.0",
+    "react-native": "0.81.5"
   }
 }

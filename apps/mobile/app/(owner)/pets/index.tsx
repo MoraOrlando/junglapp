@@ -19,13 +19,15 @@ export default function PetsScreen() {
 
   async function loadPets() {
     if (!user) return;
-    const snap = await getDocs(
-      query(collection(db, COLLECTIONS.PETS), where('ownerId', '==', user.uid))
-    );
-    setPets(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)));
+    try {
+      const snap = await getDocs(
+        query(collection(db, COLLECTIONS.PETS), where('ownerId', '==', user.uid))
+      );
+      setPets(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)));
+    } catch {}
   }
 
-  useEffect(() => { loadPets(); }, [user]);
+  useEffect(() => { loadPets().catch(() => {}); }, [user]);
 
   async function onRefresh() {
     setRefreshing(true);

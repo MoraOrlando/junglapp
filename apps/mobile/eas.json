@@ -35,6 +35,10 @@
         "appleId": "mora.munoz.orlando@gmail.com",
         "ascAppId": "6780333739",
         "appleTeamId": "L8HT2VU8FX"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./google-play-service-account.json",
+        "track": "internal"
       }
     }
   }

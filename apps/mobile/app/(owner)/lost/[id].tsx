@@ -23,7 +23,7 @@ export default function LostPetDetailScreen() {
     if (!id) return;
     getDoc(doc(db, COLLECTIONS.LOST_PETS, id)).then((snap) => {
       if (snap.exists()) setLostPet({ id: snap.id, ...snap.data() } as LostPet);
-    });
+    }).catch(() => {});
   }, [id]);
 
   const isOwner = lostPet?.ownerId === user?.uid;

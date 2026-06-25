@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Alert,
-  Animated, Modal, Linking
+  Animated, Modal, Linking, TextInput, KeyboardAvoidingView, Platform
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -39,6 +39,12 @@ export default function PetDetailScreen() {
   const [showFlame, setShowFlame] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [selectedVisit, setSelectedVisit] = useState<VisitEntry | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [descInput, setDescInput] = useState('');
+  const [savingDesc, setSavingDesc] = useState(false);
 
   const flameScale = useRef(new Animated.Value(0)).current;
   const flameOpacity = useRef(new Animated.Value(0)).current;
@@ -71,7 +77,7 @@ export default function PetDetailScreen() {
         const visitsSnap = await getDocs(query(
           collection(db, COLLECTIONS.MEDICAL_VISITS),
           where('petId', '==', id),
-          where('ownerId', '==', user.uid),
+          where('ownerId', '==', user!.uid),
         ));
         visitsSnap.docs.forEach((d) => {
           const v = d.data();
@@ -91,7 +97,7 @@ export default function PetDetailScreen() {
         const apptsSnap = await getDocs(query(
           collection(db, COLLECTIONS.APPOINTMENTS),
           where('petId', '==', id),
-          where('ownerId', '==', user.uid),
+          where('ownerId', '==', user!.uid),
         ));
         apptsSnap.docs
           .filter((d) => d.data().status === 'completed' && d.data().consultation)
@@ -222,6 +228,36 @@ export default function PetDetailScreen() {
     }
   }
 
+  async function saveName() {
+    const trimmed = nameInput.trim();
+    if (!trimmed || !id || !pet) return;
+    setSavingName(true);
+    try {
+      await updateDoc(doc(db, COLLECTIONS.PETS, id), { name: trimmed });
+      setPet({ ...pet, name: trimmed });
+      setEditingName(false);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  async function saveDescription() {
+    if (!id || !pet) return;
+    const trimmed = descInput.trim();
+    setSavingDesc(true);
+    try {
+      await updateDoc(doc(db, COLLECTIONS.PETS, id), { description: trimmed });
+      setPet({ ...pet, description: trimmed });
+      setEditingDesc(false);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSavingDesc(false);
+    }
+  }
+
   if (loading) return (
     <SafeAreaView className="flex-1 bg-background items-center justify-center">
       <Text className="text-gray-400">Cargando...</Text>
@@ -340,6 +376,92 @@ export default function PetDetailScreen() {
         </View>
       </Modal>
 
+      {/* Edit name modal */}
+      <Modal visible={editingName} animationType="slide" transparent onRequestClose={() => setEditingName(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}>
+          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ fontSize: 17, fontWeight: '800', color: '#1E293B' }}>✏️ Editar nombre</Text>
+              <TouchableOpacity onPress={() => setEditingName(false)} style={{ padding: 4 }}>
+                <Text style={{ fontSize: 22, color: '#94A3B8' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              style={{ borderWidth: 1.5, borderColor: '#2D6A4F', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, fontSize: 22, fontWeight: '700', color: '#1E293B', marginBottom: 16 }}
+              value={nameInput}
+              onChangeText={setNameInput}
+              autoFocus
+              maxLength={40}
+              returnKeyType="done"
+              onSubmitEditing={saveName}
+              placeholder="Nombre de tu mascota"
+            />
+            <TouchableOpacity
+              onPress={saveName}
+              disabled={savingName || !nameInput.trim()}
+              style={{ backgroundColor: savingName || !nameInput.trim() ? '#9CA3AF' : '#2D6A4F', borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>{savingName ? 'Guardando...' : '✅ Guardar nombre'}</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Edit description modal */}
+      <Modal visible={editingDesc} animationType="slide" transparent onRequestClose={saveDescription}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}>
+          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: '90%' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={{ fontSize: 17, fontWeight: '800', color: '#1E293B' }}>🐾 Cuéntanos sobre {pet?.name}</Text>
+              <TouchableOpacity onPress={saveDescription} style={{ padding: 4 }}>
+                <Text style={{ fontSize: 22, color: '#94A3B8' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={{ fontSize: 12, color: '#94A3B8', marginBottom: 10 }}>Toca una frase para agregarla o escribe tu propia descripción</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {[
+                  { emoji: '👑', text: 'Se cree el/la dueño/a de la casa' },
+                  { emoji: '😴', text: 'Experto/a en siestas épicas' },
+                  { emoji: '🎾', text: 'Rey/Reina del parque' },
+                  { emoji: '🍕', text: 'Come más que toda la familia' },
+                  { emoji: '🐾', text: 'Especialista en robar calcetines' },
+                  { emoji: '🎭', text: 'Actor/actriz dramático/a de nivel Oscar' },
+                  { emoji: '🛋️', text: 'El sofá es su trono oficial' },
+                  { emoji: '🌧️', text: 'Odia la lluvia con toda su alma' },
+                  { emoji: '🤗', text: 'Reparte abrazos gratis todo el día' },
+                  { emoji: '🔔', text: 'Avisa cuando llega alguien (o cuando no)' },
+                ].map(({ emoji, text }) => (
+                  <TouchableOpacity
+                    key={text}
+                    onPress={() => setDescInput((prev) => prev ? `${prev} ${emoji} ${text}` : `${emoji} ${text}`)}
+                    style={{ backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                  >
+                    <Text style={{ fontSize: 16 }}>{emoji}</Text>
+                    <Text style={{ fontSize: 12, color: '#166534', fontWeight: '600' }}>{text}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+            <TextInput
+              style={{ borderWidth: 1.5, borderColor: '#2D6A4F', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: '#1E293B', minHeight: 100, textAlignVertical: 'top', marginBottom: 16 }}
+              value={descInput}
+              onChangeText={setDescInput}
+              multiline
+              placeholder="Escribe algo especial sobre tu mascota..."
+              autoFocus
+            />
+            <TouchableOpacity
+              onPress={saveDescription}
+              disabled={savingDesc}
+              style={{ backgroundColor: savingDesc ? '#9CA3AF' : '#2D6A4F', borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>{savingDesc ? 'Guardando...' : '✅ Guardar descripción'}</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       <ScrollView className="flex-1">
         {/* Header photo — explicit pixel height so the image also renders on web */}
         <View
@@ -383,7 +505,14 @@ export default function PetDetailScreen() {
           <View className="bg-white rounded-2xl p-5 shadow-md mb-4">
             <View className="flex-row justify-between items-start">
               <View className="flex-1 mr-4">
-                <Text className="text-3xl font-bold text-gray-800">{pet.name}</Text>
+                <TouchableOpacity
+                  onPress={() => { setNameInput(pet.name); setEditingName(true); }}
+                  activeOpacity={0.7}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                >
+                  <Text className="text-3xl font-bold text-gray-800">{pet.name}</Text>
+                  <Text style={{ fontSize: 14, color: '#9CA3AF', marginTop: 4 }}>✏️</Text>
+                </TouchableOpacity>
                 <Text className="text-gray-500 mt-1">{pet.breed} · {pet.color}</Text>
               </View>
               {/* Heart / Match button */}
@@ -452,12 +581,21 @@ export default function PetDetailScreen() {
             </View>
           )}
 
-          {pet.description && (
-            <View className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100">
-              <Text className="text-gray-400 text-xs mb-1">Descripción</Text>
-              <Text className="text-gray-700">{pet.description}</Text>
+          <TouchableOpacity
+            onPress={() => { setDescInput(pet.description ?? ''); setEditingDesc(true); }}
+            activeOpacity={0.75}
+            className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100"
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <Text className="text-gray-400 text-xs">Descripción</Text>
+              <Text style={{ fontSize: 12, color: '#2D6A4F', fontWeight: '600' }}>✏️ Editar</Text>
             </View>
-          )}
+            {pet.description ? (
+              <Text className="text-gray-700">{pet.description}</Text>
+            ) : (
+              <Text style={{ color: '#9CA3AF', fontSize: 13, fontStyle: 'italic' }}>Toca para contar algo especial sobre {pet.name} 🐾</Text>
+            )}
+          </TouchableOpacity>
 
           {/* Medical record */}
           <View className="flex-row justify-between items-center mb-3">
@@ -468,31 +606,6 @@ export default function PetDetailScreen() {
             >
               <Text className="text-white text-xs font-semibold">+ Registrar visita</Text>
             </TouchableOpacity>
-          </View>
-
-          <View className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100">
-            <Text className="text-gray-400 text-xs mb-2">Vacunas</Text>
-            {(pet.medicalRecord?.vaccinations ?? []).length === 0 ? (
-              <View className="items-center py-4">
-                <Text className="text-gray-300 text-4xl mb-2">💉</Text>
-                <Text className="text-gray-400 text-sm">Sin vacunas registradas</Text>
-                {visits.length === 0 && (
-                  <TouchableOpacity
-                    className="mt-3 border border-primary-300 rounded-xl px-4 py-2"
-                    onPress={() => router.push(`/(owner)/pets/add-visit?petId=${id}` as any)}
-                  >
-                    <Text className="text-primary-600 text-xs font-medium">Registrar primera visita</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ) : (
-              (pet.medicalRecord?.vaccinations ?? []).map((v, i) => (
-                <View key={i} className="flex-row justify-between py-1 border-b border-gray-50">
-                  <Text className="text-gray-700">{v.name}</Text>
-                  <Text className="text-gray-400 text-sm">{v.date}</Text>
-                </View>
-              ))
-            )}
           </View>
 
           {(pet.medicalRecord?.allergies ?? []).length > 0 && (
@@ -513,7 +626,10 @@ export default function PetDetailScreen() {
           <View className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100">
             <Text className="text-gray-400 text-xs mb-2">Historial de visitas</Text>
             {visits.length === 0 ? (
-              <Text className="text-gray-400 text-sm text-center py-3">Sin visitas registradas aún</Text>
+              <View className="items-center py-4">
+                <Text className="text-gray-300 text-4xl mb-2">🏥</Text>
+                <Text className="text-gray-400 text-sm">Sin visitas registradas aún</Text>
+              </View>
             ) : (
               visits.map((v) => (
                 <TouchableOpacity

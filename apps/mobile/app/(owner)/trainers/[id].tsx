@@ -48,16 +48,16 @@ export default function TrainerDetailScreen() {
     if (!id) return;
     getDoc(doc(db, COLLECTIONS.TRAINERS, id)).then((snap) => {
       if (snap.exists()) setTrainer({ id: snap.id, ...snap.data() } as Trainer);
-    });
+    }).catch(() => {});
     getDocs(query(collection(db, COLLECTIONS.REVIEWS), where('vetId', '==', id))).then((snap) => {
       const rv = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       rv.sort((a: any, b: any) => b.createdAt?.localeCompare(a.createdAt));
       setReviews(rv);
-    });
+    }).catch(() => {});
     if (user?.uid) {
       getDocs(query(collection(db, COLLECTIONS.REVIEWS), where('vetId', '==', id), where('ownerId', '==', user.uid))).then((snap) => {
         setHasReviewed(!snap.empty);
-      });
+      }).catch(() => {});
     }
   }, [id, user]);
 
