@@ -32,6 +32,7 @@ export default function VetLayout() {
       }}
     >
       <Tabs.Screen name="appointment/[id]" options={{ href: null }} />
+      <Tabs.Screen name="chat/[id]" options={{ href: null }} />
       <Tabs.Screen
         name="index"
         options={{

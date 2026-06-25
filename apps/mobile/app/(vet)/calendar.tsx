@@ -53,7 +53,7 @@ export default function VetCalendarScreen() {
         if (vet.consultationFee) setConsultationFee(String(vet.consultationFee));
         if ((vet as any).slotDuration) setSlotDuration((vet as any).slotDuration);
       }
-    });
+    }).catch(() => {});
   }, [user]);
 
   function toggleSlot(slot: string) {

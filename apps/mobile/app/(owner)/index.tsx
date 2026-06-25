@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import type { Pet } from '@junglapp/types';
@@ -76,23 +76,6 @@ export default function OwnerHomeScreen() {
     }, (err) => { if (__DEV__) console.log('appointments listener:', err.code); });
     return unsub;
   }, [user?.uid]);
-
-  function handleCancelAppointment(appt: AppointmentSummary) {
-    Alert.alert(
-      'Cancelar cita',
-      `¿Cancelar la cita del ${appt.date} a las ${appt.time}?`,
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Sí, cancelar',
-          style: 'destructive',
-          onPress: () => {
-            updateDoc(doc(db, COLLECTIONS.APPOINTMENTS, appt.id), { status: 'cancelled' }).catch(() => {});
-          },
-        },
-      ]
-    );
-  }
 
   const today = new Date().toISOString().split('T')[0];
   const weekAhead = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -186,8 +169,10 @@ export default function OwnerHomeScreen() {
             const petName = pets.find((p) => p.id === appt.petId)?.name ?? 'tu mascota';
             const isToday = appt.date === today;
             return (
-              <View
+              <TouchableOpacity
                 key={appt.id}
+                onPress={() => router.push(`/(owner)/appointment/${appt.id}` as any)}
+                activeOpacity={0.8}
                 style={{
                   backgroundColor: isToday ? '#EFF6FF' : '#F0FDF4',
                   borderWidth: 1, borderColor: isToday ? '#BFDBFE' : '#BBF7D0',
@@ -209,13 +194,8 @@ export default function OwnerHomeScreen() {
                     </Text>
                   ) : null}
                 </View>
-                <TouchableOpacity
-                  onPress={() => handleCancelAppointment(appt)}
-                  style={{ padding: 6 }}
-                >
-                  <Text style={{ fontSize: 11, color: '#EF4444', fontWeight: '600' }}>Cancelar</Text>
-                </TouchableOpacity>
-              </View>
+                <Text style={{ color: '#CBD5E1', fontSize: 18 }}>›</Text>
+              </TouchableOpacity>
             );
           })}
         </View>

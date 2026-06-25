@@ -4,7 +4,7 @@
       "$chatId": {
         "$uid": {
           ".read": "auth != null && auth.uid === $uid",
-          ".write": "auth != null && auth.uid === $uid"
+          ".write": "auth != null && (auth.uid === $uid || root.child('chatMembers').child($chatId).child(auth.uid).exists())"
         }
       }
     },

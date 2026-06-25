@@ -1,18 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  Image,
-  Alert,
+  View, Text, ScrollView, TextInput, TouchableOpacity,
+  KeyboardAvoidingView, Platform, Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ref, push, onValue, off, serverTimestamp } from 'firebase/database';
+import { ref, set, push, onValue, off } from 'firebase/database';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import { initFirebase, COLLECTIONS, RTDB_PATHS, uploadImage } from '@junglapp/firebase';
@@ -22,20 +15,16 @@ import type { Chat, Message } from '@junglapp/types';
 const { db, rtdb } = initFirebase();
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
+  return new Date(iso).toLocaleTimeString('es-CL', {
+    hour: '2-digit', minute: '2-digit', hour12: true,
   });
 }
 
 function formatDateLabel(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
-  if (d.toDateString() === now.toDateString()) return 'TODAY';
-  return d
-    .toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
-    .toUpperCase();
+  if (d.toDateString() === now.toDateString()) return 'HOY';
+  return d.toLocaleDateString('es-CL', { weekday: 'long', month: 'short', day: 'numeric' }).toUpperCase();
 }
 
 function groupByDate(messages: Message[]): Array<{ label: string; messages: Message[] }> {
@@ -48,7 +37,7 @@ function groupByDate(messages: Message[]): Array<{ label: string; messages: Mess
   return Object.entries(groups).map(([label, messages]) => ({ label, messages }));
 }
 
-export default function ChatRoomScreen() {
+export default function VetChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const router = useRouter();
@@ -59,13 +48,10 @@ export default function ChatRoomScreen() {
   const scrollRef = useRef<ScrollView>(null);
 
   function getOtherName(): string {
-    if (!chat || !user) return 'Chat';
+    if (!chat || !user) return 'Dueño';
     const otherId = chat.participants.find((p) => p !== user.uid);
-    return otherId ? (chat.participantNames?.[otherId] || 'Usuario') : 'Usuario';
+    return otherId ? (chat.participantNames?.[otherId] || 'Dueño') : 'Dueño';
   }
-
-  const chatType = (chat as any)?.chatType;
-  const headerEmoji = chatType === 'found_pet' ? '🐾' : '🐕';
 
   function markRead() {
     if (!id || !user) return;
@@ -77,8 +63,14 @@ export default function ChatRoomScreen() {
   useEffect(() => {
     if (!id || !user) return;
 
-    getDoc(doc(db, COLLECTIONS.CHATS, id)).then((snap) => {
-      if (snap.exists()) setChat({ id: snap.id, ...snap.data() } as Chat);
+    getDoc(doc(db, COLLECTIONS.CHATS, id)).then(async (snap) => {
+      if (!snap.exists()) return;
+      const chatData = { id: snap.id, ...snap.data() } as Chat;
+      setChat(chatData);
+      const participants: string[] = chatData.participants || [];
+      await Promise.all(
+        participants.map((uid) => set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${id}/${uid}`), true))
+      ).catch(() => {});
     }).catch(() => {});
 
     // Mark as read when opening the chat
@@ -89,9 +81,7 @@ export default function ChatRoomScreen() {
       const data = snapshot.val();
       if (data) {
         const msgs = Object.entries(data).map(([msgId, msg]: [string, any]) => ({
-          id: msgId,
-          chatId: id,
-          ...msg,
+          id: msgId, chatId: id, ...msg,
         })) as Message[];
         msgs.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         setMessages(msgs);
@@ -132,17 +122,13 @@ export default function ChatRoomScreen() {
       Alert.alert('Permiso requerido', 'Necesitamos acceso a tu galería.');
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: 'images',
-      quality: 0.8,
-    });
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.8 });
     if (result.canceled || !result.assets[0]) return;
-    const uri = result.assets[0].uri;
     setUploading(true);
     try {
-      const url = await uploadImage(uri);
+      const url = await uploadImage(result.assets[0].uri);
       await sendMessage(url);
-    } catch (e: any) {
+    } catch {
       Alert.alert('Error', 'No se pudo subir la imagen');
     } finally {
       setUploading(false);
@@ -153,89 +139,66 @@ export default function ChatRoomScreen() {
   const otherName = getOtherName();
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
-      {/* ── Header ── */}
-      <View
-        className="flex-row items-center px-4 py-3 gap-3 border-b border-gray-100"
-        style={{ backgroundColor: '#FFFFFF' }}
-      >
-        <TouchableOpacity className="pr-1" onPress={() => router.back()}>
-          <Text className="text-2xl text-gray-600">←</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }} edges={['top']}>
+      {/* Header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12, borderBottomWidth: 1, borderBottomColor: '#E5E7EB', backgroundColor: '#fff' }}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <Text style={{ fontSize: 24, color: '#6B7280' }}>←</Text>
         </TouchableOpacity>
-        <View
-          className="w-11 h-11 rounded-full items-center justify-center"
-          style={{ backgroundColor: '#D8F3DC' }}
-        >
-          <Text className="text-2xl">{headerEmoji}</Text>
+        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontSize: 22 }}>👤</Text>
         </View>
-        <View className="flex-1">
-          <Text className="font-bold text-gray-900 text-base leading-tight">{otherName}</Text>
-          <Text className="text-gray-400 text-xs">
-            {chatType === 'found_pet' ? 'Mascota encontrada' : `with ${otherName}`}
-          </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontWeight: '700', color: '#111827', fontSize: 15 }}>{otherName}</Text>
+          <Text style={{ color: '#9CA3AF', fontSize: 12 }}>Dueño de mascota</Text>
         </View>
       </View>
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
-      >
-        {/* ── Messages ── */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        {/* Messages */}
         <ScrollView
           ref={scrollRef}
-          className="flex-1 px-4 py-3"
+          style={{ flex: 1, paddingHorizontal: 16, paddingVertical: 12 }}
           showsVerticalScrollIndicator={false}
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
         >
           {messages.length === 0 && (
-            <View className="items-center py-20">
-              <Text className="text-4xl mb-3">🐾</Text>
-              <Text className="text-gray-400 text-sm">¡Sé el primero en escribir!</Text>
+            <View style={{ alignItems: 'center', paddingTop: 80 }}>
+              <Text style={{ fontSize: 40, marginBottom: 12 }}>💬</Text>
+              <Text style={{ color: '#9CA3AF', fontSize: 14 }}>Inicia la conversación con el dueño</Text>
             </View>
           )}
 
           {groups.map(({ label, messages: groupMsgs }) => (
             <View key={label}>
-              {/* Date separator */}
-              <View className="flex-row items-center gap-3 my-5">
-                <View className="flex-1 h-px bg-gray-200" />
-                <Text className="text-gray-400 text-xs font-semibold tracking-widest">{label}</Text>
-                <View className="flex-1 h-px bg-gray-200" />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 16 }}>
+                <View style={{ flex: 1, height: 1, backgroundColor: '#E5E7EB' }} />
+                <Text style={{ color: '#9CA3AF', fontSize: 11, fontWeight: '600', letterSpacing: 1 }}>{label}</Text>
+                <View style={{ flex: 1, height: 1, backgroundColor: '#E5E7EB' }} />
               </View>
 
               {groupMsgs.map((msg) => {
                 const isMe = msg.senderId === user?.uid;
                 return (
-                  <View
-                    key={msg.id}
-                    className={`mb-4 flex-row ${isMe ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <View className={`max-w-xs ${isMe ? 'items-end' : 'items-start'}`}>
-                      {/* Image if present */}
+                  <View key={msg.id} style={{ marginBottom: 16, flexDirection: 'row', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
+                    <View style={{ maxWidth: '75%', alignItems: isMe ? 'flex-end' : 'flex-start' }}>
                       {msg.imageUrl ? (
-                        <Image
-                          source={{ uri: msg.imageUrl }}
-                          style={{ width: 208, height: 160, borderRadius: 16, marginBottom: 4 }}
-                          resizeMode="cover"
-                        />
+                        <Image source={{ uri: msg.imageUrl }} style={{ width: 200, height: 150, borderRadius: 16, marginBottom: 4 }} resizeMode="cover" />
                       ) : null}
-
-                      {/* Text bubble */}
                       {msg.text ? (
-                        <View
-                          className={`rounded-2xl px-4 py-3 ${
-                            isMe ? 'rounded-tr-sm' : 'rounded-tl-sm bg-white border border-gray-100'
-                          }`}
-                          style={isMe ? { backgroundColor: '#2D6A4F' } : {}}
-                        >
-                          <Text className={isMe ? 'text-white' : 'text-gray-800'}>
-                            {msg.text}
-                          </Text>
+                        <View style={{
+                          borderRadius: 18,
+                          borderTopRightRadius: isMe ? 4 : 18,
+                          borderTopLeftRadius: isMe ? 18 : 4,
+                          paddingHorizontal: 16, paddingVertical: 10,
+                          backgroundColor: isMe ? '#1D4ED8' : '#fff',
+                          borderWidth: isMe ? 0 : 1,
+                          borderColor: '#E5E7EB',
+                        }}>
+                          <Text style={{ color: isMe ? '#fff' : '#111827', fontSize: 15 }}>{msg.text}</Text>
                         </View>
                       ) : null}
-
-                      {/* Timestamp */}
-                      <Text className="text-gray-300 text-xs mt-1.5 px-1">
+                      <Text style={{ color: '#D1D5DB', fontSize: 11, marginTop: 4, paddingHorizontal: 4 }}>
                         {formatTime(msg.createdAt)}
                       </Text>
                     </View>
@@ -246,21 +209,19 @@ export default function ChatRoomScreen() {
           ))}
         </ScrollView>
 
-        {/* ── Input bar ── */}
-        <View className="flex-row items-center px-3 py-2.5 bg-white border-t border-gray-100 gap-2">
-          {/* Camera button */}
+        {/* Input */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#E5E7EB', gap: 8 }}>
           <TouchableOpacity
-            className="w-10 h-10 rounded-full items-center justify-center bg-gray-100"
+            style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' }}
             onPress={pickAndSendImage}
             disabled={uploading}
           >
-            <Text className="text-lg">{uploading ? '⏳' : '📷'}</Text>
+            <Text style={{ fontSize: 18 }}>{uploading ? '⏳' : '📷'}</Text>
           </TouchableOpacity>
 
-          {/* Text input */}
           <TextInput
-            className="flex-1 bg-gray-100 rounded-2xl px-4 py-2.5 text-base text-gray-800"
-            placeholder="mensaje con foto..."
+            style={{ flex: 1, backgroundColor: '#F3F4F6', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, fontSize: 15, color: '#111827' }}
+            placeholder="Escribe un mensaje..."
             placeholderTextColor="#9CA3AF"
             value={text}
             onChangeText={setText}
@@ -269,19 +230,12 @@ export default function ChatRoomScreen() {
             onSubmitEditing={() => sendMessage()}
           />
 
-          {/* Emoji button */}
-          <TouchableOpacity className="w-9 h-9 items-center justify-center">
-            <Text className="text-2xl">😊</Text>
-          </TouchableOpacity>
-
-          {/* Send button */}
           <TouchableOpacity
-            className={`w-10 h-10 rounded-full items-center justify-center ${!text.trim() ? 'opacity-40' : ''}`}
-            style={{ backgroundColor: '#2D6A4F' }}
+            style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: text.trim() ? '#1D4ED8' : '#E5E7EB', alignItems: 'center', justifyContent: 'center' }}
             onPress={() => sendMessage()}
             disabled={!text.trim()}
           >
-            <Text className="text-white text-lg font-bold">↑</Text>
+            <Text style={{ fontSize: 16 }}>➤</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>

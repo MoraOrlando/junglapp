@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Alert,
-  TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
+  ActivityIndicator, Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy } from 'firebase/firestore';
 import { ref, set } from 'firebase/database';
-import * as ImagePicker from 'expo-image-picker';
-import { initFirebase, COLLECTIONS, RTDB_PATHS, uploadImage } from '@junglapp/firebase';
+import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import type { Appointment, Pet, Veterinarian } from '@junglapp/types';
 
@@ -20,11 +19,31 @@ const GREEN = '#16A34A';
 const BORDER = '#E2E8F0';
 const DARK = '#1E293B';
 const GRAY = '#64748B';
-const inputStyle = {
-  borderWidth: 1, borderColor: BORDER, borderRadius: 12,
-  backgroundColor: '#FFFFFF', paddingHorizontal: 14, paddingVertical: 12,
-  fontSize: 15, color: DARK, textAlignVertical: 'top' as const,
+const RED = '#EF4444';
+
+const STATUS_COLORS: Record<string, string> = {
+  pending: '#F59E0B', confirmed: '#3B82F6', arrived: '#8B5CF6',
+  completed: '#16A34A', cancelled: '#EF4444',
 };
+const STATUS_LABELS: Record<string, string> = {
+  pending: '⏳ Pendiente', confirmed: '✅ Confirmada', arrived: '📍 En consulta',
+  completed: '✔️ Completada', cancelled: '❌ Cancelada',
+};
+
+const VISIT_REASON_ICONS: Record<string, string> = {
+  Vacunas: '💉', Control: '🩺', Operación: '🔬', Otro: '📋',
+};
+
+interface MedicalVisit {
+  id: string;
+  date: string;
+  visitReason: string;
+  vetName: string;
+  notes: string;
+  prescriptionUrl?: string;
+  nextControlDate?: string;
+  createdAt: string;
+}
 
 export default function AppointmentDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -33,20 +52,13 @@ export default function AppointmentDetailScreen() {
 
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [pet, setPet] = useState<Pet | null>(null);
+  const [medicalVisits, setMedicalVisits] = useState<MedicalVisit[]>([]);
+  const [ownerProfile, setOwnerProfile] = useState<any>(null);
   const [vetProfile, setVetProfile] = useState<Veterinarian | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [arriving, setArriving] = useState(false);
-
-  // Consultation fields
-  const [symptoms, setSymptoms] = useState('');
-  const [diagnosis, setDiagnosis] = useState('');
-  const [treatmentDone, setTreatmentDone] = useState('');
-  const [treatmentPending, setTreatmentPending] = useState('');
-  const [careInstructions, setCareInstructions] = useState('');
-  const [prescription, setPrescription] = useState('');
-  const [prescriptionUri, setPrescriptionUri] = useState<string | null>(null);
-  const [prescriptionUrl, setPrescriptionUrl] = useState<string | null>(null);
+  const [openingChat, setOpeningChat] = useState(false);
+  const [showFullHistory, setShowFullHistory] = useState(false);
 
   useEffect(() => {
     if (!id || !user) return;
@@ -56,12 +68,29 @@ export default function AppointmentDetailScreen() {
   async function loadAll() {
     setLoading(true);
     try {
+      // Load vet profile first to get vet doc ID
+      const vetSnap = await getDocs(
+        query(collection(db, COLLECTIONS.VETERINARIANS), where('userId', '==', user!.uid))
+      );
+      if (vetSnap.empty) {
+        Alert.alert('Error', 'No se encontró tu perfil de veterinario.');
+        router.canGoBack() ? router.back() : router.replace('/(vet)' as any);
+        return;
+      }
+      const vet = { id: vetSnap.docs[0].id, ...vetSnap.docs[0].data() } as Veterinarian;
+      setVetProfile(vet);
+
+      // Load appointment
       const apptSnap = await getDoc(doc(db, COLLECTIONS.APPOINTMENTS, id!));
-      if (!apptSnap.exists()) return;
+      if (!apptSnap.exists()) {
+        Alert.alert('Error', 'Cita no encontrada.');
+        router.canGoBack() ? router.back() : router.replace('/(vet)' as any);
+        return;
+      }
       const appt = { id: apptSnap.id, ...apptSnap.data() } as Appointment;
 
-      // IDOR guard: vet must own this appointment
-      if (appt.vetId !== user!.uid) {
+      // Guard: appointment must belong to this vet (compare Firestore doc IDs)
+      if (appt.vetId !== vet.id) {
         Alert.alert('No autorizado', 'Esta cita no te pertenece.');
         router.replace('/(vet)' as any);
         return;
@@ -69,128 +98,100 @@ export default function AppointmentDetailScreen() {
 
       setAppointment(appt);
 
-      if (appt.consultation) {
-        setSymptoms((appt.consultation as any).symptoms || '');
-        setDiagnosis(appt.consultation.diagnosis || '');
-        setTreatmentDone((appt.consultation as any).treatmentDone || appt.consultation.treatment || '');
-        setTreatmentPending((appt.consultation as any).treatmentPending || '');
-        setCareInstructions(appt.consultation.careInstructions || '');
-        setPrescription(appt.consultation.prescription || '');
-        setPrescriptionUrl(appt.consultation.prescriptionImageUrl || null);
-      }
-
-      const [petSnap, vetSnap] = await Promise.all([
+      // Load pet, owner, and medical history in parallel
+      const [petSnap, ownerSnap, visitsSnap] = await Promise.all([
         getDoc(doc(db, COLLECTIONS.PETS, appt.petId)),
-        getDocs(query(collection(db, COLLECTIONS.VETERINARIANS), where('userId', '==', user!.uid))),
+        getDoc(doc(db, 'users', appt.ownerId)),
+        getDocs(
+          query(
+            collection(db, COLLECTIONS.MEDICAL_VISITS),
+            where('petId', '==', appt.petId),
+            orderBy('createdAt', 'desc')
+          )
+        ).catch(() =>
+          getDocs(query(collection(db, COLLECTIONS.MEDICAL_VISITS), where('petId', '==', appt.petId)))
+        ),
       ]);
+
       if (petSnap.exists()) setPet({ id: petSnap.id, ...petSnap.data() } as Pet);
-      if (!vetSnap.empty) setVetProfile({ id: vetSnap.docs[0].id, ...vetSnap.docs[0].data() } as Veterinarian);
+      if (ownerSnap.exists()) setOwnerProfile({ id: ownerSnap.id, ...ownerSnap.data() });
+      const visits = visitsSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as MedicalVisit))
+        .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
+      setMedicalVisits(visits);
+    } catch (e: any) {
+      Alert.alert('Error cargando cita', e.message);
     } finally {
       setLoading(false);
     }
   }
 
-  async function markArrived() {
+  async function changeStatus(newStatus: string, extra?: Record<string, any>) {
     if (!id || !appointment) return;
-    setArriving(true);
-    try {
-      const now = new Date().toISOString();
-      await updateDoc(doc(db, COLLECTIONS.APPOINTMENTS, id), {
-        status: 'arrived',
-        arrivedAt: now,
-      });
-
-      // Write RTDB notification so owner gets a real-time popup
-      await set(
-        ref(rtdb, `${RTDB_PATHS.NOTIFICATIONS}/${appointment.ownerId}/${id}`),
-        {
-          type: 'vet_arrived',
-          vetName: vetProfile?.name || 'Tu veterinario',
-          petId: appointment.petId,
-          appointmentId: id,
-          arrivedAt: now,
-          read: false,
-        }
-      );
-
-      setAppointment((p) => p ? { ...p, status: 'arrived', arrivedAt: now } : null);
-      Alert.alert('📍 Llegada registrada', 'Se notificó al dueño de la mascota. Puedes completar la ficha médica.');
-    } catch (e: any) {
-      Alert.alert('Error', e.message);
-    } finally {
-      setArriving(false);
-    }
-  }
-
-  async function pickPrescription() {
-    Alert.alert('Subir receta', '¿Cómo quieres agregar la imagen?', [
-      {
-        text: 'Cámara', onPress: async () => {
-          const { status } = await ImagePicker.requestCameraPermissionsAsync();
-          if (status !== 'granted') return;
-          const r = await ImagePicker.launchCameraAsync({ quality: 0.8 });
-          if (!r.canceled) setPrescriptionUri(r.assets[0].uri);
-        },
-      },
-      {
-        text: 'Galería', onPress: async () => {
-          const r = await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
-          if (!r.canceled) setPrescriptionUri(r.assets[0].uri);
-        },
-      },
-      { text: 'Cancelar', style: 'cancel' },
-    ]);
-  }
-
-  async function saveConsultation() {
-    if (!id || !appointment || !pet) return;
-    // Role guard — only vets can complete consultations
-    if (user?.role !== 'vet') {
-      Alert.alert('No autorizado', 'Solo veterinarios pueden completar consultas.');
-      return;
-    }
-    if (!symptoms.trim() || !diagnosis.trim() || !treatmentDone.trim()) {
-      Alert.alert('Requerido', 'Completa síntomas, diagnóstico y tratamiento realizado');
-      return;
-    }
     setSaving(true);
     try {
-      let imgUrl = prescriptionUrl;
-      if (prescriptionUri) imgUrl = await uploadImage(prescriptionUri);
-
-      const consultation = {
-        symptoms: symptoms.trim(),
-        diagnosis: diagnosis.trim(),
-        treatmentDone: treatmentDone.trim(),
-        treatmentPending: treatmentPending.trim(),
-        treatment: treatmentDone.trim(), // backward compat
-        careInstructions: careInstructions.trim(),
-        prescription: prescription.trim(),
-        prescriptionImageUrl: imgUrl || null,
-        visitDate: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-      };
-
       await updateDoc(doc(db, COLLECTIONS.APPOINTMENTS, id), {
-        status: 'completed',
-        consultation,
+        status: newStatus,
+        updatedAt: new Date().toISOString(),
+        ...extra,
       });
-
-      // Append to pet medical record notes
-      const newNote = `[${new Date().toLocaleDateString('es-CL')}] ${diagnosis.trim()}`;
-      const existing = pet.medicalRecord.notes || '';
-      await updateDoc(doc(db, COLLECTIONS.PETS, pet.id), {
-        'medicalRecord.notes': existing ? `${existing}\n${newNote}` : newNote,
-        'medicalRecord.lastUpdated': new Date().toISOString(),
-      });
-
-      Alert.alert('✅ Consulta guardada', 'La ficha médica fue actualizada correctamente.', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      setAppointment((p) => p ? { ...p, status: newStatus as any, ...extra } : null);
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  function confirmCancel() {
+    Alert.alert(
+      'Cancelar cita',
+      '¿Quién cancela la cita?',
+      [
+        { text: 'Yo (veterinario)', style: 'destructive', onPress: () => changeStatus('cancelled', { cancelledBy: 'vet' }) },
+        { text: 'El dueño de la mascota', onPress: () => changeStatus('cancelled', { cancelledBy: 'owner' }) },
+        { text: 'No cancelar', style: 'cancel' },
+      ]
+    );
+  }
+
+  async function openChat() {
+    if (!user || !appointment) return;
+    setOpeningChat(true);
+    try {
+      const snap = await getDocs(
+        query(collection(db, COLLECTIONS.CHATS), where('participants', 'array-contains', user.uid))
+      );
+      const existing = snap.docs.find((d) =>
+        (d.data().participants as string[]).includes(appointment.ownerId)
+      );
+
+      let chatId: string;
+      if (existing) {
+        chatId = existing.id;
+      } else {
+        const ownerName = ownerProfile?.name || ownerProfile?.displayName || 'Dueño';
+        const vetName = vetProfile?.name || user.name || 'Veterinario';
+        const newChat = await addDoc(collection(db, COLLECTIONS.CHATS), {
+          participants: [user.uid, appointment.ownerId],
+          participantNames: { [user.uid]: vetName, [appointment.ownerId]: ownerName },
+          chatType: 'vet',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        chatId = newChat.id;
+      }
+
+      // Write vet's own entry first (always allowed), then owner's entry
+      // (allowed because vet is now a member of the chat)
+      await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${user.uid}`), true);
+      await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${appointment.ownerId}`), true);
+
+      router.push(`/(vet)/chat/${chatId}` as any);
+    } catch {
+      Alert.alert('Error', 'No se pudo abrir el chat');
+    } finally {
+      setOpeningChat(false);
     }
   }
 
@@ -202,223 +203,290 @@ export default function AppointmentDetailScreen() {
     );
   }
 
-  if (!appointment) {
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ color: GRAY }}>Cita no encontrada</Text>
-      </SafeAreaView>
-    );
-  }
+  if (!appointment) return null;
 
-  const canEdit = appointment.status === 'arrived';
-  const isCompleted = appointment.status === 'completed';
-  const statusColor = { pending: '#F59E0B', confirmed: '#3B82F6', arrived: '#8B5CF6', completed: '#16A34A', cancelled: '#EF4444' }[appointment.status] ?? GRAY;
-  const statusLabel = { pending: '⏳ Pendiente', confirmed: '✅ Confirmada', arrived: '📍 Veterinario llegó', completed: '✔️ Completada', cancelled: '❌ Cancelada' }[appointment.status] ?? appointment.status;
+  const status = appointment.status;
+  const isCancelled = status === 'cancelled';
+  const isConfirmed = status === 'confirmed';
+  const isCompleted = status === 'completed';
+  const isPending = status === 'pending';
+  const canModify = isPending || isConfirmed;
+  const statusColor = STATUS_COLORS[status] ?? GRAY;
+  const statusLabel = STATUS_LABELS[status] ?? status;
+
+  const visitsToShow = showFullHistory ? medicalVisits : medicalVisits.slice(0, 3);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView style={{ flex: 1, paddingHorizontal: 24 }} keyboardShouldPersistTaps="handled">
+      <ScrollView style={{ flex: 1 }}>
 
-          <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16, marginBottom: 20 }}>
-            <Text style={{ color: PRIMARY, fontSize: 16 }}>← Volver</Text>
+        {/* Header */}
+        <View style={{ backgroundColor: PRIMARY, paddingTop: 16, paddingBottom: 28, paddingHorizontal: 20 }}>
+          <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(vet)' as any)} style={{ marginBottom: 16 }}>
+            <Text style={{ color: '#BFDBFE', fontSize: 16 }}>← Volver</Text>
           </TouchableOpacity>
-
-          <Text style={{ fontSize: 22, fontWeight: '800', color: DARK, marginBottom: 16 }}>
+          <Text style={{ color: '#fff', fontSize: 22, fontWeight: '800', marginBottom: 8 }}>
             Detalle de Cita 🩺
           </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={{ color: '#BFDBFE', fontSize: 14 }}>
+              {appointment.date}  ·  {appointment.time}
+            </Text>
+            <View style={{ backgroundColor: statusColor + '40', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 }}>
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>{statusLabel}</Text>
+            </View>
+          </View>
+          {(appointment as any).reason && (
+            <Text style={{ color: '#93C5FD', fontSize: 13, marginTop: 6 }}>
+              Motivo: {(appointment as any).reason}
+            </Text>
+          )}
+        </View>
 
-          {/* Appointment summary card */}
-          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: BORDER }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <View>
-                <Text style={{ color: GRAY, fontSize: 12 }}>Fecha y hora</Text>
-                <Text style={{ fontWeight: '700', color: DARK, fontSize: 15 }}>{appointment.date} — {appointment.time}</Text>
+        <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
+
+          {/* Cancelled notice */}
+          {isCancelled && (
+            <View style={{ backgroundColor: '#FEF2F2', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#FECACA' }}>
+              <Text style={{ color: RED, fontWeight: '700', fontSize: 15, marginBottom: 4 }}>❌ Cita cancelada</Text>
+              <Text style={{ color: '#DC2626', fontSize: 13 }}>
+                {(appointment as any).cancelledBy === 'vet'
+                  ? 'Cancelada por el veterinario'
+                  : (appointment as any).cancelledBy === 'owner'
+                  ? 'Cancelada por el dueño de la mascota'
+                  : 'Motivo no especificado'}
+              </Text>
+            </View>
+          )}
+
+          {/* ── Dueño ── */}
+          <Text style={{ fontWeight: '700', color: DARK, fontSize: 15, marginBottom: 10 }}>Dueño de la mascota</Text>
+          <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: BORDER }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+              <View style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 26 }}>👤</Text>
               </View>
-              <View style={{ backgroundColor: statusColor + '20', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 }}>
-                <Text style={{ color: statusColor, fontWeight: '600', fontSize: 12 }}>{statusLabel}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontWeight: '700', color: DARK, fontSize: 16 }}>
+                  {ownerProfile?.name || ownerProfile?.displayName || 'Usuario'}
+                </Text>
+                <Text style={{ color: GRAY, fontSize: 13 }}>{ownerProfile?.email || ''}</Text>
               </View>
             </View>
-            {(appointment as any).reason && (
-              <View style={{ backgroundColor: '#F1F5F9', borderRadius: 10, padding: 10, marginTop: 4 }}>
-                <Text style={{ color: GRAY, fontSize: 12 }}>Motivo: {(appointment as any).reason}</Text>
-              </View>
-            )}
-          </View>
 
-          {/* MARK ARRIVED */}
-          {appointment.status === 'confirmed' && (
+            {ownerProfile?.phone ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+                <View>
+                  <Text style={{ color: GRAY, fontSize: 12 }}>Teléfono</Text>
+                  <Text style={{ color: DARK, fontSize: 14, fontWeight: '600' }}>{ownerProfile.phone}</Text>
+                </View>
+                <TouchableOpacity
+                  style={{ backgroundColor: '#ECFDF5', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                  onPress={() => Linking.openURL(`tel:${ownerProfile.phone}`)}
+                >
+                  <Text style={{ fontSize: 16 }}>📞</Text>
+                  <Text style={{ color: GREEN, fontWeight: '700', fontSize: 13 }}>Llamar</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            {ownerProfile?.address ? (
+              <View style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+                <Text style={{ color: GRAY, fontSize: 12 }}>Dirección</Text>
+                <Text style={{ color: DARK, fontSize: 14 }}>{ownerProfile.address}</Text>
+              </View>
+            ) : null}
+
             <TouchableOpacity
-              style={{
-                backgroundColor: arriving ? '#93C5FD' : PRIMARY,
-                borderRadius: 16, paddingVertical: 16,
-                alignItems: 'center', marginBottom: 16,
-                flexDirection: 'row', justifyContent: 'center', gap: 8,
-              }}
-              onPress={markArrived}
-              disabled={arriving}
+              style={{ marginTop: 8, backgroundColor: '#EFF6FF', borderRadius: 12, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, opacity: openingChat ? 0.6 : 1 }}
+              onPress={openChat}
+              disabled={openingChat}
             >
-              {arriving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ fontSize: 20 }}>📍</Text>}
-              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16 }}>
-                {arriving ? 'Notificando al dueño...' : 'Marcar como Llegado'}
+              {openingChat ? <ActivityIndicator size="small" color={PRIMARY} /> : <Text style={{ fontSize: 16 }}>💬</Text>}
+              <Text style={{ color: PRIMARY, fontWeight: '700', fontSize: 14 }}>
+                {openingChat ? 'Abriendo chat...' : 'Enviar mensaje'}
               </Text>
             </TouchableOpacity>
-          )}
+          </View>
 
-          {/* Arrived notice */}
-          {appointment.status === 'arrived' && (
-            <View style={{ backgroundColor: '#EDE9FE', borderRadius: 16, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#C4B5FD', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <Text style={{ fontSize: 24 }}>📬</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontWeight: '700', color: '#6D28D9', fontSize: 14 }}>El dueño fue notificado</Text>
-                <Text style={{ color: '#7C3AED', fontSize: 12, marginTop: 2 }}>Completa la ficha médica de la mascota</Text>
-              </View>
-            </View>
-          )}
-
-          {/* PET CARD */}
-          {pet && (canEdit || isCompleted) && (
+          {/* ── Ficha de la mascota ── */}
+          {pet && (
             <>
-              <Text style={{ fontWeight: '700', color: DARK, fontSize: 16, marginBottom: 10 }}>
-                Ficha de {pet.name} 📋
+              <Text style={{ fontWeight: '700', color: DARK, fontSize: 15, marginBottom: 10 }}>
+                Ficha médica — {pet.name}
               </Text>
-              <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: BORDER }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: BORDER }}>
+
+                {/* Datos básicos */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 }}>
                   {pet.photos?.[0] ? (
-                    <Image source={{ uri: pet.photos[0] }} style={{ width: 64, height: 64, borderRadius: 12 }} contentFit="cover" />
+                    <Image source={{ uri: pet.photos[0] }} style={{ width: 72, height: 72, borderRadius: 14 }} contentFit="cover" />
                   ) : (
-                    <View style={{ width: 64, height: 64, borderRadius: 12, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 32 }}>{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
+                    <View style={{ width: 72, height: 72, borderRadius: 14, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 36 }}>{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
                     </View>
                   )}
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontWeight: '800', color: DARK, fontSize: 18 }}>{pet.name}</Text>
                     <Text style={{ color: GRAY, fontSize: 13 }}>{pet.breed} · {pet.color}</Text>
-                    <Text style={{ color: GRAY, fontSize: 12 }}>Nacimiento: {pet.birthDate}</Text>
+                    <Text style={{ color: GRAY, fontSize: 12, marginTop: 2 }}>Nacimiento: {pet.birthDate}</Text>
                     {pet.chipNumber ? <Text style={{ color: GRAY, fontSize: 12 }}>Chip: {pet.chipNumber}</Text> : null}
                   </View>
                 </View>
 
-                {pet.medicalRecord.allergies.length > 0 && (
-                  <View style={{ backgroundColor: '#FEF2F2', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#FECACA', marginBottom: 8 }}>
-                    <Text style={{ color: '#DC2626', fontSize: 13, fontWeight: '600' }}>
+                {/* Condiciones */}
+                {(pet.medicalRecord as any).conditions?.length > 0 && (
+                  <View style={{ backgroundColor: '#FFF7ED', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#FED7AA', marginBottom: 10 }}>
+                    <Text style={{ color: '#C2410C', fontSize: 12, fontWeight: '700', marginBottom: 4 }}>🏥 Condiciones crónicas</Text>
+                    {(pet.medicalRecord as any).conditions.map((c: string, i: number) => (
+                      <Text key={i} style={{ color: '#9A3412', fontSize: 13 }}>• {c}</Text>
+                    ))}
+                  </View>
+                )}
+
+                {/* Alergias */}
+                {pet.medicalRecord.allergies?.length > 0 && (
+                  <View style={{ backgroundColor: '#FEF2F2', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#FECACA', marginBottom: 10 }}>
+                    <Text style={{ color: '#DC2626', fontSize: 13, fontWeight: '700' }}>
                       ⚠️ Alergias: {pet.medicalRecord.allergies.join(', ')}
                     </Text>
                   </View>
                 )}
 
-                {pet.medicalRecord.vaccinations.length > 0 && (
-                  <View style={{ marginBottom: 8 }}>
-                    <Text style={{ color: GRAY, fontSize: 12, marginBottom: 4, fontWeight: '600' }}>Vacunas:</Text>
+                {/* Vacunas */}
+                {pet.medicalRecord.vaccinations?.length > 0 && (
+                  <View style={{ marginBottom: 10 }}>
+                    <Text style={{ color: GRAY, fontSize: 12, fontWeight: '700', marginBottom: 6 }}>💉 Vacunas registradas</Text>
                     {pet.medicalRecord.vaccinations.map((v, i) => (
-                      <Text key={i} style={{ color: DARK, fontSize: 13 }}>• {v.name} — {v.date}</Text>
+                      <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
+                        <Text style={{ color: DARK, fontSize: 13 }}>{v.name}</Text>
+                        <Text style={{ color: GRAY, fontSize: 12 }}>{v.date}</Text>
+                      </View>
                     ))}
                   </View>
                 )}
 
+                {/* Notas del historial (texto libre) */}
                 {pet.medicalRecord.notes ? (
-                  <View>
-                    <Text style={{ color: GRAY, fontSize: 12, marginBottom: 4, fontWeight: '600' }}>Historial médico:</Text>
+                  <View style={{ backgroundColor: '#F8FAFC', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: BORDER }}>
+                    <Text style={{ color: GRAY, fontSize: 12, fontWeight: '700', marginBottom: 4 }}>📝 Notas médicas</Text>
                     <Text style={{ color: DARK, fontSize: 13, lineHeight: 20 }}>{pet.medicalRecord.notes}</Text>
                   </View>
                 ) : null}
               </View>
 
-              {/* CONSULTATION FORM */}
-              <Text style={{ fontWeight: '700', color: DARK, fontSize: 16, marginBottom: 12 }}>
-                Registro de Consulta
-              </Text>
-
-              {[
-                { label: 'Síntomas observados *', value: symptoms, set: setSymptoms, placeholder: 'Describe los síntomas que presenta la mascota...' },
-                { label: 'Diagnóstico *', value: diagnosis, set: setDiagnosis, placeholder: 'Diagnóstico clínico...' },
-                { label: 'Tratamiento realizado *', value: treatmentDone, set: setTreatmentDone, placeholder: 'Procedimientos y tratamientos realizados en la consulta...' },
-                { label: 'Tratamiento a realizar', value: treatmentPending, set: setTreatmentPending, placeholder: 'Indicaciones para continuar en casa o próximas visitas...' },
-                { label: 'Instrucciones de cuidado', value: careInstructions, set: setCareInstructions, placeholder: 'Instrucciones específicas para el dueño...' },
-                { label: 'Receta (texto)', value: prescription, set: setPrescription, placeholder: 'Medicamentos, dosis y duración...' },
-              ].map((f) => (
-                <View key={f.label} style={{ marginBottom: 14 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 }}>{f.label}</Text>
-                  <TextInput
-                    style={{ ...inputStyle, minHeight: 80 }}
-                    placeholder={f.placeholder}
-                    placeholderTextColor="#94A3B8"
-                    value={f.value}
-                    onChangeText={f.set}
-                    multiline
-                    editable={!isCompleted}
-                  />
-                </View>
-              ))}
-
-              {/* Prescription photo */}
-              <View style={{ marginBottom: 24 }}>
-                <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 }}>Foto de receta</Text>
-                <TouchableOpacity
-                  style={{
-                    borderWidth: 2, borderStyle: 'dashed', borderColor: prescriptionUri || prescriptionUrl ? GREEN : '#93C5FD',
-                    borderRadius: 16, paddingVertical: 20, alignItems: 'center',
-                    backgroundColor: prescriptionUri || prescriptionUrl ? '#F0FDF4' : '#EFF6FF',
-                  }}
-                  onPress={pickPrescription}
-                  disabled={isCompleted}
-                >
-                  {prescriptionUri ? (
-                    <Image source={{ uri: prescriptionUri }} style={{ width: '100%', height: 160, borderRadius: 12 }} contentFit="cover" />
-                  ) : prescriptionUrl ? (
-                    <Image source={{ uri: prescriptionUrl }} style={{ width: '100%', height: 160, borderRadius: 12 }} contentFit="cover" />
-                  ) : (
-                    <>
-                      <Text style={{ fontSize: 32, marginBottom: 6 }}>📄</Text>
-                      <Text style={{ color: PRIMARY, fontWeight: '600', fontSize: 14 }}>Subir foto de receta</Text>
-                      <Text style={{ color: GRAY, fontSize: 12, marginTop: 2 }}>Cámara o galería</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+              {/* ── Historial de visitas ── */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <Text style={{ fontWeight: '700', color: DARK, fontSize: 15 }}>
+                  Historial de visitas ({medicalVisits.length})
+                </Text>
+                {medicalVisits.length > 3 && (
+                  <TouchableOpacity onPress={() => setShowFullHistory((v) => !v)}>
+                    <Text style={{ color: PRIMARY, fontSize: 13, fontWeight: '600' }}>
+                      {showFullHistory ? 'Ver menos' : 'Ver todo'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
 
-              {!isCompleted && (
-                <TouchableOpacity
-                  style={{
-                    backgroundColor: saving ? '#93C5FD' : PRIMARY,
-                    borderRadius: 16, paddingVertical: 16,
-                    alignItems: 'center', marginBottom: 40,
-                    flexDirection: 'row', justifyContent: 'center', gap: 8,
-                  }}
-                  onPress={saveConsultation}
-                  disabled={saving}
-                >
-                  {saving && <ActivityIndicator color="#fff" size="small" />}
-                  <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16 }}>
-                    {saving ? 'Guardando...' : '💾 Completar y Guardar Consulta'}
-                  </Text>
-                </TouchableOpacity>
-              )}
+              {medicalVisits.length === 0 ? (
+                <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: BORDER, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 32, marginBottom: 8 }}>🏥</Text>
+                  <Text style={{ color: GRAY, fontSize: 14 }}>Sin visitas médicas previas registradas</Text>
+                </View>
+              ) : (
+                <View style={{ gap: 10, marginBottom: 20 }}>
+                  {visitsToShow.map((visit) => (
+                    <View key={visit.id} style={{ backgroundColor: '#fff', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: BORDER, borderLeftWidth: 4, borderLeftColor: '#3B82F6' }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={{ fontSize: 16 }}>{VISIT_REASON_ICONS[visit.visitReason] ?? '📋'}</Text>
+                          <Text style={{ fontWeight: '700', color: DARK, fontSize: 14 }}>{visit.visitReason || 'Consulta'}</Text>
+                        </View>
+                        <Text style={{ color: GRAY, fontSize: 12 }}>{visit.date}</Text>
+                      </View>
 
-              {isCompleted && (
-                <View style={{ backgroundColor: '#F0FDF4', borderRadius: 16, padding: 16, marginBottom: 40, borderWidth: 1, borderColor: '#BBF7D0', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 28, marginBottom: 4 }}>✅</Text>
-                  <Text style={{ fontWeight: '700', color: GREEN, fontSize: 15 }}>Consulta completada</Text>
-                  <Text style={{ color: GRAY, fontSize: 13, marginTop: 4, textAlign: 'center' }}>
-                    La ficha médica de {pet.name} fue actualizada
-                  </Text>
+                      {visit.vetName ? (
+                        <Text style={{ color: GRAY, fontSize: 12, marginBottom: 4 }}>🩺 {visit.vetName}</Text>
+                      ) : null}
+
+                      {visit.notes ? (
+                        <View style={{ backgroundColor: '#F8FAFC', borderRadius: 8, padding: 8, marginTop: 4 }}>
+                          <Text style={{ color: DARK, fontSize: 13, lineHeight: 18 }}>{visit.notes}</Text>
+                        </View>
+                      ) : null}
+
+                      {visit.nextControlDate ? (
+                        <Text style={{ color: '#7C3AED', fontSize: 12, marginTop: 6 }}>
+                          📅 Próximo control: {visit.nextControlDate}
+                        </Text>
+                      ) : null}
+
+                      {visit.prescriptionUrl ? (
+                        <TouchableOpacity
+                          style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                          onPress={() => Linking.openURL(visit.prescriptionUrl!)}
+                        >
+                          <Text style={{ fontSize: 14 }}>📄</Text>
+                          <Text style={{ color: PRIMARY, fontSize: 12, fontWeight: '600' }}>Ver receta</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  ))}
                 </View>
               )}
             </>
           )}
 
-          {/* Pending/not arrived yet */}
-          {!canEdit && !isCompleted && appointment.status !== 'confirmed' && appointment.status !== 'arrived' && (
-            <View style={{ backgroundColor: '#FFFBEB', borderRadius: 16, padding: 20, alignItems: 'center', marginTop: 8 }}>
-              <Text style={{ fontSize: 40, marginBottom: 8 }}>⏳</Text>
-              <Text style={{ fontWeight: '600', color: '#92400E', fontSize: 15, textAlign: 'center' }}>
-                Confirma la cita para poder marcar llegada y completar la ficha
-              </Text>
+          {/* Estado: completada */}
+          {isCompleted && (
+            <View style={{ backgroundColor: '#F0FDF4', borderRadius: 16, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#BBF7D0', alignItems: 'center' }}>
+              <Text style={{ fontSize: 28, marginBottom: 4 }}>✅</Text>
+              <Text style={{ fontWeight: '700', color: GREEN, fontSize: 15 }}>Consulta finalizada</Text>
             </View>
           )}
 
-        </ScrollView>
-      </KeyboardAvoidingView>
+          {/* ── Botones de acción ── */}
+          {canModify && (
+            <View style={{ gap: 12, marginBottom: 40 }}>
+              {isPending && (
+                <TouchableOpacity
+                  style={{ backgroundColor: saving ? '#93C5FD' : PRIMARY, borderRadius: 16, paddingVertical: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+                  onPress={() => changeStatus('confirmed')}
+                  disabled={saving}
+                >
+                  {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ fontSize: 18 }}>✅</Text>}
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Confirmar cita</Text>
+                </TouchableOpacity>
+              )}
+
+              {isConfirmed && (
+                <View style={{ backgroundColor: '#F0FDF4', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#BBF7D0', alignItems: 'center' }}>
+                  <Text style={{ color: GREEN, fontWeight: '600', fontSize: 14 }}>✅ Cita confirmada</Text>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={{ borderWidth: 1, borderColor: '#FECACA', backgroundColor: '#FEF2F2', borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
+                onPress={confirmCancel}
+                disabled={saving}
+              >
+                <Text style={{ color: RED, fontWeight: '700', fontSize: 15 }}>❌ Cancelar cita</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {(isCancelled || isCompleted) && (
+            <TouchableOpacity
+              style={{ backgroundColor: '#F1F5F9', borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginBottom: 40 }}
+              onPress={() => router.canGoBack() ? router.back() : router.replace('/(vet)' as any)}
+            >
+              <Text style={{ color: GRAY, fontWeight: '700' }}>Volver</Text>
+            </TouchableOpacity>
+          )}
+
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }

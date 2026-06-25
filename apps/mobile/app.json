@@ -93,6 +93,7 @@
         }
       ]
     ],
+    "jsEngine": "jsc",
     "experiments": {
       "typedRoutes": true,
       "newArchEnabled": false

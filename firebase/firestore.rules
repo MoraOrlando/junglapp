@@ -27,7 +27,7 @@ service cloud.firestore {
 
     // ── Users ──────────────────────────────────────────────────────────────
     match /users/{uid} {
-      allow read: if isSelf(uid) || isSupport();
+      allow read: if isSelf(uid) || isSupport() || (isAuth() && getRole() == 'vet');
       allow create: if isSelf(uid)
         && request.resource.data.uid == uid
         && request.resource.data.role in ['owner', 'vet', 'store', 'trainer'];
@@ -136,18 +136,16 @@ service cloud.firestore {
 
     // ── Medical Visits ─────────────────────────────────────────────────────
     match /medicalVisits/{visitId} {
+      // Vets need full read access to patient history for any pet in their care.
       allow read: if isAuth() && (
         resource.data.ownerId == request.auth.uid ||
-        resource.data.vetId == request.auth.uid ||
+        getRole() == 'vet' ||
         isSupport()
       );
-      // Only the pet owner can create manual visit records
       allow create: if isAuth()
         && request.resource.data.ownerId == request.auth.uid;
       allow update: if isAuth() && (
-        resource.data.ownerId == request.auth.uid ||
-        resource.data.vetId == request.auth.uid ||
-        isSupport()
+        resource.data.ownerId == request.auth.uid || isSupport()
       );
       allow delete: if isSupport();
     }
@@ -183,30 +181,35 @@ service cloud.firestore {
     }
 
     // ── Products ───────────────────────────────────────────────────────────
-    // Create: verify the user owns the store referenced by storeId
     match /products/{productId} {
       allow read: if isAuth();
       allow create: if isAuth()
-        && get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.userId == request.auth.uid;
+        && request.resource.data.userId == request.auth.uid;
       allow update, delete: if isAuth() && (
-        get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.userId == request.auth.uid
+        resource.data.userId == request.auth.uid
         || isSupport()
       );
     }
 
     // ── Appointments ───────────────────────────────────────────────────────
+    // vetId is the Firestore document ID of the vet profile, not the auth UID.
+    // We resolve ownership via get() on the veterinarians collection.
+    function isVetOfAppointment(vetDocId) {
+      return vetDocId != null &&
+        get(/databases/$(database)/documents/veterinarians/$(vetDocId)).data.userId == request.auth.uid;
+    }
+
     match /appointments/{apptId} {
       allow read: if isAuth() && (
         resource.data.ownerId == request.auth.uid ||
-        resource.data.vetId == request.auth.uid ||
+        isVetOfAppointment(resource.data.vetId) ||
         isSupport()
       );
       allow create: if isAuth()
         && request.resource.data.ownerId == request.auth.uid;
-      // Owner or the assigned vet can update; only allowed vet fields for vets
       allow update: if isAuth() && (
         resource.data.ownerId == request.auth.uid ||
-        resource.data.vetId == request.auth.uid ||
+        isVetOfAppointment(resource.data.vetId) ||
         isSupport()
       );
       allow delete: if isAuth() && (
@@ -297,6 +300,14 @@ service cloud.firestore {
         || isSupport()
       );
       allow delete: if isSupport();
+    }
+
+    // ── Litters (camadas disponibles) ──────────────────────────────────────
+    match /litters/{litterId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isAuth() && (resource.data.ownerId == request.auth.uid || isSupport());
+      allow delete: if isAuth() && (resource.data.ownerId == request.auth.uid || isSupport());
     }
 
     // ── Password Reset Cooldowns (server-side only) ────────────────────────
