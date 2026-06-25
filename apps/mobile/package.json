@@ -61,6 +61,7 @@
     "lightningcss-linux-x64-gnu": "^1.29.1"
   },
   "overrides": {
+    "react-native-reanimated": "4.3.1",
     "lightningcss": "^1.29.1",
     "react-native-css-interop": {
       "lightningcss": "^1.29.1"
