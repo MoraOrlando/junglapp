@@ -23,9 +23,6 @@
     "metro": "~0.84.0"
   },
   "overrides": {
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "react-native": "0.85.3",
     "react-native-reanimated": "4.3.1",
     "lightningcss": "^1.29.1",
     "react-native-css-interop": {
@@ -35,10 +32,5 @@
   "packageManager": "npm@10.9.7",
   "engines": {
     "node": ">=18.0.0"
-  },
-  "dependencies": {
-    "expo": "^56.0.12",
-    "react": "19.2.3",
-    "react-native": "0.85.3"
   }
 }
