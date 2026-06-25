@@ -5,3 +5,5 @@
 expo-env.d.ts
 # @end expo-cli
 # google-services.json is committed intentionally (contains no private keys)
+ios/
+android/

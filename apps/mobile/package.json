@@ -15,7 +15,6 @@
     "@junglapp/firebase": "*",
     "@junglapp/types": "*",
     "@react-native-async-storage/async-storage": "2.2.0",
-    "@react-navigation/bottom-tabs": "^7.2.0",
     "expo": "^56.0.12",
     "expo-auth-session": "~56.0.14",
     "expo-calendar": "~56.0.8",
