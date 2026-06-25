@@ -23,8 +23,15 @@
               "com.googleusercontent.apps.499650328037-j4edei7e54rpebd04ebpdv1iooilj10a",
               "junglapp"
             ]
+          },
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.499650328037-j4edei7e54rpebd04ebpdv1iooilj10a",
+              "junglapp"
+            ]
           }
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
