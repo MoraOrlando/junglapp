@@ -19,8 +19,8 @@
   "devDependencies": {
     "turbo": "^2.0.0",
     "typescript": "^5.4.0",
-    "metro-runtime": "~0.82.0",
-    "metro": "~0.82.0"
+    "metro-runtime": "~0.84.0",
+    "metro": "~0.84.0"
   },
   "overrides": {
     "react": "19.2.3",
