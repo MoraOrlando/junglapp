@@ -1,7 +1,5 @@
-diff --git a/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift b/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift
-index 1111111..2222222 100644
---- a/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift
-+++ b/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift
+diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift
+index a0e3e24..272092e 100644
 @@ -273,9 +273,17 @@
        throw InvalidIdentifierError(identifier: name)
      }
