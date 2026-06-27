@@ -23,9 +23,14 @@ import * as AuthSession from 'expo-auth-session';
 import { initFirebase } from '@junglapp/firebase';
 import type { User, UserRole } from '@junglapp/types';
 
-WebBrowser.maybeCompleteAuthSession();
-
-const { app, db } = initFirebase();
+let _firebase: ReturnType<typeof initFirebase>;
+try {
+  _firebase = initFirebase();
+} catch (e) {
+  console.error('[AuthContext] initFirebase failed:', e);
+  throw e;
+}
+const { app, db } = _firebase;
 
 // Initialize auth with AsyncStorage persistence so session survives app restarts
 let auth: import('firebase/auth').Auth;
@@ -69,6 +74,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const [googleRequest, googleResponse, promptGoogleAsync] = Google.useAuthRequest(GOOGLE_CLIENT_IDS);
+
+  useEffect(() => {
+    WebBrowser.maybeCompleteAuthSession();
+  }, []);
 
   useEffect(() => {
     if (googleResponse?.type === 'success') {

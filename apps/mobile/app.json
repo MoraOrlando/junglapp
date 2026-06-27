@@ -6,6 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "jsEngine": "jsc",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -64,6 +65,11 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      ["expo-build-properties", {
+        "ios": {
+          "useHermes": false
+        }
+      }],
       "expo-router",
       "expo-secure-store",
       [
