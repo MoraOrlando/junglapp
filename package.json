@@ -14,16 +14,17 @@
     "mobile": "cd apps/mobile && npx expo start",
     "web": "cd apps/web && npm run dev",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "postinstall": "patch-package"
   },
   "devDependencies": {
-    "turbo": "^2.0.0",
-    "typescript": "^5.4.0",
+    "metro": "~0.84.0",
     "metro-runtime": "~0.84.0",
-    "metro": "~0.84.0"
+    "patch-package": "^8.0.1",
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
   },
   "overrides": {
-    "react-native-reanimated": "4.3.1",
     "lightningcss": "^1.29.1",
     "react-native-css-interop": {
       "lightningcss": "^1.29.1"
