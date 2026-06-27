@@ -16,6 +16,7 @@
       "bundleIdentifier": "com.junglapp.app",
       "buildNumber": "1",
       "deploymentTarget": "16.4",
+      "jsEngine": "jsc",
       "infoPlist": {
         "CFBundleURLTypes": [
           {

@@ -1,5 +1,5 @@
-// Intercept fatal JS errors and show them in an Alert before crashing.
-// This is a debugging aid for iOS 26.5.1 crash investigation. Remove once resolved.
+// Intercept fatal JS errors: log to console and show Alert before crashing.
+// The prevHandler calls abort() — we delay it so the Alert has time to render.
 (function () {
   if (!global.ErrorUtils) return;
 
@@ -11,26 +11,31 @@
       try {
         msg = (error && error.message) ? error.message : String(error);
         var stack = (error && error.stack) ? error.stack : '';
-        // Keep total under 1000 chars for Alert display
         msg = msg + '\n\n' + stack.slice(0, 600);
       } catch (e) { /* ignore */ }
 
-      // Log to console (visible in Console.app when device is connected via USB)
       console.error('[FATAL JS ERROR]\n' + msg);
 
       try {
         var Alert = require('react-native').Alert;
+        // Use button callback to delay crash — prevHandler calls abort() immediately,
+        // which kills the process before the Alert renders.
         Alert.alert(
-          'JunglApp - Fatal Error',
+          'JunglApp Fatal Error',
           msg.slice(0, 900),
-          [{ text: 'OK' }]
+          [{
+            text: 'Cerrar',
+            onPress: function () {
+              if (prevHandler) prevHandler(error, isFatal);
+            }
+          }],
+          { cancelable: false }
         );
-      } catch (alertErr) {
-        // Alert unavailable; already logged to console above
-      }
+        // Don't call prevHandler here — wait for button tap
+        return;
+      } catch (alertErr) { /* Alert unavailable */ }
     }
 
-    // Always call the original handler (fatal or not)
     if (prevHandler) prevHandler(error, isFatal);
   });
 })();
