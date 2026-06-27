@@ -6,7 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "jsEngine": "jsc",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -17,7 +16,6 @@
       "bundleIdentifier": "com.junglapp.app",
       "buildNumber": "1",
       "deploymentTarget": "16.4",
-      "jsEngine": "jsc",
       "infoPlist": {
         "CFBundleURLTypes": [
           {
@@ -65,11 +63,6 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      ["expo-build-properties", {
-        "ios": {
-          "useHermes": false
-        }
-      }],
       "expo-router",
       "expo-secure-store",
       [

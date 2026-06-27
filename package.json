@@ -18,8 +18,8 @@
     "postinstall": "patch-package"
   },
   "devDependencies": {
-    "metro": "~0.84.0",
-    "metro-runtime": "~0.84.0",
+    "metro": "~0.80.9",
+    "metro-runtime": "~0.80.9",
     "patch-package": "^8.0.1",
     "turbo": "^2.0.0",
     "typescript": "^5.4.0"
