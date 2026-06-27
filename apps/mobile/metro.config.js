@@ -43,6 +43,12 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (platform === 'web' && moduleName === 'react-native-maps') {
     return { type: 'sourceFile', filePath: path.resolve(projectRoot, 'stubs/maps-stub.js') };
   }
+  // react-native-reanimated is removed from package.json to prevent the iOS 26.5.1
+  // WorkletRuntime::legacyModeInit crash. Gesture-handler and screens reference it
+  // optionally — redirect to a no-op stub so Metro can bundle without the native module.
+  if (moduleName === 'react-native-reanimated') {
+    return { type: 'sourceFile', filePath: path.resolve(projectRoot, 'stubs/reanimated-stub.js') };
+  }
   // expo/AppEntry.js tries to import "../../App" — in a monorepo expo may be hoisted
   // to the workspace root, making that path unresolvable. Redirect to our local App.js stub.
   if (moduleName === '../../App' && context.originModulePath?.includes(`${path.sep}expo${path.sep}AppEntry`)) {
