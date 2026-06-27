@@ -42,7 +42,6 @@
     "react-native-calendars": "^1.1313.0",
     "react-native-gesture-handler": "~2.31.1",
     "react-native-maps": "1.27.2",
-    "react-native-reanimated": "4.3.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
     "react-native-swiper": "^1.6.0",
@@ -60,7 +59,6 @@
     "lightningcss-linux-x64-gnu": "^1.29.1"
   },
   "overrides": {
-    "react-native-reanimated": "4.3.1",
     "lightningcss": "^1.29.1",
     "react-native-css-interop": {
       "lightningcss": "^1.29.1"
