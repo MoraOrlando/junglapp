@@ -2,9 +2,9 @@ const { withDangerousMod } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
-// fmt 9.x/10.x uses consteval in FMT_STRING, which Clang 17+ (Xcode 26+) rejects
-// when called with non-constant arguments. Appending a second post_install block
-// (CocoaPods 1.6+ supports multiple) to override C++ flags for affected targets.
+// fmt 9.x uses consteval in FMT_STRING which Clang 17+ (Xcode 26+) rejects.
+// Inject into the existing post_install block (CocoaPods rejects multiple blocks).
+// Apply to ALL targets so any pod that includes fmt headers gets the flag.
 function withFmtXcode26Fix(config) {
   return withDangerousMod(config, ['ios', (config) => {
     const podfilePath = path.join(config.modRequest.platformProjectRoot, 'Podfile');
@@ -13,22 +13,24 @@ function withFmtXcode26Fix(config) {
     let podfile = fs.readFileSync(podfilePath, 'utf8');
     if (podfile.includes('FMT_USE_CONSTEVAL')) return config;
 
-    // Append a new post_install block — safer than injecting into the existing one.
+    // Inject at top of existing post_install block (substring match works even with leading spaces).
     const fix = `
-# Fix: FMT_STRING consteval incompatibility with Clang 17+ (Xcode 26+)
-post_install do |installer|
-  installer.pods_project.targets.each do |target|
-    if ['fmt', 'glog', 'RCT-Folly', 'folly'].include?(target.name)
+    # Fix: FMT_STRING consteval incompatibility with Clang 17+ (Xcode 26+)
+    installer.pods_project.targets.each do |target|
       target.build_configurations.each do |cfg|
         existing = cfg.build_settings['OTHER_CPLUSPLUSFLAGS'] || '$(inherited)'
-        cfg.build_settings['OTHER_CPLUSPLUSFLAGS'] = existing + ' -DFMT_USE_CONSTEVAL=0'
+        unless existing.include?('FMT_USE_CONSTEVAL')
+          cfg.build_settings['OTHER_CPLUSPLUSFLAGS'] = existing + ' -DFMT_USE_CONSTEVAL=0'
+        end
       end
     end
-  end
-end
 `;
 
-    fs.writeFileSync(podfilePath, podfile + '\n' + fix);
+    podfile = podfile.replace(
+      'post_install do |installer|',
+      'post_install do |installer|' + fix
+    );
+    fs.writeFileSync(podfilePath, podfile);
     return config;
   }]);
 }
