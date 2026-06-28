@@ -2,23 +2,20 @@ const { withDangerousMod } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
-// fmt 9.x uses consteval in FMT_STRING which Clang 17+ (Xcode 26+) rejects.
+// fmt 9.x: FMT_USE_CONSTEVAL is auto-enabled via __cpp_consteval on Xcode 26+/Clang 17+.
+// This makes FMT_STRING's consteval constructor fail. Fix: patch fmt/core.h to prepend
+// #define FMT_USE_CONSTEVAL 0 before the auto-detection block.
 function withFmtXcode26Fix(config) {
   return withDangerousMod(config, ['ios', (config) => {
     const podfilePath = path.join(config.modRequest.platformProjectRoot, 'Podfile');
-
-    console.log('[FMT-FIX] platformProjectRoot:', config.modRequest.platformProjectRoot);
-    console.log('[FMT-FIX] podfilePath:', podfilePath);
-    console.log('[FMT-FIX] exists:', fs.existsSync(podfilePath));
-
     if (!fs.existsSync(podfilePath)) return config;
 
     let podfile = fs.readFileSync(podfilePath, 'utf8');
-    const alreadyPatched = podfile.includes('FMT_USE_CONSTEVAL');
-    console.log('[FMT-FIX] already patched:', alreadyPatched);
+    if (podfile.includes('FMT_USE_CONSTEVAL')) return config;
 
-    if (alreadyPatched) return config;
-
+    // Belt: set compiler flag for all targets via build settings.
+    // Suspenders: patch fmt/core.h source directly (most reliable).
+    // Note: \\n in JS template → \n in file → Ruby double-quoted string newline.
     const fix = `
     # Fix: FMT_STRING consteval incompatibility with Clang 17+ (Xcode 26+)
     installer.pods_project.targets.each do |target|
@@ -29,19 +26,19 @@ function withFmtXcode26Fix(config) {
         end
       end
     end
+    fmt_core_h = File.join(installer.sandbox.root.to_s, 'fmt', 'include', 'fmt', 'core.h')
+    if File.exist?(fmt_core_h) && !File.read(fmt_core_h).start_with?('// XC26FIX')
+      original = File.read(fmt_core_h)
+      prefix = "// XC26FIX: FMT_USE_CONSTEVAL disabled for Xcode 26+ (Clang 17+)\\n#ifndef FMT_USE_CONSTEVAL\\n#define FMT_USE_CONSTEVAL 0\\n#endif\\n"
+      File.write(fmt_core_h, prefix + original)
+      puts "[FMT-FIX] Patched " + fmt_core_h
+    end
 `;
-
-    const before = podfile.includes('post_install do |installer|');
-    console.log('[FMT-FIX] has post_install pattern:', before);
 
     podfile = podfile.replace(
       'post_install do |installer|',
       'post_install do |installer|' + fix
     );
-
-    const after = podfile.includes('FMT_USE_CONSTEVAL');
-    console.log('[FMT-FIX] fix injected:', after);
-
     fs.writeFileSync(podfilePath, podfile);
     return config;
   }]);
