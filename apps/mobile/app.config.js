@@ -3,17 +3,22 @@ const fs = require('fs');
 const path = require('path');
 
 // fmt 9.x uses consteval in FMT_STRING which Clang 17+ (Xcode 26+) rejects.
-// Inject into the existing post_install block (CocoaPods rejects multiple blocks).
-// Apply to ALL targets so any pod that includes fmt headers gets the flag.
 function withFmtXcode26Fix(config) {
   return withDangerousMod(config, ['ios', (config) => {
     const podfilePath = path.join(config.modRequest.platformProjectRoot, 'Podfile');
+
+    console.log('[FMT-FIX] platformProjectRoot:', config.modRequest.platformProjectRoot);
+    console.log('[FMT-FIX] podfilePath:', podfilePath);
+    console.log('[FMT-FIX] exists:', fs.existsSync(podfilePath));
+
     if (!fs.existsSync(podfilePath)) return config;
 
     let podfile = fs.readFileSync(podfilePath, 'utf8');
-    if (podfile.includes('FMT_USE_CONSTEVAL')) return config;
+    const alreadyPatched = podfile.includes('FMT_USE_CONSTEVAL');
+    console.log('[FMT-FIX] already patched:', alreadyPatched);
 
-    // Inject at top of existing post_install block (substring match works even with leading spaces).
+    if (alreadyPatched) return config;
+
     const fix = `
     # Fix: FMT_STRING consteval incompatibility with Clang 17+ (Xcode 26+)
     installer.pods_project.targets.each do |target|
@@ -26,10 +31,17 @@ function withFmtXcode26Fix(config) {
     end
 `;
 
+    const before = podfile.includes('post_install do |installer|');
+    console.log('[FMT-FIX] has post_install pattern:', before);
+
     podfile = podfile.replace(
       'post_install do |installer|',
       'post_install do |installer|' + fix
     );
+
+    const after = podfile.includes('FMT_USE_CONSTEVAL');
+    console.log('[FMT-FIX] fix injected:', after);
+
     fs.writeFileSync(podfilePath, podfile);
     return config;
   }]);
