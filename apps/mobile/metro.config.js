@@ -26,6 +26,16 @@ config.resolver.extraNodeModules = {
   'react-native': rnDir,
 };
 
+// Fix for monorepo: metro runs from root node_modules but expo-asset is in apps/mobile.
+// Asset plugins are required() from metro's location, so we resolve to absolute paths.
+config.transformer.assetPlugins = (config.transformer.assetPlugins || []).map(plugin => {
+  try {
+    return require.resolve(plugin, { paths: [path.join(projectRoot, 'node_modules')] });
+  } catch {
+    return plugin;
+  }
+});
+
 // react-native-maps has no web implementation — stub it out for the web bundle
 // so the bundler doesn't fail when processing screens that import it conditionally.
 const originalResolver = config.resolver.resolveRequest;
