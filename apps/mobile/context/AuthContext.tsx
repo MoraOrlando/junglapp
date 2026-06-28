@@ -7,8 +7,6 @@ import {
   GoogleAuthProvider,
   OAuthProvider,
   signInWithCredential,
-  initializeAuth,
-  getAuth,
 } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
 import {
@@ -23,26 +21,7 @@ import * as AuthSession from 'expo-auth-session';
 import { initFirebase } from '@junglapp/firebase';
 import type { User, UserRole } from '@junglapp/types';
 
-let _firebase: ReturnType<typeof initFirebase>;
-try {
-  _firebase = initFirebase();
-} catch (e) {
-  console.error('[AuthContext] initFirebase failed:', e);
-  throw e;
-}
-const { app, db } = _firebase;
-
-// Initialize auth with AsyncStorage persistence so session survives app restarts
-let auth: import('firebase/auth').Auth;
-try {
-  const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-  const { getReactNativePersistence } = require('firebase/auth');
-  auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage),
-  });
-} catch {
-  auth = getAuth(app);
-}
+const { auth, db } = initFirebase();
 
 interface AuthContextType {
   user: User | null;
