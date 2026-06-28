@@ -2,10 +2,21 @@ const { withDangerousMod } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
-// react_native_post_install() sets CLANG_CXX_LANGUAGE_STANDARD=c++20 for ALL pods.
-// This overrides our gnu++17 fix for the fmt target — we MUST inject AFTER it.
-// Strategy: inject our fix code right after react_native_post_install() closes,
-// before the end of the post_install block.
+// The generated Podfile structure (Expo SDK 52 template):
+//
+//   post_install do |installer|
+//     react_native_post_install(...)   ← sets c++20 on ALL pod targets including fmt
+//     # CODE_SIGNING_ALLOWED block
+//     installer.target_installation_results...
+//       .each do |pod_name, ...|
+//       ...
+//     end
+//   end    ← closes post_install
+// end      ← closes target 'JunglApp'
+//
+// We inject AFTER the CODE_SIGNING block and AFTER react_native_post_install,
+// by finding the LAST "  end\nend" (which closes post_install then target).
+// This ensures our gnu++17 override runs AFTER react_native_post_install's c++20.
 function withFmtXcode26Fix(config) {
   return withDangerousMod(config, ['ios', (config) => {
     const podfilePath = path.join(config.modRequest.platformProjectRoot, 'Podfile');
@@ -14,27 +25,21 @@ function withFmtXcode26Fix(config) {
     let podfile = fs.readFileSync(podfilePath, 'utf8');
     if (podfile.includes('FMT_XC26_FIX')) return config;
 
-    // Ruby code to run AFTER react_native_post_install has set c++20 for all pods.
-    // We then override fmt back to gnu++17 so __cpp_consteval is undefined.
-    // Also patch base.h source directly as belt-and-suspenders.
-    // Note: \\n in JS string literal → \n in file → Ruby double-quoted string newline
+    // Ruby code injected inside post_install AFTER react_native_post_install.
+    // Note: \\n in JS string → \n in file → Ruby interprets as newline in "..." string
     const fix = `
-    # FMT_XC26_FIX: override react_native_post_install c++20 for fmt target
-    # (react_native_post_install sets c++20 on all pods, triggering consteval errors)
-    # 1. Patch base.h actual source using File.realpath to follow symlinks
-    fmt_base_candidates = [
+    # FMT_XC26_FIX: runs AFTER react_native_post_install which sets c++20 globally
+    # Source patch: prepend define to actual base.h (File.realpath follows symlinks)
+    [
       File.join(installer.sandbox.root.to_s, 'fmt', 'include', 'fmt', 'base.h'),
-    ]
-    Dir.glob(File.join(installer.sandbox.root.to_s, '*', 'include', 'fmt', 'base.h')).each { |p| fmt_base_candidates << p }
-    fmt_base_candidates.uniq.each do |base_h|
+    ].each do |base_h|
       next unless File.exist?(base_h)
       real = File.realpath(base_h) rescue base_h
       next if File.read(real).start_with?('// XC26FIX')
-      original = File.read(real)
-      File.write(real, "// XC26FIX\\n#ifndef FMT_USE_CONSTEVAL\\n#define FMT_USE_CONSTEVAL 0\\n#endif\\n" + original)
-      puts "[FMT-FIX] Patched: " + real
+      File.write(real, "// XC26FIX\\n#ifndef FMT_USE_CONSTEVAL\\n#define FMT_USE_CONSTEVAL 0\\n#endif\\n" + File.read(real))
+      puts "[FMT-FIX] Patched base.h: " + real
     end
-    # 2. Override fmt target back to gnu++17 (AFTER react_native_post_install set c++20)
+    # Build settings: override c++20 back to gnu++17 for the fmt target ONLY
     installer.pods_project.targets.each do |target|
       next unless target.name == 'fmt'
       target.build_configurations.each do |cfg|
@@ -43,7 +48,7 @@ function withFmtXcode26Fix(config) {
         puts "[FMT-FIX] fmt/" + cfg.name + " → gnu++17 + FMT_USE_CONSTEVAL=0"
       end
     end
-    # 3. Also patch xcconfig files for fmt (lower priority backup)
+    # xcconfig patch (lower-priority backup)
     Dir.glob(File.join(installer.sandbox.root.to_s, 'Target Support Files', 'fmt', '*.xcconfig')).each do |xc|
       content = File.read(xc)
       next if content.include?('FMT_USE_CONSTEVAL')
@@ -52,20 +57,18 @@ function withFmtXcode26Fix(config) {
     end
 `;
 
-    // Inject AFTER react_native_post_install() closes, before post_install end.
-    // The generated Podfile has this pattern at the end:
-    //     )       ← closes react_native_post_install(...)
-    //   end       ← closes post_install do |installer|
-    // end         ← closes target 'JunglApp' do
-    const afterRni = '    )\n  end\nend';
-    if (podfile.includes(afterRni)) {
-      podfile = podfile.replace(afterRni, '    )\n' + fix + '  end\nend');
+    // Find the LAST "  end\nend" in the file — this closes the post_install block
+    // and the target block respectively, right at the end of the Podfile.
+    // Inject our fix code just before this closing sequence.
+    const closingPattern = '  end\nend';
+    const lastPos = podfile.lastIndexOf(closingPattern);
+    if (lastPos !== -1) {
+      podfile = podfile.substring(0, lastPos) + fix + podfile.substring(lastPos);
+      console.log('[withFmtXcode26Fix] Injected after react_native_post_install (lastIndexOf)');
     } else {
-      // Fallback: inject at block start (less ideal but better than nothing)
-      podfile = podfile.replace(
-        'post_install do |installer|',
-        'post_install do |installer|' + fix
-      );
+      // Fallback: inject at beginning of post_install (less ideal)
+      podfile = podfile.replace('post_install do |installer|', 'post_install do |installer|' + fix);
+      console.log('[withFmtXcode26Fix] FALLBACK: injected at post_install start');
     }
 
     fs.writeFileSync(podfilePath, podfile);
