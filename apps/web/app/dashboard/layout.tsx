@@ -11,7 +11,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'support')) {
-      router.replace('/');
+      router.replace('/soporte');
     }
   }, [user, loading, router]);
 
