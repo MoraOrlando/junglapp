@@ -30,7 +30,7 @@ No vendemos tus datos personales a terceros.
 
 ## 4. Retención y eliminación
 
-Puedes solicitar la eliminación de tu cuenta y todos tus datos escribiendo a **mora.munoz.orlando@gmail.com**. Procesaremos la solicitud dentro de 30 días.
+Puedes eliminar tu cuenta y todos tus datos en cualquier momento, de forma instantánea, desde **Mi Perfil → Eliminar cuenta** dentro de la App. Si no puedes acceder a la App, también puedes solicitar la eliminación escribiendo a **mora.munoz.orlando@gmail.com**; en ese caso procesaremos la solicitud dentro de 30 días.
 
 ## 5. Seguridad
 
