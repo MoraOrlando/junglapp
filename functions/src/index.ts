@@ -1,7 +1,8 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import * as nodemailer from 'nodemailer';
-import { randomInt } from 'crypto';
+import { randomInt, randomUUID } from 'crypto';
+import { Expo } from 'expo-server-sdk';
 
 admin.initializeApp();
 
@@ -106,6 +107,153 @@ export const sendTempPassword = functions.https.onCall(async (data, context) => 
   return { success: true };
 });
 
+const ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
+const IMAGE_MIME_TYPES: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf',
+};
+// Callable functions have a ~10MB HTTP request ceiling. Base64 inflates the
+// payload by ~4/3, so a 10MB *decoded* limit would actually need a ~13.3MB
+// request — past that ceiling, the platform rejects the call before this
+// function's own (friendlier) size check ever runs. Cap the decoded size
+// low enough that its base64 form, plus JSON wrapper overhead, stays under
+// the transport limit with headroom.
+const MAX_UPLOAD_BYTES = 7 * 1024 * 1024;
+const BASE64_REGEX = /^[A-Za-z0-9+/]+={0,2}$/;
+
+// Uploads a file to Storage on the client's behalf. React Native's `firebase` JS SDK
+// cannot upload to Storage directly (unsupported by the Firebase team, see
+// https://github.com/firebase/firebase-js-sdk/issues/8648), and the native
+// @react-native-firebase/storage module doesn't share auth state with the JS SDK
+// used everywhere else in this app. Routing uploads through a callable function
+// sidesteps both problems: the client already has a valid ID token for the call,
+// and the actual Storage write happens here via the Admin SDK (which bypasses
+// Storage Security Rules, so this function must enforce its own checks).
+export const uploadUserImage = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión para subir archivos.');
+  }
+
+  const { base64, ext, contentType } = data as { base64?: string; ext?: string; contentType?: string };
+  if (!base64 || typeof base64 !== 'string') {
+    throw new functions.https.HttpsError('invalid-argument', 'Falta el contenido de la imagen.');
+  }
+
+  const resolvedExt = ALLOWED_IMAGE_EXTENSIONS.includes((ext || '').toLowerCase())
+    ? (ext as string).toLowerCase()
+    : 'jpg';
+  const resolvedContentType = contentType || IMAGE_MIME_TYPES[resolvedExt];
+
+  if (!BASE64_REGEX.test(base64)) {
+    // Buffer.from(str, 'base64') silently drops invalid characters instead of
+    // throwing, so this regex check is the only thing that actually catches
+    // malformed input.
+    throw new functions.https.HttpsError('invalid-argument', 'Contenido de imagen inválido.');
+  }
+  // Reject oversized payloads from their base64 string length (cheap) before
+  // paying the cost of decoding into a buffer.
+  const approxDecodedBytes = (base64.length * 3) / 4;
+  if (approxDecodedBytes > MAX_UPLOAD_BYTES) {
+    throw new functions.https.HttpsError('invalid-argument', `La imagen no debe superar los ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB.`);
+  }
+
+  const buffer = Buffer.from(base64, 'base64');
+  if (buffer.length === 0 || buffer.length > MAX_UPLOAD_BYTES) {
+    throw new functions.https.HttpsError('invalid-argument', `La imagen no debe superar los ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB.`);
+  }
+
+  const downloadToken = randomUUID();
+  const filename = `uploads/${Date.now()}_${randomInt(1e9)}.${resolvedExt}`;
+  const bucket = admin.storage().bucket();
+  const file = bucket.file(filename);
+
+  await file.save(buffer, {
+    contentType: resolvedContentType,
+    metadata: { metadata: { firebaseStorageDownloadTokens: downloadToken } },
+  });
+
+  const encodedPath = encodeURIComponent(filename);
+  const url = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${downloadToken}`;
+  return { url };
+});
+
+const expo = new Expo();
+
+async function sendPush(pushToken: string, title: string, body: string) {
+  if (!Expo.isExpoPushToken(pushToken)) return;
+  await expo.sendPushNotificationsAsync([{ to: pushToken, title, body, sound: 'default' }]);
+}
+
+async function getUserPushToken(uid: string): Promise<string | null> {
+  const doc = await admin.firestore().collection('users').doc(uid).get();
+  return doc.data()?.pushToken ?? null;
+}
+
+// Notifica al vet cuando se crea una nueva cita
+export const onAppointmentCreated = functions.firestore
+  .document('appointments/{appointmentId}')
+  .onCreate(async (snap) => {
+    const appt = snap.data();
+    const { vetId, ownerName, date, time } = appt;
+    if (!vetId) return;
+
+    const vetSnap = await admin.firestore().collection('veterinarians').doc(vetId).get();
+    const vetUserId = vetSnap.data()?.userId;
+    if (!vetUserId) return;
+
+    const token = await getUserPushToken(vetUserId);
+    if (!token) return;
+
+    await sendPush(token, 'Nueva reserva', `${ownerName} agendó una cita para el ${date} a las ${time}`);
+  });
+
+// Notifica al owner cuando cambia el estado de su cita
+export const onAppointmentUpdated = functions.firestore
+  .document('appointments/{appointmentId}')
+  .onUpdate(async (change) => {
+    const before = change.before.data();
+    const after = change.after.data();
+    if (before.status === after.status) return;
+
+    const { ownerId, date, time } = after;
+    if (!ownerId) return;
+
+    const token = await getUserPushToken(ownerId);
+    if (!token) return;
+
+    if (after.status === 'confirmed') {
+      await sendPush(token, 'Cita confirmada', `Tu cita del ${date} a las ${time} fue confirmada`);
+    } else if (after.status === 'cancelled') {
+      await sendPush(token, 'Cita cancelada', `La cita del ${date} a las ${time} fue cancelada`);
+    }
+  });
+
+// Notifica al destinatario cuando llega un mensaje de chat
+export const onChatMessageCreated = functions.database
+  .ref('messages/{chatId}/{messageId}')
+  .onCreate(async (snap, context) => {
+    const message = snap.val();
+    const { senderId, senderName, text, imageUrl } = message;
+    const { chatId } = context.params;
+
+    const chatDoc = await admin.firestore().collection('chats').doc(chatId).get();
+    const participants: string[] = chatDoc.data()?.participants ?? [];
+    const recipientId = participants.find((p) => p !== senderId);
+    if (!recipientId) return;
+
+    // Don't notify a user about messages from someone they've blocked — the
+    // client already hides the chat from their list, but without this check
+    // they'd still get pinged (Apple Guideline 1.2 requires blocking to
+    // actually stop contact, not just hide it visually).
+    const blockDoc = await admin.firestore().collection('blocks').doc(`${recipientId}_${senderId}`).get();
+    if (blockDoc.exists) return;
+
+    const token = await getUserPushToken(recipientId);
+    if (!token) return;
+
+    const body = imageUrl ? '📷 Foto' : (text || '...');
+    await sendPush(token, senderName || 'Nuevo mensaje', body);
+  });
+
 // Recalculate trainer/vet rating server-side when a review is created.
 // Prevents client-side rating manipulation.
 export const onReviewCreated = functions.firestore
@@ -137,4 +285,47 @@ export const onReviewCreated = functions.firestore
       });
       break;
     }
+  });
+
+// Notifies the admin by email whenever a user reports objectionable content,
+// so it can be reviewed and acted on within 24 hours (Apple Guideline 1.2).
+export const onReportCreated = functions.firestore
+  .document('reports/{reportId}')
+  .onCreate(async (snap) => {
+    const report = snap.data();
+
+    // Flag the reported account for admin review — unless it's already
+    // blocked, in which case it should stay blocked, not get "downgraded".
+    if (report.reportedUserId) {
+      try {
+        const userRef = admin.firestore().collection('users').doc(report.reportedUserId);
+        const userDoc = await userRef.get();
+        if (userDoc.exists && userDoc.data()?.accountStatus !== 'blocked') {
+          await userRef.update({ accountStatus: 'under_review' });
+        }
+      } catch {
+        // Don't block the email notification below if this fails
+      }
+    }
+
+    const config = functions.config();
+    const adminEmail = config.email?.admin || config.email?.user || process.env.EMAIL_USER;
+    if (!adminEmail) return;
+
+    const transporter = createTransporter();
+    await transporter.sendMail({
+      from: `"JunglApp" <${config.email?.user || process.env.EMAIL_USER}>`,
+      to: adminEmail,
+      subject: '⚠️ Nuevo reporte de contenido — JunglApp',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+          <h2 style="color: #DC2626;">Nuevo reporte de contenido</h2>
+          <p><strong>Reportado por:</strong> ${report.reporterId}</p>
+          <p><strong>Usuario reportado:</strong> ${report.reportedUserName || report.reportedUserId} (${report.reportedUserId})</p>
+          <p><strong>Chat:</strong> ${report.chatId}</p>
+          <p><strong>Motivo:</strong> ${report.reason}</p>
+          <p style="color: #6B7280; font-size: 13px; margin-top: 24px;">Revisa y actúa dentro de 24 horas desde Firebase Console → Firestore → reports.</p>
+        </div>
+      `,
+    });
   });

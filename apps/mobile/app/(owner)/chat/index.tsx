@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+import { useBlockedUserIds } from '../../../lib/useBlockedUserIds';
 import type { Chat } from '@junglapp/types';
 
 const { db } = initFirebase();
@@ -37,6 +38,7 @@ export default function ChatListScreen() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const blockedUserIds = useBlockedUserIds();
 
   useEffect(() => {
     if (!user) return;
@@ -63,16 +65,26 @@ export default function ChatListScreen() {
   function getChatEmoji(chat: any): string {
     if (chat.chatType === 'found_pet') return '🐾';
     if (chat.chatType === 'vet') return '🩺';
+    if (chat.chatType === 'walker') return '🦮';
+    if (chat.chatType === 'grooming') return '✂️';
+    if (chat.chatType === 'trainer') return '🎓';
     if (chat.chatType === 'store') return '🛍️';
     if (chat.matchId) return '🐕';
     return '💬';
   }
 
-  const matchChats = chats.filter((c: any) => c.matchId && c.chatType !== 'found_pet');
-  const foundChats = chats.filter((c: any) => c.chatType === 'found_pet');
-  const vetChats = chats.filter((c: any) => c.chatType === 'vet');
-  const storeChats = chats.filter((c: any) => c.chatType === 'store');
-  const allMessages = [...vetChats, ...storeChats, ...foundChats, ...matchChats];
+  const visibleChats = chats.filter((c: Chat) => {
+    const otherId = c.participants.find((p) => p !== user?.uid);
+    return !otherId || !blockedUserIds.has(otherId);
+  });
+  const matchChats = visibleChats.filter((c: any) => c.matchId && c.chatType !== 'found_pet');
+  const foundChats = visibleChats.filter((c: any) => c.chatType === 'found_pet');
+  const vetChats = visibleChats.filter((c: any) => c.chatType === 'vet');
+  const walkerChats = visibleChats.filter((c: any) => c.chatType === 'walker');
+  const groomingChats = visibleChats.filter((c: any) => c.chatType === 'grooming');
+  const trainerChats = visibleChats.filter((c: any) => c.chatType === 'trainer');
+  const storeChats = visibleChats.filter((c: any) => c.chatType === 'store');
+  const allMessages = [...vetChats, ...walkerChats, ...groomingChats, ...trainerChats, ...storeChats, ...foundChats, ...matchChats];
 
   const filtered = search.trim()
     ? allMessages.filter(

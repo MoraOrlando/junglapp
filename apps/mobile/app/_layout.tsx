@@ -3,8 +3,17 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as Notifications from 'expo-notifications';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import '../global.css';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: false,
+    shouldPlaySound: false,
+    shouldSetBadge: true,
+  }),
+});
 
 function RouteGuard() {
   const { user, loading } = useAuth();
@@ -20,6 +29,7 @@ function RouteGuard() {
     const inStore = segments[0] === '(store)';
     const inSupport = segments[0] === '(support)';
     const inTrainer = segments[0] === '(trainer)';
+    const inWalker = (segments[0] as string) === '(walker)';
 
     if (!user && !inAuth) {
       router.replace('/(auth)');
@@ -39,6 +49,8 @@ function RouteGuard() {
         else if (role === 'store') router.replace('/(store)');
         else if (role === 'trainer') router.replace('/(trainer)');
         else if (role === 'support') router.replace('/(support)');
+        else if (role === 'walker') (router.replace as any)('/(walker)');
+        else if (role === 'grooming') (router.replace as any)('/(grooming)');
       }
     }
   }, [user, loading, segments]);
@@ -60,6 +72,8 @@ export default function RootLayout() {
             <Stack.Screen name="(store)" />
             <Stack.Screen name="(trainer)" />
             <Stack.Screen name="(support)" />
+            <Stack.Screen name="(walker)" />
+            <Stack.Screen name="(grooming)" />
           </Stack>
         </AuthProvider>
       </SafeAreaProvider>

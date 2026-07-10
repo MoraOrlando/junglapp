@@ -11,13 +11,23 @@ const { db } = initFirebase();
 const INDIGO = '#4F46E5';
 const SLOTS = ['08:00','08:30','09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00'];
 
+// `toISOString()` converts to UTC first, which rolls the date over to the next
+// day once local time is past (24 - |UTC offset|) hours — e.g. any time after
+// 20:00 in Chile (UTC-4). Format from local date parts instead.
+function toLocalDateString(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function getDates() {
   const dates: string[] = [];
   const now = new Date();
   for (let i = 0; i < 14; i++) {
     const d = new Date(now);
     d.setDate(now.getDate() + i);
-    dates.push(d.toISOString().slice(0, 10));
+    dates.push(toLocalDateString(d));
   }
   return dates;
 }
@@ -27,7 +37,7 @@ export default function TrainerCalendarScreen() {
   const [trainer, setTrainer] = useState<Trainer | null>(null);
   const [trainerDocId, setTrainerDocId] = useState<string | null>(null);
   const [availability, setAvailability] = useState<Record<string, string[]>>({});
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
+  const [selectedDate, setSelectedDate] = useState(toLocalDateString(new Date()));
   const [fee, setFee] = useState('');
   const [saving, setSaving] = useState(false);
   const dates = getDates();

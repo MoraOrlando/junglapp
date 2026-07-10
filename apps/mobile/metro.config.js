@@ -1,9 +1,20 @@
 const { getDefaultConfig } = require('expo/metro-config');
 const { withNativeWind } = require('nativewind/metro');
 const path = require('path');
+const fs = require('fs');
 
 const projectRoot = __dirname;
 const workspaceRoot = path.resolve(projectRoot, '../..');
+
+// npm's hoisting decision for react/react-native can change between installs
+// (whether a local copy ends up in apps/mobile/node_modules or only at the
+// workspace root). Resolve to wherever each package actually exists on disk
+// instead of hardcoding the local path, so we don't break when npm re-hoists.
+function resolvePackageDir(name) {
+  const local = path.resolve(projectRoot, 'node_modules', name);
+  if (fs.existsSync(path.join(local, 'package.json'))) return local;
+  return path.resolve(workspaceRoot, 'node_modules', name);
+}
 
 const config = getDefaultConfig(projectRoot);
 
@@ -18,12 +29,16 @@ config.resolver.nodeModulesPaths = [
 // (causes "Component auth has not been registered yet"). Disable it.
 config.resolver.unstable_enablePackageExports = false;
 
-// Deduplicate react-native: the root node_modules may have a different version than
-// apps/mobile/node_modules. Force all react-native imports to resolve from apps/mobile
-// so Metro never bundles two copies (which causes "property is not writable" crashes).
-const rnDir = path.resolve(projectRoot, 'node_modules', 'react-native');
+// Deduplicate react and react-native: root node_modules may now have copies of both
+// (react was hoisted there for the web workspace). Force Metro to always use a single,
+// consistent copy so only ONE instance is bundled (prevents "useMemo of null" crashes).
+const reactPkgDir = resolvePackageDir('react');
+const rnPkgDir = resolvePackageDir('react-native');
 config.resolver.extraNodeModules = {
-  'react-native': rnDir,
+  'react': reactPkgDir,
+  'react/jsx-runtime': path.resolve(reactPkgDir, 'jsx-runtime'),
+  'react/jsx-dev-runtime': path.resolve(reactPkgDir, 'jsx-dev-runtime'),
+  'react-native': rnPkgDir,
 };
 
 // Fix for monorepo: metro runs from root node_modules but expo-asset is in apps/mobile.
@@ -36,13 +51,19 @@ config.transformer.assetPlugins = (config.transformer.assetPlugins || []).map(pl
   }
 });
 
-// react-native-maps has no web implementation — stub it out for the web bundle
-// so the bundler doesn't fail when processing screens that import it conditionally.
 const originalResolver = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
-  // Force react-native and all its subpaths to apps/mobile version.
-  // We redirect by faking the origin to apps/mobile so Metro's own resolver
-  // walks up from there and finds apps/mobile/node_modules/react-native first.
+  // Pin react to a single resolved copy — prevents "useMemo of null" when root also has react.
+  if (moduleName === 'react') {
+    return { type: 'sourceFile', filePath: path.resolve(reactPkgDir, 'index.js') };
+  }
+  if (moduleName === 'react/jsx-runtime') {
+    return { type: 'sourceFile', filePath: path.resolve(reactPkgDir, 'jsx-runtime.js') };
+  }
+  if (moduleName === 'react/jsx-dev-runtime') {
+    return { type: 'sourceFile', filePath: path.resolve(reactPkgDir, 'jsx-dev-runtime.js') };
+  }
+  // Pin react-native to a single resolved copy.
   if (moduleName === 'react-native' || moduleName.startsWith('react-native/')) {
     return context.resolveRequest(
       { ...context, originModulePath: path.join(projectRoot, '_sentinel.js') },
@@ -53,8 +74,6 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (platform === 'web' && moduleName === 'react-native-maps') {
     return { type: 'sourceFile', filePath: path.resolve(projectRoot, 'stubs/maps-stub.js') };
   }
-  // expo/AppEntry.js tries to import "../../App" — in a monorepo expo may be hoisted
-  // to the workspace root, making that path unresolvable. Redirect to our local App.js stub.
   if (moduleName === '../../App' && context.originModulePath?.includes(`${path.sep}expo${path.sep}AppEntry`)) {
     return { type: 'sourceFile', filePath: path.resolve(projectRoot, 'App.js') };
   }

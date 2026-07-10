@@ -5,11 +5,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ref, set, push, onValue, off } from 'firebase/database';
+import { ref, set, push, onValue, off, query, limitToLast } from 'firebase/database';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import { initFirebase, COLLECTIONS, RTDB_PATHS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+import { ReportBlockButton } from '../../../components/ReportBlockButton';
+import { isBlockedByRecipient } from '../../../lib/checkBlocked';
 import type { Chat, Message } from '@junglapp/types';
 
 const { db, rtdb } = initFirebase();
@@ -45,9 +47,14 @@ export default function StoreChatScreen() {
   const [uploading, setUploading] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
+  function getOtherId(): string | null {
+    if (!chat || !user) return null;
+    return chat.participants.find((p) => p !== user.uid) ?? null;
+  }
+
   function getOtherName(): string {
     if (!chat || !user) return 'Cliente';
-    const otherId = chat.participants.find((p) => p !== user.uid);
+    const otherId = getOtherId();
     return otherId ? (chat.participantNames?.[otherId] || 'Cliente') : 'Cliente';
   }
 
@@ -72,7 +79,7 @@ export default function StoreChatScreen() {
 
     markRead();
 
-    const msgsRef = ref(rtdb, `${RTDB_PATHS.MESSAGES}/${id}`);
+    const msgsRef = query(ref(rtdb, `${RTDB_PATHS.MESSAGES}/${id}`), limitToLast(50));
     onValue(msgsRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -92,6 +99,11 @@ export default function StoreChatScreen() {
   async function sendMessage(extraImageUrl?: string) {
     if (!text.trim() && !extraImageUrl) return;
     if (!user || !id) return;
+    const otherId = getOtherId();
+    if (otherId && await isBlockedByRecipient(otherId, user.uid)) {
+      Alert.alert('No se pudo enviar', 'No puedes enviar mensajes a este usuario.');
+      return;
+    }
     const msgText = text.trim();
     setText('');
 
@@ -128,21 +140,31 @@ export default function StoreChatScreen() {
 
   const groups = groupByDate(messages);
   const AMBER = '#D97706';
+  const otherName = getOtherName();
+  const otherId = getOtherId();
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }} edges={['top']}>
       {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12, borderBottomWidth: 1, borderBottomColor: '#E5E7EB', backgroundColor: '#fff' }}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => router.navigate('/(store)/chat' as any)}>
           <Text style={{ fontSize: 24, color: '#6B7280' }}>←</Text>
         </TouchableOpacity>
         <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ fontSize: 22 }}>🛍️</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontWeight: '700', color: '#111827', fontSize: 15 }}>{getOtherName()}</Text>
+          <Text style={{ fontWeight: '700', color: '#111827', fontSize: 15 }}>{otherName}</Text>
           <Text style={{ color: '#9CA3AF', fontSize: 12 }}>Pedido</Text>
         </View>
+        {otherId && (
+          <ReportBlockButton
+            chatId={id}
+            otherUserId={otherId}
+            otherUserName={otherName}
+            onBlocked={() => router.back()}
+          />
+        )}
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>

@@ -17,6 +17,9 @@ export const COLLECTIONS = {
   REMINDERS: 'reminders',
   VET_INVITES: 'vetInvites',
   LITTERS: 'litters',
+  REPORTS: 'reports',
+  BLOCKS: 'blocks',
+  CLIENT_LINKS: 'clientLinks',
 } as const;
 
 export const RTDB_PATHS = {

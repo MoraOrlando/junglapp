@@ -1,0 +1,22 @@
+diff --git a/node_modules/expo-modules-core/android/build.gradle b/node_modules/expo-modules-core/android/build.gradle
+index 05c45a6..c9d5093 100644
+--- a/node_modules/expo-modules-core/android/build.gradle
++++ b/node_modules/expo-modules-core/android/build.gradle
+@@ -40,12 +40,16 @@ def isExpoModulesCoreTests = {
+   return false
+ }.call()
+ 
++// Android Studio's Gradle daemon doesn't inherit the shell PATH on Mac (Homebrew's
++// node isn't found via a bare "node" lookup, unlike a plain terminal/CLI Gradle run).
++def resolvedNodeBinary = ['/opt/homebrew/bin/node', '/usr/local/bin/node'].find { new File(it).exists() } ?: 'node'
++
+ def REACT_NATIVE_BUILD_FROM_SOURCE = findProject(":packages:react-native:ReactAndroid") != null
+ def REACT_NATIVE_DIR = REACT_NATIVE_BUILD_FROM_SOURCE
+   ? findProject(":packages:react-native:ReactAndroid").getProjectDir().parent
+   : file(providers.exec {
+       workingDir(rootDir)
+-      commandLine("node", "--print", "require.resolve('react-native/package.json')")
++      commandLine(resolvedNodeBinary, "--print", "require.resolve('react-native/package.json')")
+     }.standardOutput.asText.get().trim()).parent
+ 
+ def reactProperties = new Properties()

@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@junglapp/types": "*",
+    "expo-file-system": "*",
     "firebase": "^10.12.0"
   },
   "devDependencies": {

@@ -12,11 +12,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ref, push, onValue, off, serverTimestamp } from 'firebase/database';
+import { ref, push, onValue, off, query, limitToLast, serverTimestamp } from 'firebase/database';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import { initFirebase, COLLECTIONS, RTDB_PATHS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+import { ReportBlockButton } from '../../../components/ReportBlockButton';
+import { isBlockedByRecipient } from '../../../lib/checkBlocked';
 import type { Chat, Message } from '@junglapp/types';
 
 const { db, rtdb } = initFirebase();
@@ -58,9 +60,14 @@ export default function ChatRoomScreen() {
   const [uploading, setUploading] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
+  function getOtherId(): string | null {
+    if (!chat || !user) return null;
+    return chat.participants.find((p) => p !== user.uid) ?? null;
+  }
+
   function getOtherName(): string {
     if (!chat || !user) return 'Chat';
-    const otherId = chat.participants.find((p) => p !== user.uid);
+    const otherId = getOtherId();
     return otherId ? (chat.participantNames?.[otherId] || 'Usuario') : 'Usuario';
   }
 
@@ -84,7 +91,7 @@ export default function ChatRoomScreen() {
     // Mark as read when opening the chat
     markRead();
 
-    const msgsRef = ref(rtdb, `${RTDB_PATHS.MESSAGES}/${id}`);
+    const msgsRef = query(ref(rtdb, `${RTDB_PATHS.MESSAGES}/${id}`), limitToLast(50));
     onValue(msgsRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -107,6 +114,11 @@ export default function ChatRoomScreen() {
   async function sendMessage(extraImageUrl?: string) {
     if (!text.trim() && !extraImageUrl) return;
     if (!user || !id) return;
+    const otherId = getOtherId();
+    if (otherId && await isBlockedByRecipient(otherId, user.uid)) {
+      Alert.alert('No se pudo enviar', 'No puedes enviar mensajes a este usuario.');
+      return;
+    }
     const msgText = text.trim();
     setText('');
 
@@ -151,6 +163,7 @@ export default function ChatRoomScreen() {
 
   const groups = groupByDate(messages);
   const otherName = getOtherName();
+  const otherId = getOtherId();
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
@@ -159,7 +172,7 @@ export default function ChatRoomScreen() {
         className="flex-row items-center px-4 py-3 gap-3 border-b border-gray-100"
         style={{ backgroundColor: '#FFFFFF' }}
       >
-        <TouchableOpacity className="pr-1" onPress={() => router.back()}>
+        <TouchableOpacity className="pr-1" onPress={() => router.navigate('/(owner)/chat' as any)}>
           <Text className="text-2xl text-gray-600">←</Text>
         </TouchableOpacity>
         <View
@@ -174,6 +187,14 @@ export default function ChatRoomScreen() {
             {chatType === 'found_pet' ? 'Mascota encontrada' : `with ${otherName}`}
           </Text>
         </View>
+        {otherId && (
+          <ReportBlockButton
+            chatId={id}
+            otherUserId={otherId}
+            otherUserName={otherName}
+            onBlocked={() => router.navigate('/(owner)/chat' as any)}
+          />
+        )}
       </View>
 
       <KeyboardAvoidingView

@@ -1,13 +1,9 @@
-// process.env.EXPO_PUBLIC_* is replaced at bundle time by babel-preset-expo.
-// Avoid optional chaining (?.) here — some Babel versions only transform
-// direct MemberExpression (process.env.X), not OptionalMemberExpression.
-const CLOUD_NAME: string | undefined =
-  process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME ||
-  process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+import { httpsCallable } from 'firebase/functions';
+import { initFirebase } from './config';
 
-const UPLOAD_PRESET: string | undefined =
-  process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET ||
-  process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+// React Native only. Optional require so this module still loads in web bundles.
+let FileSystem: any = null;
+try { FileSystem = require('expo-file-system'); } catch {}
 
 const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
 
@@ -20,36 +16,52 @@ function getMimeType(ext: string): string {
   return map[ext] || 'image/jpeg';
 }
 
-export async function uploadImage(uri: string): Promise<string> {
-  if (!CLOUD_NAME || !UPLOAD_PRESET) {
-    if (typeof __DEV__ !== 'undefined' && __DEV__) {
-      console.error('[Cloudinary] Credentials missing. CLOUD_NAME:', CLOUD_NAME, 'UPLOAD_PRESET:', UPLOAD_PRESET);
-    }
-    throw new Error('Error de configuración: credenciales de Cloudinary no disponibles. Reinicia Metro con --clear.');
-  }
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      resolve(result.split(',')[1] ?? '');
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
+// Uploads go through the `uploadUserImage` callable Cloud Function rather than
+// talking to Storage directly. Two reasons this can't be done client-side:
+// - The plain `firebase` JS SDK cannot upload to Storage in React Native at all
+//   (unsupported by the Firebase team: https://github.com/firebase/firebase-js-sdk/issues/8648).
+//   It builds a combined multipart body via `new Blob([...])` internally, and RN's
+//   Blob polyfill throws on raw binary data.
+// - @react-native-firebase/storage (the native alternative) works, but has its own
+//   auth session that isn't synced with the JS SDK auth used everywhere else in this
+//   app, so Storage Security Rules reject every upload as unauthenticated.
+// Calling a Function instead reuses the JS SDK's existing auth session (its ID token
+// is attached to the call automatically), and the actual Storage write happens
+// server-side via the Admin SDK.
+export async function uploadImage(uri: string): Promise<string> {
   const pathWithoutQuery = uri.split('?')[0];
   const ext = pathWithoutQuery.split('.').pop()?.toLowerCase() ?? '';
   const resolvedExt = ALLOWED_EXTENSIONS.includes(ext) ? ext : 'jpg';
   const mimeType = getMimeType(resolvedExt);
-  const uploadUrl = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
 
-  const form = new FormData();
-  form.append('upload_preset', UPLOAD_PRESET);
-  form.append('file', { uri, type: mimeType, name: `upload.${resolvedExt}` } as any);
-
-  const res = await fetch(uploadUrl, { method: 'POST', body: form });
-  if (!res.ok) {
-    let detail = '';
-    try {
-      const text = await res.text();
-      const j = JSON.parse(text);
-      detail = j?.error?.message || j?.message || text.slice(0, 120);
-    } catch {}
-    throw new Error(`Error Cloudinary ${res.status}${detail ? ': ' + detail : ''}`);
+  let base64: string;
+  if (FileSystem && uri.startsWith('file://')) {
+    base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+  } else {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    base64 = await blobToBase64(blob);
   }
-  const json = await res.json();
-  return json.secure_url as string;
+
+  const { functions } = initFirebase();
+  const uploadUserImage = httpsCallable<{ base64: string; ext: string; contentType: string }, { url: string }>(
+    functions,
+    'uploadUserImage'
+  );
+  const result = await uploadUserImage({ base64, ext: resolvedExt, contentType: mimeType });
+  return result.data.url;
 }
 
 export async function uploadImages(uris: string[]): Promise<string[]> {

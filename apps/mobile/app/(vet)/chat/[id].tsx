@@ -5,11 +5,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ref, set, push, onValue, off } from 'firebase/database';
+import { ref, set, push, onValue, off, query, limitToLast } from 'firebase/database';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import { initFirebase, COLLECTIONS, RTDB_PATHS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+import { ReportBlockButton } from '../../../components/ReportBlockButton';
+import { isBlockedByRecipient } from '../../../lib/checkBlocked';
 import type { Chat, Message } from '@junglapp/types';
 
 const { db, rtdb } = initFirebase();
@@ -47,9 +49,14 @@ export default function VetChatScreen() {
   const [uploading, setUploading] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
+  function getOtherId(): string | null {
+    if (!chat || !user) return null;
+    return chat.participants.find((p) => p !== user.uid) ?? null;
+  }
+
   function getOtherName(): string {
     if (!chat || !user) return 'Dueño';
-    const otherId = chat.participants.find((p) => p !== user.uid);
+    const otherId = getOtherId();
     return otherId ? (chat.participantNames?.[otherId] || 'Dueño') : 'Dueño';
   }
 
@@ -76,7 +83,7 @@ export default function VetChatScreen() {
     // Mark as read when opening the chat
     markRead();
 
-    const msgsRef = ref(rtdb, `${RTDB_PATHS.MESSAGES}/${id}`);
+    const msgsRef = query(ref(rtdb, `${RTDB_PATHS.MESSAGES}/${id}`), limitToLast(50));
     onValue(msgsRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -97,6 +104,11 @@ export default function VetChatScreen() {
   async function sendMessage(extraImageUrl?: string) {
     if (!text.trim() && !extraImageUrl) return;
     if (!user || !id) return;
+    const otherId = getOtherId();
+    if (otherId && await isBlockedByRecipient(otherId, user.uid)) {
+      Alert.alert('No se pudo enviar', 'No puedes enviar mensajes a este usuario.');
+      return;
+    }
     const msgText = text.trim();
     setText('');
 
@@ -137,12 +149,13 @@ export default function VetChatScreen() {
 
   const groups = groupByDate(messages);
   const otherName = getOtherName();
+  const otherId = getOtherId();
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }} edges={['top']}>
       {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12, borderBottomWidth: 1, borderBottomColor: '#E5E7EB', backgroundColor: '#fff' }}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => router.navigate('/(vet)/chat' as any)}>
           <Text style={{ fontSize: 24, color: '#6B7280' }}>←</Text>
         </TouchableOpacity>
         <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' }}>
@@ -152,6 +165,14 @@ export default function VetChatScreen() {
           <Text style={{ fontWeight: '700', color: '#111827', fontSize: 15 }}>{otherName}</Text>
           <Text style={{ color: '#9CA3AF', fontSize: 12 }}>Dueño de mascota</Text>
         </View>
+        {otherId && (
+          <ReportBlockButton
+            chatId={id}
+            otherUserId={otherId}
+            otherUserName={otherName}
+            onBlocked={() => router.navigate('/(vet)/chat' as any)}
+          />
+        )}
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>

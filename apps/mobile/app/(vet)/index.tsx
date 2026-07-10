@@ -1,14 +1,15 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
+import { ref, onValue, off, remove } from 'firebase/database';
+import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import type { Appointment, Veterinarian } from '@junglapp/types';
 
-const { db } = initFirebase();
+const { db, rtdb } = initFirebase();
 
 function formatDate(d: Date) {
   const weekday = d.toLocaleDateString('es-CL', { weekday: 'long' });
@@ -37,7 +38,25 @@ export default function VetDashboardScreen() {
   const [monthlyAll, setMonthlyAll] = useState<Appointment[]>([]);
   const [vetProfile, setVetProfile] = useState<Veterinarian | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [newNotifCount, setNewNotifCount] = useState(0);
   const today = new Date();
+
+  // Listen for new-appointment notifications from RTDB
+  useEffect(() => {
+    if (!user) return;
+    const notifRef = ref(rtdb, `${RTDB_PATHS.NOTIFICATIONS}/${user.uid}`);
+    onValue(notifRef, (snap) => {
+      const data = snap.val();
+      if (!data) { setNewNotifCount(0); return; }
+      const unread = Object.values(data as Record<string, any>).filter((n) => !n.read).length;
+      setNewNotifCount(unread);
+      if (unread > 0) {
+        // Reload appointments so the new booking is visible
+        loadData();
+      }
+    });
+    return () => off(notifRef);
+  }, [user?.uid]);
 
   async function loadData() {
     if (!user) return;
@@ -154,6 +173,20 @@ export default function VetDashboardScreen() {
             >
               <Text className="text-white text-xs font-semibold">Disponibilidad</Text>
             </TouchableOpacity>
+            {newNotifCount > 0 && (
+              <TouchableOpacity
+                style={{ backgroundColor: '#EF4444' }}
+                className="rounded-full px-3 py-1.5"
+                onPress={() => {
+                  // Mark all notifications as read and reload
+                  if (user) remove(ref(rtdb, `${RTDB_PATHS.NOTIFICATIONS}/${user.uid}`)).catch(() => {});
+                  setNewNotifCount(0);
+                  loadData();
+                }}
+              >
+                <Text className="text-white text-xs font-bold">🔔 {newNotifCount} nueva{newNotifCount !== 1 ? 's' : ''}</Text>
+              </TouchableOpacity>
+            )}
             {pendingCount > 0 && (
               <View style={{ backgroundColor: '#52B788' }} className="rounded-full px-3 py-1.5">
                 <Text className="text-white text-xs font-bold">{pendingCount} pendiente{pendingCount !== 1 ? 's' : ''}</Text>

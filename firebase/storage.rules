@@ -92,5 +92,13 @@ service firebase.storage {
         && isImageOrPdf()
         && maxSize(10);
     }
+
+    // ── Generic uploads (pet photos, visit attachments, etc.) ──────────────
+    // Path: uploads/{fileName}
+    // Any authenticated user can upload images/PDFs up to 10 MB.
+    match /uploads/{fileName} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isImageOrPdf() && maxSize(10);
+    }
   }
 }

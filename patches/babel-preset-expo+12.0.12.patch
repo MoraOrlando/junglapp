@@ -1,0 +1,27 @@
+diff --git a/node_modules/babel-preset-expo/build/common.js b/node_modules/babel-preset-expo/build/common.js
+index 181e52f..26733b8 100644
+--- a/node_modules/babel-preset-expo/build/common.js
++++ b/node_modules/babel-preset-expo/build/common.js
+@@ -11,7 +11,21 @@ function hasModule(name) {
+     }
+     catch (error) {
+         if (error.code === 'MODULE_NOT_FOUND' && error.message.includes(name)) {
+-            return false;
++            // MONOREPO FIX: babel-preset-expo may be hoisted to the workspace root,
++            // while the package we're checking for (e.g. expo-router) only exists in
++            // the app's own node_modules. A plain require.resolve() only walks up
++            // from babel-preset-expo's own location, so it never finds it. Retry
++            // resolution from the current working directory (the app project root
++            // when Metro/expo start is running) before giving up.
++            try {
++                return !!require.resolve(name, { paths: [process.cwd()] });
++            }
++            catch (secondError) {
++                if (secondError.code === 'MODULE_NOT_FOUND' && secondError.message.includes(name)) {
++                    return false;
++                }
++                throw secondError;
++            }
+         }
+         throw error;
+     }

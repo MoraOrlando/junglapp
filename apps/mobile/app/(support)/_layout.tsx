@@ -27,9 +27,13 @@ export default function SupportLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Panel', tabBarIcon: ({ focused }) => <TabIcon emoji="🛡️" focused={focused} /> }} />
+      <Tabs.Screen name="reports" options={{ title: 'Reportes', tabBarIcon: ({ focused }) => <TabIcon emoji="🚩" focused={focused} /> }} />
       <Tabs.Screen name="users" options={{ title: 'Usuarios', tabBarIcon: ({ focused }) => <TabIcon emoji="👥" focused={focused} /> }} />
       <Tabs.Screen name="vets" options={{ title: 'Veterinarios', tabBarIcon: ({ focused }) => <TabIcon emoji="🩺" focused={focused} /> }} />
       <Tabs.Screen name="stores" options={{ title: 'Tiendas', tabBarIcon: ({ focused }) => <TabIcon emoji="🛒" focused={focused} /> }} />
+      <Tabs.Screen name="trainers" options={{ title: 'Adiestr.', tabBarIcon: ({ focused }) => <TabIcon emoji="🐕" focused={focused} /> }} />
+      <Tabs.Screen name="walkers" options={{ title: 'Paseadores', tabBarIcon: ({ focused }) => <TabIcon emoji="🦮" focused={focused} /> }} />
+      <Tabs.Screen name="groomers" options={{ title: 'Peluquería', tabBarIcon: ({ focused }) => <TabIcon emoji="✂️" focused={focused} /> }} />
     </Tabs>
   );
 }

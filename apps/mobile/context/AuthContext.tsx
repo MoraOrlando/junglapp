@@ -4,9 +4,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
-  GoogleAuthProvider,
-  OAuthProvider,
-  signInWithCredential,
+  deleteUser,
 } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
 import {
@@ -14,12 +12,11 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  deleteDoc,
 } from 'firebase/firestore';
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
-import * as AuthSession from 'expo-auth-session';
+import * as Notifications from 'expo-notifications';
 import { initFirebase } from '@junglapp/firebase';
-import type { User, UserRole } from '@junglapp/types';
+import type { User } from '@junglapp/types';
 
 const { auth, db } = initFirebase();
 
@@ -29,45 +26,17 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<import('firebase/auth').User>;
   signUp: (email: string, password: string, userData: Omit<User, 'uid' | 'createdAt'>) => Promise<{ firebaseUser: import('firebase/auth').User }>;
-  signInWithGoogle: () => Promise<void>;
-  signInWithMicrosoft: () => Promise<void>;
   logOut: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   updateProfile: (data: Partial<User>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// Google OAuth client IDs — replace with your real IDs from Google Cloud Console
-const GOOGLE_CLIENT_IDS = {
-  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-  androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-};
-
-// Microsoft Azure AD app client ID
-const MICROSOFT_CLIENT_ID = process.env.EXPO_PUBLIC_MICROSOFT_CLIENT_ID ?? '';
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<import('firebase/auth').User | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const [googleRequest, googleResponse, promptGoogleAsync] = Google.useAuthRequest(GOOGLE_CLIENT_IDS);
-
-  useEffect(() => {
-    WebBrowser.maybeCompleteAuthSession();
-  }, []);
-
-  useEffect(() => {
-    if (googleResponse?.type === 'success') {
-      const id_token = googleResponse.params?.id_token;
-      if (!id_token) return;
-      const credential = GoogleAuthProvider.credential(id_token);
-      signInWithCredential(auth, credential)
-        .then(async ({ user: fbUser }) => { await ensureUserDoc(fbUser, 'owner'); })
-        .catch(() => {});
-    }
-  }, [googleResponse]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
@@ -76,7 +45,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (fbUser) {
           const userDoc = await getDoc(doc(db, 'users', fbUser.uid));
           if (userDoc.exists()) {
-            setUser({ uid: fbUser.uid, ...userDoc.data() } as User);
+            // Blocked accounts (e.g. after a content-moderation decision)
+            // can't resume a session, even a previously persisted one.
+            if (userDoc.data()?.accountStatus === 'blocked') {
+              await signOut(auth);
+              setUser(null);
+            } else {
+              setUser({ uid: fbUser.uid, ...userDoc.data() } as User);
+              registerPushToken(fbUser.uid);
+            }
           }
         } else {
           setUser(null);
@@ -90,57 +67,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, []);
 
-  async function ensureUserDoc(fbUser: import('firebase/auth').User, defaultRole: UserRole) {
-    const ref = doc(db, 'users', fbUser.uid);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
-      const newUser: User = {
-        uid: fbUser.uid,
-        email: fbUser.email ?? '',
-        name: fbUser.displayName ?? '',
-        role: defaultRole,
-        phone: '',
-        address: '',
-        region: '',
-        city: '',
-        createdAt: new Date().toISOString(),
-        profileComplete: false,
-      } as any;
-      await setDoc(ref, newUser);
-      setUser(newUser);
-    } else {
-      setUser({ uid: fbUser.uid, ...snap.data() } as User);
-    }
+  async function registerPushToken(uid: string) {
+    try {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') return;
+      const token = await Notifications.getExpoPushTokenAsync({
+        projectId: 'f180251b-69ce-4b38-a310-b8de516042fa',
+      });
+      await updateDoc(doc(db, 'users', uid), { pushToken: token.data });
+    } catch {}
   }
 
   async function signIn(email: string, password: string) {
     const { user: fbUser } = await signInWithEmailAndPassword(auth, email, password);
     return fbUser;
-  }
-
-  async function signInWithGoogle() {
-    await promptGoogleAsync();
-  }
-
-  async function signInWithMicrosoft() {
-    const redirectUri = AuthSession.makeRedirectUri({ scheme: 'junglapp' });
-    const discovery = {
-      authorizationEndpoint: `https://login.microsoftonline.com/common/oauth2/v2.0/authorize`,
-      tokenEndpoint: `https://login.microsoftonline.com/common/oauth2/v2.0/token`,
-    };
-    const request = new AuthSession.AuthRequest({
-      clientId: MICROSOFT_CLIENT_ID,
-      scopes: ['openid', 'profile', 'email'],
-      redirectUri,
-    });
-    const result = await request.promptAsync(discovery);
-    if (result.type === 'success') {
-      const { id_token, access_token } = result.params;
-      const provider = new OAuthProvider('microsoft.com');
-      const credential = provider.credential({ idToken: id_token, accessToken: access_token });
-      const { user: fbUser } = await signInWithCredential(auth, credential);
-      await ensureUserDoc(fbUser, 'owner');
-    }
   }
 
   async function signUp(
@@ -170,18 +110,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }
 
-  async function updateProfile(data: Partial<User>) {
+  async function deleteAccount() {
     if (!firebaseUser) return;
+    try {
+      await deleteDoc(doc(db, 'users', firebaseUser.uid));
+    } catch {}
+    try {
+      await deleteUser(firebaseUser);
+    } catch (e: any) {
+      if (e?.code === 'auth/requires-recent-login') {
+        throw new Error('Por seguridad, cierra sesión, vuelve a iniciar sesión y luego intenta de nuevo.');
+      }
+      throw e;
+    }
+    setUser(null);
+  }
+
+  async function updateProfile(data: Partial<User>) {
+    // Fall back to auth.currentUser: it's updated synchronously by the SDK,
+    // while `firebaseUser` state can briefly lag right after sign-in (it's
+    // only set once the onAuthStateChanged listener fires).
+    const currentFbUser = firebaseUser ?? auth.currentUser;
+    if (!currentFbUser) throw new Error('No hay una sesión activa. Vuelve a iniciar sesión e intenta de nuevo.');
     // Strip all privilege-escalation and immutable fields before writing
-    const { role, uid, createdAt, mustChangePassword, tempPasswordExpiresAt, ...safeData } = data as any;
+    const { role, uid, createdAt, mustChangePassword, tempPasswordExpiresAt, accountStatus, ...safeData } = data as any;
     // Additional guard: never allow writing an empty object
     if (Object.keys(safeData).length === 0) return;
-    await updateDoc(doc(db, 'users', firebaseUser.uid), safeData);
+    await updateDoc(doc(db, 'users', currentFbUser.uid), safeData);
     setUser((prev) => (prev ? { ...prev, ...safeData } : null));
   }
 
   return (
-    <AuthContext.Provider value={{ user, firebaseUser, loading, signIn, signUp, signInWithGoogle, signInWithMicrosoft, logOut, updateProfile }}>
+    <AuthContext.Provider value={{ user, firebaseUser, loading, signIn, signUp, logOut, deleteAccount, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

@@ -55,7 +55,7 @@ export default function TermsScreen() {
         <LI>Procesar pagos, prevenir fraudes y cumplir obligaciones legales.</LI>
 
         <H2>1.7. Derechos de los titulares (ARCOP)</H2>
-        <P>Todo titular puede ejercer gratuitamente los derechos de Acceso, Rectificación, Cancelación/Supresión, Oposición, Portabilidad y Bloqueo. Las solicitudes se responden dentro de 30 días corridos y pueden reclamarse ante la Agencia de Protección de Datos Personales.</P>
+        <P>Todo titular puede ejercer gratuitamente los derechos de Acceso, Rectificación, Cancelación/Supresión, Oposición, Portabilidad y Bloqueo. La cancelación de la cuenta y de todos los datos asociados puede hacerse de forma instantánea desde Mi Perfil → Eliminar cuenta, dentro de la App. El resto de las solicitudes se responden dentro de 30 días corridos y pueden reclamarse ante la Agencia de Protección de Datos Personales.</P>
 
         <H2>1.9. Seguridad</H2>
         <P>Aplicamos cifrado en tránsito y en reposo, control de accesos por rol, registros de actividad, respaldos y revisión periódica.</P>
@@ -75,13 +75,18 @@ export default function TermsScreen() {
         <LI>Veterinarios y tiendas declaran contar con las habilitaciones, títulos y autorizaciones legales que su actividad exige.</LI>
 
         <H2>2.4. Lo que NO está permitido</H2>
+        <P>JunglApp tiene tolerancia cero hacia el contenido objetable y los usuarios abusivos. Está prohibido:</P>
         <LI>Entregar información falsa, suplantar identidad o usar el RUT de un tercero.</LI>
-        <LI>Publicar contenido ilegal, ofensivo, difamatorio o engañoso.</LI>
+        <LI>Publicar contenido ilegal, ofensivo, difamatorio, discriminatorio, violento, sexual o engañoso.</LI>
+        <LI>Acosar, amenazar o abusar de otros usuarios en el chat o cualquier otra sección de la App.</LI>
         <LI>Emitir valoraciones falsas, compradas o coordinadas.</LI>
         <LI>Ofrecer servicios veterinarios sin el título habilitante exigido por la ley.</LI>
         <LI>Comercializar productos prohibidos, falsificados o vencidos.</LI>
         <LI>Extracción masiva de datos (scraping), ingeniería inversa o vulnerar la seguridad.</LI>
         <LI>Eludir los mecanismos de pago de la plataforma.</LI>
+
+        <H2>2.4.1. Reportes y bloqueo de usuarios</H2>
+        <P>Todo chat cuenta con herramientas para reportar contenido inapropiado y bloquear usuarios abusivos. Los reportes son revisados dentro de 24 horas; el contenido que infrinja estos Términos será eliminado y el usuario responsable podrá ser expulsado de la plataforma.</P>
 
         <H2>2.5. Pagos y reembolsos</H2>
         <P>Los pagos se procesan mediante pasarelas externas; la Empresa no almacena los datos completos de las tarjetas. Se respetan los derechos del consumidor de la Ley N° 19.496, incluido el derecho a retracto y garantía cuando corresponda.</P>

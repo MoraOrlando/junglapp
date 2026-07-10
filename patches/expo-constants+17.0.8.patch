@@ -1,0 +1,24 @@
+diff --git a/node_modules/expo-constants/scripts/get-app-config-android.gradle b/node_modules/expo-constants/scripts/get-app-config-android.gradle
+index 6dc16fc..15fe137 100644
+--- a/node_modules/expo-constants/scripts/get-app-config-android.gradle
++++ b/node_modules/expo-constants/scripts/get-app-config-android.gradle
+@@ -3,13 +3,17 @@
+ import org.apache.tools.ant.taskdefs.condition.Os
+ 
+ 
++// Android Studio's Gradle daemon doesn't inherit the shell PATH on Mac (Homebrew's
++// node isn't found via a bare "node" lookup, unlike a plain terminal/CLI Gradle run).
++def resolvedNodeBinary = ['/opt/homebrew/bin/node', '/usr/local/bin/node'].find { new File(it).exists() } ?: 'node'
++
+ def expoConstantsDir = project.providers.exec {
+   workingDir(projectDir)
+-  commandLine("node", "-e", "console.log(require('path').dirname(require.resolve('expo-constants/package.json')));")
++  commandLine(resolvedNodeBinary, "-e", "console.log(require('path').dirname(require.resolve('expo-constants/package.json')));")
+ }.standardOutput.asText.get().trim()
+ 
+ def config = project.hasProperty("react") ? project.react : [];
+-def nodeExecutableAndArgs = config.nodeExecutableAndArgs ?: ["node"]
++def nodeExecutableAndArgs = config.nodeExecutableAndArgs ?: [resolvedNodeBinary]
+ 
+ afterEvaluate {
+   def projectRoot = file("${rootProject.projectDir}")

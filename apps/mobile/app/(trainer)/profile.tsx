@@ -3,6 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert, ActivityInd
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
@@ -13,7 +14,7 @@ const { db } = initFirebase();
 const INDIGO = '#4F46E5';
 
 export default function TrainerProfileScreen() {
-  const { user, logOut } = useAuth();
+  const { user, logOut, deleteAccount } = useAuth();
   const [trainer, setTrainer] = useState<Trainer | null>(null);
   const [docId, setDocId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -22,6 +23,8 @@ export default function TrainerProfileScreen() {
   const [experience, setExperience] = useState('');
   const [serviceArea, setServiceArea] = useState('');
   const [plan, setPlan] = useState<AccountPlan>('free');
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [gettingLocation, setGettingLocation] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
@@ -38,9 +41,27 @@ export default function TrainerProfileScreen() {
         setExperience(t.experience || '');
         setServiceArea(t.serviceArea || '');
         setPlan((t as any).plan || 'free');
+        if (t.location) setLocation(t.location);
       }
     });
   }, [user]);
+
+  async function captureLocation() {
+    setGettingLocation(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permiso denegado', 'Activa la ubicación en ajustes.');
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    } catch {
+      Alert.alert('Error', 'No se pudo obtener la ubicación.');
+    } finally {
+      setGettingLocation(false);
+    }
+  }
 
   async function pickPhoto() {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.8 });
@@ -62,7 +83,9 @@ export default function TrainerProfileScreen() {
     if (!docId) return;
     setSaving(true);
     try {
-      await updateDoc(doc(db, COLLECTIONS.TRAINERS, docId), { name, phone, address, experience, serviceArea, plan });
+      const updates: any = { name, phone, address, experience, serviceArea, plan };
+      if (location) updates.location = location;
+      await updateDoc(doc(db, COLLECTIONS.TRAINERS, docId), updates);
       Alert.alert('✅', 'Perfil actualizado correctamente');
     } catch (e: any) {
       Alert.alert('Error', e.message);
@@ -81,6 +104,15 @@ export default function TrainerProfileScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
       <ScrollView style={{ flex: 1, paddingHorizontal: 24 }} showsVerticalScrollIndicator={false}>
         <Text style={{ fontSize: 22, fontWeight: '800', color: INDIGO, marginTop: 20, marginBottom: 20 }}>Mi Perfil 🐕</Text>
+
+        {user?.accountStatus === 'under_review' && (
+          <View style={{ backgroundColor: '#FEF3C7', borderRadius: 16, borderWidth: 1, borderColor: '#FDE68A', padding: 14, marginBottom: 16 }}>
+            <Text style={{ color: '#92400E', fontWeight: '700', fontSize: 13 }}>⚠️ Cuenta en revisión</Text>
+            <Text style={{ color: '#92400E', fontSize: 12, marginTop: 2 }}>
+              Un administrador está evaluando un reporte sobre tu cuenta.
+            </Text>
+          </View>
+        )}
 
         {/* Avatar */}
         <View style={{ alignItems: 'center', marginBottom: 20 }}>
@@ -137,6 +169,26 @@ export default function TrainerProfileScreen() {
               />
             </View>
           ))}
+          <TouchableOpacity
+            onPress={captureLocation}
+            disabled={gettingLocation}
+            style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+              borderRadius: 12, paddingVertical: 12,
+              borderWidth: 1, borderColor: location ? '#10B981' : INDIGO,
+              backgroundColor: location ? '#ECFDF5' : '#EEF2FF',
+            }}
+          >
+            {gettingLocation ? <ActivityIndicator size="small" color={INDIGO} /> : <Text>📍</Text>}
+            <Text style={{ color: location ? '#059669' : INDIGO, fontWeight: '600', fontSize: 14 }}>
+              {gettingLocation ? 'Obteniendo ubicación...' : location ? 'Actualizar ubicación' : 'Capturar ubicación'}
+            </Text>
+          </TouchableOpacity>
+          {location && (
+            <Text style={{ color: '#9CA3AF', fontSize: 11, marginTop: 6, textAlign: 'center' }}>
+              ✅ Ubicación guardada — se usa para calcular la distancia en "Cerca de ti"
+            </Text>
+          )}
         </View>
 
         {/* Plan */}
@@ -163,8 +215,21 @@ export default function TrainerProfileScreen() {
         <TouchableOpacity onPress={save} disabled={saving} style={{ backgroundColor: INDIGO, borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 12, opacity: saving ? 0.7 : 1 }}>
           <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>{saving ? 'Guardando...' : 'Guardar cambios'}</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={logOut} style={{ borderWidth: 1, borderColor: '#FCA5A5', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 40, backgroundColor: '#FEF2F2' }}>
-          <Text style={{ color: '#EF4444', fontWeight: '700' }}>Cerrar sesión</Text>
+        <TouchableOpacity onPress={logOut} style={{ borderWidth: 1, borderColor: '#FCA5A5', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 12, backgroundColor: '#FEE2E2' }}>
+          <Text style={{ color: '#DC2626', fontWeight: '700' }}>Cerrar sesión</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => Alert.alert(
+            'Eliminar cuenta',
+            'Esta acción es irreversible. Se eliminarán todos tus datos permanentemente. ¿Estás seguro?',
+            [
+              { text: 'Cancelar', style: 'cancel' },
+              { text: 'Eliminar', style: 'destructive', onPress: async () => { try { await deleteAccount(); } catch (e: any) { Alert.alert('Error', e.message); } } },
+            ]
+          )}
+          style={{ borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 40, backgroundColor: '#F3F4F6' }}
+        >
+          <Text style={{ color: '#6B7280', fontWeight: '700' }}>Eliminar cuenta</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

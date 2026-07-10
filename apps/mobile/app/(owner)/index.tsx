@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
+import { collection, query, where, onSnapshot, getDocs, addDoc } from 'firebase/firestore';
+import { ref, set } from 'firebase/database';
+import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
-import type { Pet } from '@junglapp/types';
+import type { Pet, Veterinarian, Walker } from '@junglapp/types';
 
-const { db } = initFirebase();
+const { db, rtdb } = initFirebase();
 
 interface ControlReminder {
   id: string;
@@ -20,7 +21,9 @@ interface ControlReminder {
 interface AppointmentSummary {
   id: string;
   petId: string;
+  vetId?: string;
   vetName?: string;
+  type?: string;
   date: string;
   time: string;
   reason?: string;
@@ -34,6 +37,7 @@ export default function OwnerHomeScreen() {
   const [reminders, setReminders] = useState<ControlReminder[]>([]);
   const [appointments, setAppointments] = useState<AppointmentSummary[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!user) return;
@@ -42,9 +46,8 @@ export default function OwnerHomeScreen() {
       setPets(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)));
     }, (err) => { if (__DEV__) console.log('pets listener:', err.code); });
     return unsub;
-  }, [user?.uid]);
+  }, [user?.uid, refreshKey]);
 
-  // All pending vet control reminders (used for the banner and per-pet health icon)
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, COLLECTIONS.REMINDERS), where('ownerId', '==', user.uid));
@@ -57,16 +60,12 @@ export default function OwnerHomeScreen() {
       );
     }, (err) => { if (__DEV__) console.log('reminders listener:', err.code); });
     return unsub;
-  }, [user?.uid]);
+  }, [user?.uid, refreshKey]);
 
-  // Upcoming scheduled appointments with vets
   useEffect(() => {
     if (!user) return;
     const todayStr = new Date().toISOString().split('T')[0];
-    const q = query(
-      collection(db, COLLECTIONS.APPOINTMENTS),
-      where('ownerId', '==', user.uid),
-    );
+    const q = query(collection(db, COLLECTIONS.APPOINTMENTS), where('ownerId', '==', user.uid));
     const unsub = onSnapshot(q, (snap) => {
       const upcoming = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as AppointmentSummary))
@@ -75,7 +74,7 @@ export default function OwnerHomeScreen() {
       setAppointments(upcoming);
     }, (err) => { if (__DEV__) console.log('appointments listener:', err.code); });
     return unsub;
-  }, [user?.uid]);
+  }, [user?.uid, refreshKey]);
 
   const today = new Date().toISOString().split('T')[0];
   const weekAhead = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -96,8 +95,54 @@ export default function OwnerHomeScreen() {
 
   async function onRefresh() {
     setRefreshing(true);
-    await new Promise((r) => setTimeout(r, 500));
+    setRefreshKey((k) => k + 1);
+    await new Promise((r) => setTimeout(r, 600));
     setRefreshing(false);
+  }
+
+  async function openProviderChat(appt: AppointmentSummary) {
+    if (!user) return;
+    const isWalkerAppt = appt.type === 'walk' || appt.type === 'pet_care';
+    const providerCollection = isWalkerAppt ? COLLECTIONS.WALKERS : COLLECTIONS.VETERINARIANS;
+    try {
+      const providerSnap = await getDocs(
+        query(collection(db, providerCollection), where('__name__', '==', appt.vetId ?? ''))
+      );
+      if (providerSnap.empty) { router.push(`/(owner)/appointment/${appt.id}` as any); return; }
+      const provider = { id: providerSnap.docs[0].id, ...providerSnap.docs[0].data() } as Veterinarian | Walker;
+      if (!provider.userId) { router.push(`/(owner)/appointment/${appt.id}` as any); return; }
+
+      const chatsSnap = await getDocs(
+        query(collection(db, COLLECTIONS.CHATS), where('participants', 'array-contains', user.uid))
+      );
+      const existing = chatsSnap.docs.find((d) =>
+        (d.data().participants as string[]).includes(provider.userId)
+      );
+
+      let chatId: string;
+      if (existing) {
+        chatId = existing.id;
+      } else {
+        const newChat = await addDoc(collection(db, COLLECTIONS.CHATS), {
+          participants: [user.uid, provider.userId],
+          participantNames: {
+            [user.uid]: user.name || 'Dueño',
+            [provider.userId]: provider.name || (isWalkerAppt ? 'Paseador' : 'Veterinario'),
+          },
+          chatType: isWalkerAppt ? 'walker' : 'vet',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        chatId = newChat.id;
+        if (rtdb) {
+          await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${user.uid}`), true);
+          await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${provider.userId}`), true);
+        }
+      }
+      router.push(`/(owner)/chat/${chatId}` as any);
+    } catch {
+      router.push(`/(owner)/appointment/${appt.id}` as any);
+    }
   }
 
   return (
@@ -138,7 +183,7 @@ export default function OwnerHomeScreen() {
             return (
               <TouchableOpacity
                 key={r.id}
-                onPress={() => router.push(`/(owner)/pets/${r.petId}` as any)}
+                onPress={() => router.push(`/(owner)/pets/${r.petId}?from=home` as any)}
                 style={{
                   backgroundColor: isToday ? '#FEF2F2' : '#FFFBEB',
                   borderWidth: 1, borderColor: isToday ? '#FECACA' : '#FDE68A',
@@ -168,6 +213,7 @@ export default function OwnerHomeScreen() {
           {appointments.map((appt) => {
             const petName = pets.find((p) => p.id === appt.petId)?.name ?? 'tu mascota';
             const isToday = appt.date === today;
+            const isWalkerAppt = appt.type === 'walk' || appt.type === 'pet_care';
             return (
               <TouchableOpacity
                 key={appt.id}
@@ -177,24 +223,49 @@ export default function OwnerHomeScreen() {
                   backgroundColor: isToday ? '#EFF6FF' : '#F0FDF4',
                   borderWidth: 1, borderColor: isToday ? '#BFDBFE' : '#BBF7D0',
                   borderRadius: 14, padding: 12, marginBottom: 6,
-                  flexDirection: 'row', alignItems: 'center', gap: 10,
+                  gap: 8,
                 }}
               >
-                <Text style={{ fontSize: 22 }}>📅</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '700', fontSize: 13, color: isToday ? '#1D4ED8' : '#166534' }}>
-                    {isToday ? '¡Cita veterinaria HOY!' : 'Cita agendada con veterinario'}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: isToday ? '#3B82F6' : '#16A34A', marginTop: 1 }}>
-                    {petName} — {appt.date} {appt.time ? `· ${appt.time}` : ''}{appt.vetName ? ` · ${appt.vetName}` : ''}
-                  </Text>
-                  {appt.reason ? (
-                    <Text style={{ fontSize: 11, color: '#64748B', marginTop: 2 }} numberOfLines={1}>
-                      {appt.reason}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Text style={{ fontSize: 22 }}>📅</Text>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontWeight: '700', fontSize: 13, color: isToday ? '#1D4ED8' : '#166534', flex: 1 }}>
+                        {isWalkerAppt
+                          ? (isToday ? '¡Paseo/cuidado HOY!' : 'Paseo/cuidado agendado')
+                          : (isToday ? '¡Cita veterinaria HOY!' : 'Cita agendada')}
+                      </Text>
+                      <View style={{
+                        borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2,
+                        backgroundColor: appt.status === 'confirmed' ? '#DCFCE7' : '#FEF3C7',
+                      }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: appt.status === 'confirmed' ? '#16A34A' : '#B45309' }}>
+                          {appt.status === 'confirmed' ? '✓ Confirmada' : '⏳ Pendiente'}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={{ fontSize: 12, color: isToday ? '#3B82F6' : '#16A34A', marginTop: 1 }}>
+                      {petName} — {appt.date}{appt.time ? ` · ${appt.time}` : ''}
                     </Text>
-                  ) : null}
+                    {appt.reason ? (
+                      <Text style={{ fontSize: 11, color: '#64748B', marginTop: 2 }} numberOfLines={1}>{appt.reason}</Text>
+                    ) : null}
+                  </View>
+                  <Text style={{ color: '#CBD5E1', fontSize: 18 }}>›</Text>
                 </View>
-                <Text style={{ color: '#CBD5E1', fontSize: 18 }}>›</Text>
+                <TouchableOpacity
+                  onPress={(e) => { e.stopPropagation(); openProviderChat(appt); }}
+                  style={{
+                    backgroundColor: isToday ? '#DBEAFE' : '#DCFCE7',
+                    borderRadius: 10, paddingVertical: 8,
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  }}
+                >
+                  <Text style={{ fontSize: 14 }}>💬</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: isToday ? '#1D4ED8' : '#16A34A' }}>
+                    {isWalkerAppt ? 'Escribir al paseador' : 'Escribir al veterinario'}
+                  </Text>
+                </TouchableOpacity>
               </TouchableOpacity>
             );
           })}
@@ -265,7 +336,7 @@ export default function OwnerHomeScreen() {
                 <TouchableOpacity
                   key={pet.id}
                   className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100"
-                  onPress={() => router.push(`/(owner)/pets/${pet.id}` as any)}
+                  onPress={() => router.push(`/(owner)/pets/${pet.id}?from=home` as any)}
                   activeOpacity={0.9}
                 >
                   {/* Large photo */}

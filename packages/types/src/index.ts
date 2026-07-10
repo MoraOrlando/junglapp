@@ -1,5 +1,13 @@
 export type UserRole = 'owner' | 'vet' | 'store' | 'walker' | 'grooming' | 'trainer' | 'support';
 
+export interface UserAddress {
+  id: string;
+  label: string;
+  address: string;
+  city: string;
+  region: string;
+}
+
 export interface User {
   uid: string;
   role: UserRole;
@@ -13,6 +21,13 @@ export interface User {
   postalCode?: string;
   location?: { lat: number; lng: number };
   photoUrl?: string;
+  pushToken?: string;
+  addresses?: UserAddress[];
+  selectedAddressId?: string;
+  // Account moderation state — 'active' when absent. Set to 'under_review'
+  // automatically when a content report is filed against this user, and to
+  // 'blocked' by support after reviewing it (blocks login).
+  accountStatus?: 'active' | 'under_review' | 'blocked';
   createdAt: string;
 }
 
@@ -43,6 +58,11 @@ export interface Pet {
   photos: string[];
   description: string;
   chipNumber?: string;
+  instagram?: string;
+  sex?: 'M' | 'F' | null;
+  weight?: number | null;
+  allergic?: boolean;
+  allergyNotes?: string;
   lookingForPartner: boolean;
   medicalRecord: MedicalRecord;
   createdAt: string;
@@ -73,10 +93,69 @@ export interface Veterinarian {
   is24_7?: boolean;
   openingHours?: string;
   clinicServices?: ClinicService[];
+  location?: { lat: number; lng: number };
   createdAt: string;
 }
 
 export type ClinicService = 'veterinaria' | 'peluqueria' | 'rayos_x' | 'intervenciones';
+
+export interface Walker {
+  id: string;
+  userId: string;
+  name: string;
+  rut: string;
+  phone: string;
+  email: string;
+  region: string;
+  city: string;
+  address?: string;
+  experience: number;
+  maxDogs: number;
+  sizesAccepted: string[];
+  photoUrl?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  availability: { [date: string]: string[] };
+  slotDuration?: 30 | 45 | 60;
+  rating?: number | null;
+  reviewCount?: number;
+  walkFee?: number | null;
+  careFee?: number | null;
+  location?: { lat: number; lng: number };
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface GroomingService {
+  id: string;
+  name: string;
+  price: number;
+}
+
+export interface Groomer {
+  id: string;
+  userId: string;
+  name: string;
+  businessName?: string;
+  rut: string;
+  phone: string;
+  email: string;
+  serviceType: 'home' | 'store';
+  address?: string | null;
+  region: string;
+  city: string;
+  services: string[];
+  serviceOfferings?: GroomingService[];
+  slotDuration?: 30 | 45 | 60;
+  photoUrl?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  availability: { [date: string]: string[] };
+  fee?: number | null;
+  rating?: number | null;
+  reviewCount?: number;
+  location?: { lat: number; lng: number };
+  createdAt: string;
+  updatedAt?: string;
+}
 
 export interface Trainer {
   id: string;
@@ -97,6 +176,7 @@ export interface Trainer {
   rating?: number;
   reviewCount?: number;
   availability?: { [date: string]: string[] };
+  location?: { lat: number; lng: number };
   createdAt: string;
 }
 
@@ -189,6 +269,28 @@ export interface Message {
   senderName: string;
   text: string;
   imageUrl?: string;
+  createdAt: string;
+}
+
+export interface ContentReport {
+  id: string;
+  reporterId: string;
+  reportedUserId: string;
+  reportedUserName: string;
+  chatId: string;
+  messageText?: string;
+  reason: string;
+  status: 'pending' | 'reviewed';
+  resolution?: 'blocked' | 'dismissed';
+  resolvedAt?: string;
+  resolvedBy?: string;
+  createdAt: string;
+}
+
+export interface UserBlock {
+  id: string;
+  blockerId: string;
+  blockedId: string;
   createdAt: string;
 }
 

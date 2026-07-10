@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  ScrollView, KeyboardAvoidingView, Platform, Alert
+  ScrollView, KeyboardAvoidingView, Platform, Alert,
+  Modal, FlatList, Keyboard, ActionSheetIOS,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -13,6 +14,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../context/AuthContext';
 import { doc, setDoc } from 'firebase/firestore';
 import { initFirebase, uploadImage, handleEmailAlreadyInUse } from '@junglapp/firebase';
+import { validateRut, formatRut } from '../../lib/rut';
 
 const { db } = initFirebase();
 
@@ -33,7 +35,7 @@ const SERVICES = [
 
 const schema = z.object({
   name: z.string().min(2, 'Nombre requerido'),
-  rut: z.string().min(8, 'RUT inválido'),
+  rut: z.string().min(8, 'RUT inválido').refine(validateRut, 'RUT inválido (verifica el dígito verificador)'),
   businessName: z.string().min(2, 'Nombre del negocio requerido'),
   phone: z.string().min(9, 'Teléfono inválido'),
   email: z.string().email('Email inválido'),
@@ -65,6 +67,20 @@ export default function RegisterGroomingScreen() {
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
   });
+
+  function openRegionPicker() {
+    Keyboard.dismiss();
+    setTimeout(() => {
+      if (Platform.OS === 'ios') {
+        ActionSheetIOS.showActionSheetWithOptions(
+          { options: [...REGIONS, 'Cancelar'], cancelButtonIndex: REGIONS.length },
+          (buttonIndex) => { if (buttonIndex < REGIONS.length) setRegion(REGIONS[buttonIndex]); }
+        );
+      } else {
+        setRegionOpen(true);
+      }
+    }, 150);
+  }
 
   function toggleService(id: string) {
     setSelectedServices((prev) => prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]);
@@ -103,7 +119,9 @@ export default function RegisterGroomingScreen() {
       });
 
       if (newUser) {
-        const photoUrl = profileUri ? await uploadImage(profileUri) : null;
+        // Photo is a nice-to-have — don't let an upload failure leave the account
+        // half-created (auth user + no groomer profile doc).
+        const photoUrl = profileUri ? await uploadImage(profileUri).catch(() => null) : null;
         await setDoc(doc(db, 'groomers', newUser.uid), {
           userId: newUser.uid,
           name: data.name,
@@ -137,7 +155,7 @@ export default function RegisterGroomingScreen() {
   return (
     <SafeAreaView className="flex-1 bg-background">
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
-        <ScrollView className="px-6">
+        <ScrollView className="px-6" keyboardShouldPersistTaps="handled">
           <TouchableOpacity onPress={() => router.back()} className="mt-4 mb-6">
             <Text className="text-primary-500 text-base">← Volver</Text>
           </TouchableOpacity>
@@ -206,9 +224,13 @@ export default function RegisterGroomingScreen() {
                       placeholder={f.placeholder}
                       placeholderTextColor="#9CA3AF"
                       keyboardType={(f as any).keyboard || 'default'}
-                      autoCapitalize={(f as any).keyboard === 'email-address' ? 'none' : 'words'}
+                      autoCapitalize={f.name === 'rut' ? 'characters' : (f as any).keyboard === 'email-address' ? 'none' : 'words'}
                       secureTextEntry={(f as any).secure}
-                      onChangeText={onChange}
+                      onChangeText={(t) => onChange(
+                        f.name === 'rut' ? formatRut(t)
+                        : (f as any).keyboard === 'email-address' || (f as any).secure ? t.replace(/\s/g, '')
+                        : t
+                      )}
                       value={value || ''}
                     />
                   )}
@@ -223,23 +245,38 @@ export default function RegisterGroomingScreen() {
               <TouchableOpacity
                 className="border border-gray-200 rounded-xl bg-white flex-row justify-between items-center px-4"
                 style={{ height: 52 }}
-                onPress={() => setRegionOpen(!regionOpen)}
+                onPress={openRegionPicker}
               >
                 <Text className="text-base text-gray-800">{region}</Text>
-                <Text className="text-gray-400">{regionOpen ? '▲' : '▼'}</Text>
+                <Text className="text-gray-400">▼</Text>
               </TouchableOpacity>
-              {regionOpen && (
-                <View className="border border-gray-200 rounded-xl mt-1 bg-white max-h-48">
-                  <ScrollView nestedScrollEnabled>
-                    {REGIONS.map((r) => (
-                      <TouchableOpacity key={r} className={`px-4 py-3 border-b border-gray-50 ${region === r ? 'bg-green-50' : ''}`} onPress={() => { setRegion(r); setRegionOpen(false); }}>
-                        <Text className={region === r ? 'text-primary-700 font-medium' : 'text-gray-700'}>{r}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
             </View>
+
+            <Modal visible={regionOpen} transparent animationType="slide" onRequestClose={() => setRegionOpen(false)}>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}
+                activeOpacity={1}
+                onPress={() => setRegionOpen(false)}
+              >
+                <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '60%' }}>
+                  <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}>
+                    <Text style={{ fontSize: 16, fontWeight: '700', textAlign: 'center', color: '#1F2937' }}>Selecciona tu región</Text>
+                  </View>
+                  <FlatList
+                    data={REGIONS}
+                    keyExtractor={(r) => r}
+                    renderItem={({ item: r }) => (
+                      <TouchableOpacity
+                        style={{ paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', backgroundColor: region === r ? '#f0fdf4' : '#fff' }}
+                        onPress={() => { setRegion(r); setRegionOpen(false); }}
+                      >
+                        <Text style={{ fontSize: 16, color: region === r ? '#15803d' : '#374151', fontWeight: region === r ? '600' : '400' }}>{r}</Text>
+                      </TouchableOpacity>
+                    )}
+                  />
+                </View>
+              </TouchableOpacity>
+            </Modal>
 
             {/* City */}
             <View>

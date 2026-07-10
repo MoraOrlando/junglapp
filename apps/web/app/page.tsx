@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import Image from 'next/image';
+import IPhoneMockup from '../components/IPhoneMockup';
 
 export default function LandingPage() {
   return (
@@ -7,8 +9,7 @@ export default function LandingPage() {
       <header className="bg-white border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">🐾</span>
-            <span className="text-xl font-bold text-primary-700">JunglApp</span>
+            <Image src="/logo.svg" alt="JunglApp" width={180} height={56} className="h-14 w-auto" />
           </div>
           <nav className="flex items-center gap-6">
             <Link href="/acceso" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition">
@@ -30,7 +31,7 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-12 items-center">
           <div>
             <span className="inline-block bg-white/20 text-white text-xs font-semibold px-3 py-1 rounded-full mb-4">
-              🇨🇱 Disponible en Chile
+              🇨🇱 Disponible en Chile ¡por el momento!
             </span>
             <h1 className="text-5xl font-extrabold leading-tight mb-4">
               Todo el cuidado de tu mascota, en un solo lugar
@@ -54,21 +55,8 @@ export default function LandingPage() {
               </Link>
             </div>
           </div>
-          <div className="flex justify-center">
-            <div className="w-64 h-[480px] bg-white/10 rounded-[3rem] border-4 border-white/30 flex flex-col items-center justify-center gap-6 p-6">
-              <span className="text-7xl">🐾</span>
-              <div className="text-center">
-                <p className="text-white font-bold text-xl">JunglApp</p>
-                <p className="text-white/70 text-sm mt-1">Tu compañero pet-friendly</p>
-              </div>
-              <div className="flex flex-col gap-3 w-full">
-                {['🩺 Veterinarios', '🛒 Tiendas', '🦮 Paseadores', '🏋️ Entrenadores'].map((item) => (
-                  <div key={item} className="bg-white/20 rounded-xl px-4 py-2 text-sm text-white font-medium">
-                    {item}
-                  </div>
-                ))}
-              </div>
-            </div>
+          <div className="flex justify-center pb-8">
+            <IPhoneMockup />
           </div>
         </div>
       </section>
@@ -143,8 +131,7 @@ export default function LandingPage() {
       <footer className="bg-primary-700 text-white py-12 px-6">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">🐾</span>
-            <span className="font-bold text-lg">JunglApp</span>
+            <Image src="/logo.svg" alt="JunglApp" width={100} height={34} className="h-8 w-auto brightness-0 invert" />
           </div>
           <div className="flex gap-6 text-sm text-white/70">
             <Link href="https://mora-orlando.github.io/junglapp-privacy-policy/" target="_blank" className="hover:text-white transition">

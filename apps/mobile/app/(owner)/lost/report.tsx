@@ -9,6 +9,7 @@ import { doc, getDoc, addDoc, collection } from 'firebase/firestore';
 import * as Location from 'expo-location';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+import YearCalendar from '../../../components/YearCalendar';
 import type { Pet } from '@junglapp/types';
 
 const { db } = initFirebase();
@@ -19,6 +20,20 @@ const REGIONS = [
   'Biobío', 'Araucanía', 'Los Ríos', 'Los Lagos', 'Aysén', 'Magallanes',
 ];
 
+// `lastSeenDate` is stored as YYYY-MM-DD (consistent with dates elsewhere in
+// the app), but shown to the user as DD-MM-YYYY.
+function toDisplayDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-');
+  return `${day}-${month}-${year}`;
+}
+
+function toLocalDateString(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export default function ReportLostPetScreen() {
   const { petId } = useLocalSearchParams<{ petId: string }>();
   const router = useRouter();
@@ -26,6 +41,7 @@ export default function ReportLostPetScreen() {
   const [pet, setPet] = useState<Pet | null>(null);
   const [lastSeenLocation, setLastSeenLocation] = useState('');
   const [lastSeenDate, setLastSeenDate] = useState('');
+  const [showDateCalendar, setShowDateCalendar] = useState(false);
   const [description, setDescription] = useState('');
   const [region, setRegion] = useState('Metropolitana');
   const [state, setState] = useState('');
@@ -201,13 +217,26 @@ export default function ReportLostPetScreen() {
               {/* Last seen date */}
               <View>
                 <Text className="text-sm font-medium text-gray-700 mb-1">Fecha de extravío *</Text>
-                <TextInput
-                  className="border border-gray-200 rounded-xl px-4 py-3 bg-white text-base"
-                  placeholder="YYYY-MM-DD (ej: 2025-05-28)"
-                  value={lastSeenDate}
-                  onChangeText={setLastSeenDate}
-                  keyboardType="numbers-and-punctuation"
-                />
+                <TouchableOpacity
+                  className={`border rounded-xl px-4 py-3 bg-white flex-row items-center gap-2 ${lastSeenDate ? 'border-primary-400' : 'border-gray-200'}`}
+                  onPress={() => setShowDateCalendar(!showDateCalendar)}
+                >
+                  <Text className="text-lg">📅</Text>
+                  <Text className={`text-base ${lastSeenDate ? 'text-gray-800' : 'text-gray-400'}`}>
+                    {lastSeenDate ? toDisplayDate(lastSeenDate) : 'DD-MM-YYYY'}
+                  </Text>
+                </TouchableOpacity>
+
+                {showDateCalendar && (
+                  <View className="mt-2 rounded-2xl overflow-hidden border border-gray-200">
+                    <YearCalendar
+                      onDayPress={(day) => { setLastSeenDate(day.dateString); setShowDateCalendar(false); }}
+                      maxDate={toLocalDateString(new Date())}
+                      initialDate={lastSeenDate || undefined}
+                      markedDates={lastSeenDate ? { [lastSeenDate]: { selected: true, selectedColor: '#2D6A4F' } } : {}}
+                    />
+                  </View>
+                )}
               </View>
 
               {/* Characteristics */}

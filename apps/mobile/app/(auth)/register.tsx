@@ -33,7 +33,7 @@ const roles = [
   {
     id: 'walker',
     emoji: '🦮',
-    title: 'Paseador de Perros',
+    title: 'Paseador / Cuidador de Mascotas',
     subtitle: 'Dog Walker',
     description: 'Ofrece paseos y cuidado de perros en tu zona.',
     color: 'bg-orange-50 border-orange-200',

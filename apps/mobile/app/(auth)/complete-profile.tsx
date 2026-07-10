@@ -2,15 +2,13 @@ import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator,
+  Keyboard,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
-import { doc, updateDoc } from 'firebase/firestore';
-import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
-
-const { db } = initFirebase();
+import { validateRut, formatRut } from '../../lib/rut';
 
 const REGIONS = [
   'Arica y Parinacota', 'Tarapacá', 'Antofagasta', 'Atacama', 'Coquimbo',
@@ -18,22 +16,8 @@ const REGIONS = [
   'Biobío', 'Araucanía', 'Los Ríos', 'Los Lagos', 'Aysén', 'Magallanes',
 ];
 
-function validateRut(rut: string): boolean {
-  const clean = rut.replace(/[.\-]/g, '').toUpperCase();
-  if (clean.length < 2) return false;
-  const body = clean.slice(0, -1);
-  const dv = clean.slice(-1);
-  if (!/^\d+$/.test(body)) return false;
-  const digits = body.split('').reverse().map(Number);
-  const factors = [2, 3, 4, 5, 6, 7];
-  const sum = digits.reduce((acc, d, i) => acc + d * factors[i % 6], 0);
-  const remainder = 11 - (sum % 11);
-  const expected = remainder === 11 ? '0' : remainder === 10 ? 'K' : String(remainder);
-  return dv === expected;
-}
-
 export default function CompleteProfileScreen() {
-  const { user, firebaseUser, updateProfile } = useAuth();
+  const { user, updateProfile } = useAuth();
   const router = useRouter();
   const [rut, setRut] = useState('');
   const [phone, setPhone] = useState(user?.phone || '');
@@ -44,6 +28,11 @@ export default function CompleteProfileScreen() {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  function openRegionPicker() {
+    Keyboard.dismiss();
+    setTimeout(() => setRegionOpen((v) => !v), 150);
+  }
 
   async function captureLocation() {
     setLocating(true);
@@ -66,8 +55,7 @@ export default function CompleteProfileScreen() {
 
     setSaving(true);
     try {
-      if (!firebaseUser) throw new Error('No autenticado');
-      await updateDoc(doc(db, COLLECTIONS.USERS, firebaseUser.uid), {
+      await updateProfile({
         rut: rut.trim(),
         phone: phone.trim(),
         address: address.trim(),
@@ -87,7 +75,7 @@ export default function CompleteProfileScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           <View style={{ marginTop: 24, marginBottom: 28 }}>
             <Text style={{ fontSize: 26, fontWeight: '800', color: '#15803d' }}>¡Casi listo! 🐾</Text>
             <Text style={{ color: '#6B7280', marginTop: 8, fontSize: 15 }}>
@@ -103,8 +91,11 @@ export default function CompleteProfileScreen() {
               placeholder="12.345.678-9"
               placeholderTextColor="#9CA3AF"
               value={rut}
-              onChangeText={setRut}
+              onChangeText={(t) => setRut(formatRut(t))}
               autoCapitalize="characters"
+              textContentType="none"
+              autoComplete="off"
+              importantForAutofill="no"
             />
           </View>
 
@@ -118,6 +109,9 @@ export default function CompleteProfileScreen() {
               keyboardType="phone-pad"
               value={phone}
               onChangeText={setPhone}
+              textContentType="none"
+              autoComplete="off"
+              importantForAutofill="no"
             />
           </View>
 
@@ -130,6 +124,9 @@ export default function CompleteProfileScreen() {
               placeholderTextColor="#9CA3AF"
               value={address}
               onChangeText={setAddress}
+              textContentType="none"
+              autoComplete="off"
+              importantForAutofill="no"
             />
           </View>
 
@@ -138,24 +135,26 @@ export default function CompleteProfileScreen() {
             <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 }}>Región</Text>
             <TouchableOpacity
               style={{ height: 50, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 16, backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-              onPress={() => setRegionOpen(!regionOpen)}
+              onPress={openRegionPicker}
             >
               <Text style={{ fontSize: 16, color: '#1F2937' }}>{region}</Text>
               <Text style={{ color: '#9CA3AF' }}>{regionOpen ? '▲' : '▼'}</Text>
             </TouchableOpacity>
             {regionOpen && (
-              <View style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, marginTop: 4, backgroundColor: '#fff', maxHeight: 200 }}>
-                <ScrollView nestedScrollEnabled>
-                  {REGIONS.map((r) => (
-                    <TouchableOpacity
-                      key={r}
-                      style={{ paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', backgroundColor: region === r ? '#f0fdf4' : '#fff' }}
-                      onPress={() => { setRegion(r); setRegionOpen(false); }}
-                    >
-                      <Text style={{ color: region === r ? '#15803d' : '#374151', fontWeight: region === r ? '600' : '400' }}>{r}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
+              <View style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, marginTop: 8, backgroundColor: '#fff' }}>
+                {REGIONS.map((r, i) => (
+                  <TouchableOpacity
+                    key={r}
+                    style={{
+                      paddingHorizontal: 16, paddingVertical: 12,
+                      borderBottomWidth: i === REGIONS.length - 1 ? 0 : 1, borderBottomColor: '#F3F4F6',
+                      backgroundColor: region === r ? '#f0fdf4' : '#fff',
+                    }}
+                    onPress={() => { setRegion(r); setRegionOpen(false); }}
+                  >
+                    <Text style={{ fontSize: 16, color: region === r ? '#15803d' : '#374151', fontWeight: region === r ? '600' : '400' }}>{r}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
             )}
           </View>
@@ -169,6 +168,9 @@ export default function CompleteProfileScreen() {
               placeholderTextColor="#9CA3AF"
               value={city}
               onChangeText={setCity}
+              textContentType="none"
+              autoComplete="off"
+              importantForAutofill="no"
             />
           </View>
 

@@ -29,7 +29,7 @@ export default function OwnerPortalPage() {
       try {
         const [petsSnap, aptsSnap] = await Promise.all([
           getDocs(query(collection(db, COLLECTIONS.PETS), where('ownerId', '==', user!.uid))),
-          getDocs(query(collection(db, COLLECTIONS.APPOINTMENTS), where('ownerId', '==', user!.uid))),
+          getDocs(query(collection(db, COLLECTIONS.APPOINTMENTS), where('ownerId', '==', user!.uid), where('status', '!=', 'cancelled'))),
         ]);
         setPets(petsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)));
         setAppointments(

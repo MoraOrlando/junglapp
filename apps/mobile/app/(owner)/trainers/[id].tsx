@@ -6,7 +6,7 @@ import {
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, getDocs, collection, query, where, addDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, where, addDoc, setDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import type { Trainer } from '@junglapp/types';
@@ -86,8 +86,20 @@ export default function TrainerDetailScreen() {
         type: 'training',
         createdAt: new Date().toISOString(),
       });
+      // Grants the trainer scoped read access to this owner's profile (see
+      // firestore.rules `users/{uid}` read rule) — only for owners they've
+      // actually booked with, not every owner in the app.
+      await setDoc(doc(db, COLLECTIONS.CLIENT_LINKS, `${trainer.id}_${user.uid}`), {
+        professionalId: trainer.id,
+        ownerId: user.uid,
+        createdAt: new Date().toISOString(),
+      });
       setBookModal(false);
-      Alert.alert('¡Sesión agendada! 🐕', `Reservaste el ${selectedDate} a las ${selectedTime} con ${trainer.name}.`);
+      Alert.alert(
+        '¡Sesión agendada! 🐕',
+        `Reservaste el ${selectedDate} a las ${selectedTime} con ${trainer.name}.`,
+        [{ text: 'OK', onPress: () => router.replace('/(owner)' as any) }]
+      );
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {

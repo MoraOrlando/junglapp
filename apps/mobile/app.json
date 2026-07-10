@@ -16,22 +16,18 @@
       "bundleIdentifier": "com.junglapp.app",
       "buildNumber": "1",
       "deploymentTarget": "16.4",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "CFBundleURLTypes": [
           {
             "CFBundleURLSchemes": [
-              "com.googleusercontent.apps.499650328037-j4edei7e54rpebd04ebpdv1iooilj10a",
-              "junglapp"
-            ]
-          },
-          {
-            "CFBundleURLSchemes": [
-              "com.googleusercontent.apps.499650328037-j4edei7e54rpebd04ebpdv1iooilj10a",
               "junglapp"
             ]
           }
         ],
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocalNetworkUsageDescription": "JunglApp usa la red local para conectarse al servidor de desarrollo durante las pruebas.",
+        "NSBonjourServices": ["_dev._tcp", "_http._tcp"]
       }
     },
     "android": {
@@ -41,7 +37,7 @@
       },
       "package": "com.junglapp.app",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 1,
+      "versionCode": 2,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_MEDIA_IMAGES",
@@ -65,6 +61,16 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      "@react-native-firebase/app",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static",
+            "forceStaticLinking": ["RNFBApp", "RNFBStorage"]
+          }
+        }
+      ],
       [
         "expo-local-authentication",
         {

@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, memo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Alert,
-  Animated, Modal, Linking, TextInput, KeyboardAvoidingView, Platform
+  Animated, Modal, Linking, TextInput, KeyboardAvoidingView, Platform, Switch
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -28,8 +28,40 @@ interface VisitEntry {
   nextControlDate?: string | null;
 }
 
+const DESC_CHIPS = [
+  { emoji: '👑', text: 'Se cree el/la dueño/a de la casa' },
+  { emoji: '😴', text: 'Experto/a en siestas épicas' },
+  { emoji: '🎾', text: 'Rey/Reina del parque' },
+  { emoji: '🍕', text: 'Come más que toda la familia' },
+  { emoji: '🐾', text: 'Especialista en robar calcetines' },
+  { emoji: '🎭', text: 'Actor/actriz dramático/a de nivel Oscar' },
+  { emoji: '🛋️', text: 'El sofá es su trono oficial' },
+  { emoji: '🌧️', text: 'Odia la lluvia con toda su alma' },
+  { emoji: '🤗', text: 'Reparte abrazos gratis todo el día' },
+  { emoji: '🔔', text: 'Avisa cuando llega alguien (o cuando no)' },
+];
+
+const DescChips = memo(function DescChips({ onSelect }: { onSelect: (text: string, emoji: string) => void }) {
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        {DESC_CHIPS.map(({ emoji, text }) => (
+          <TouchableOpacity
+            key={text}
+            onPress={() => onSelect(text, emoji)}
+            style={{ backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+          >
+            <Text style={{ fontSize: 16 }}>{emoji}</Text>
+            <Text style={{ fontSize: 12, color: '#166534', fontWeight: '600' }}>{text}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </ScrollView>
+  );
+});
+
 export default function PetDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
   const router = useRouter();
   const { user } = useAuth();
   const [pet, setPet] = useState<Pet | null>(null);
@@ -45,9 +77,19 @@ export default function PetDetailScreen() {
   const [editingDesc, setEditingDesc] = useState(false);
   const [descInput, setDescInput] = useState('');
   const [savingDesc, setSavingDesc] = useState(false);
+  const [editingPhysical, setEditingPhysical] = useState(false);
+  const [physSex, setPhysSex] = useState<'M' | 'F' | ''>('');
+  const [physWeight, setPhysWeight] = useState('');
+  const [physAllergic, setPhysAllergic] = useState(false);
+  const [physAllergyNotes, setPhysAllergyNotes] = useState('');
+  const [savingPhysical, setSavingPhysical] = useState(false);
 
   const flameScale = useRef(new Animated.Value(0)).current;
   const flameOpacity = useRef(new Animated.Value(0)).current;
+
+  const handleChipSelect = useCallback((text: string, emoji: string) => {
+    setDescInput((prev) => prev ? `${prev} ${emoji} ${text}` : `${emoji} ${text}`);
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -258,6 +300,35 @@ export default function PetDetailScreen() {
     }
   }
 
+  async function savePhysical() {
+    if (!id || !pet) return;
+    setSavingPhysical(true);
+    try {
+      const updates: Record<string, any> = {
+        sex: physSex || null,
+        weight: physWeight ? parseFloat(physWeight) : null,
+        allergic: physAllergic,
+        allergyNotes: physAllergic ? physAllergyNotes : '',
+      };
+      await updateDoc(doc(db, COLLECTIONS.PETS, id), updates);
+      setPet({ ...pet, ...updates });
+      setEditingPhysical(false);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSavingPhysical(false);
+    }
+  }
+
+  function openPhysicalEdit() {
+    if (!pet) return;
+    setPhysSex((pet.sex as 'M' | 'F' | '') ?? '');
+    setPhysWeight(pet.weight != null ? String(pet.weight) : '');
+    setPhysAllergic(pet.allergic ?? false);
+    setPhysAllergyNotes(pet.allergyNotes ?? '');
+    setEditingPhysical(true);
+  }
+
   if (loading) return (
     <SafeAreaView className="flex-1 bg-background items-center justify-center">
       <Text className="text-gray-400">Cargando...</Text>
@@ -418,31 +489,7 @@ export default function PetDetailScreen() {
               </TouchableOpacity>
             </View>
             <Text style={{ fontSize: 12, color: '#94A3B8', marginBottom: 10 }}>Toca una frase para agregarla o escribe tu propia descripción</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                {[
-                  { emoji: '👑', text: 'Se cree el/la dueño/a de la casa' },
-                  { emoji: '😴', text: 'Experto/a en siestas épicas' },
-                  { emoji: '🎾', text: 'Rey/Reina del parque' },
-                  { emoji: '🍕', text: 'Come más que toda la familia' },
-                  { emoji: '🐾', text: 'Especialista en robar calcetines' },
-                  { emoji: '🎭', text: 'Actor/actriz dramático/a de nivel Oscar' },
-                  { emoji: '🛋️', text: 'El sofá es su trono oficial' },
-                  { emoji: '🌧️', text: 'Odia la lluvia con toda su alma' },
-                  { emoji: '🤗', text: 'Reparte abrazos gratis todo el día' },
-                  { emoji: '🔔', text: 'Avisa cuando llega alguien (o cuando no)' },
-                ].map(({ emoji, text }) => (
-                  <TouchableOpacity
-                    key={text}
-                    onPress={() => setDescInput((prev) => prev ? `${prev} ${emoji} ${text}` : `${emoji} ${text}`)}
-                    style={{ backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                  >
-                    <Text style={{ fontSize: 16 }}>{emoji}</Text>
-                    <Text style={{ fontSize: 12, color: '#166534', fontWeight: '600' }}>{text}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
+            <DescChips onSelect={handleChipSelect} />
             <TextInput
               style={{ borderWidth: 1.5, borderColor: '#2D6A4F', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: '#1E293B', minHeight: 100, textAlignVertical: 'top', marginBottom: 16 }}
               value={descInput}
@@ -457,6 +504,80 @@ export default function PetDetailScreen() {
               style={{ backgroundColor: savingDesc ? '#9CA3AF' : '#2D6A4F', borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
             >
               <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>{savingDesc ? 'Guardando...' : '✅ Guardar descripción'}</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Edit physical data modal */}
+      <Modal visible={editingPhysical} animationType="slide" transparent onRequestClose={() => setEditingPhysical(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}>
+          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ fontSize: 17, fontWeight: '800', color: '#1E293B' }}>📋 Datos físicos</Text>
+              <TouchableOpacity onPress={() => setEditingPhysical(false)} style={{ padding: 4 }}>
+                <Text style={{ fontSize: 22, color: '#94A3B8' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Sex */}
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 }}>Sexo</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+              {[{ id: 'M', label: '♂ Macho' }, { id: 'F', label: '♀ Hembra' }].map((s) => (
+                <TouchableOpacity
+                  key={s.id}
+                  style={{ flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: physSex === s.id ? '#2D6A4F' : '#E5E7EB', backgroundColor: physSex === s.id ? '#2D6A4F' : 'white', alignItems: 'center' }}
+                  onPress={() => setPhysSex(s.id as 'M' | 'F')}
+                >
+                  <Text style={{ fontWeight: '600', color: physSex === s.id ? 'white' : '#6B7280' }}>{s.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Weight */}
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 }}>Peso (kg)</Text>
+            <TextInput
+              style={{ height: 48, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, fontSize: 16, color: '#1F2937', backgroundColor: 'white', marginBottom: 16 }}
+              placeholder="4.5"
+              placeholderTextColor="#9CA3AF"
+              keyboardType="decimal-pad"
+              value={physWeight}
+              onChangeText={setPhysWeight}
+            />
+
+            {/* Allergic */}
+            <View style={{ backgroundColor: '#FFF5F5', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#FCA5A5', marginBottom: 8 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontWeight: '600', color: '#1F2937', fontSize: 15 }}>⚠️ Es alérgico/a</Text>
+                <Switch
+                  value={physAllergic}
+                  onValueChange={setPhysAllergic}
+                  trackColor={{ false: '#D1D5DB', true: '#FCA5A5' }}
+                  thumbColor={physAllergic ? '#EF4444' : '#F3F4F6'}
+                />
+              </View>
+              {physAllergic && (
+                <TextInput
+                  style={{ marginTop: 10, borderWidth: 1, borderColor: '#FCA5A5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, color: '#1F2937', textAlignVertical: 'top', minHeight: 64, backgroundColor: 'white' }}
+                  placeholder="Describe las alergias conocidas..."
+                  placeholderTextColor="#FCA5A5"
+                  multiline
+                  maxLength={120}
+                  value={physAllergyNotes}
+                  onChangeText={setPhysAllergyNotes}
+                />
+              )}
+              {physAllergic && (
+                <Text style={{ fontSize: 11, color: '#9CA3AF', textAlign: 'right', marginTop: 4 }}>{physAllergyNotes.length}/120</Text>
+              )}
+            </View>
+
+            <TouchableOpacity
+              onPress={savePhysical}
+              disabled={savingPhysical}
+              style={{ backgroundColor: savingPhysical ? '#9CA3AF' : '#2D6A4F', borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 8 }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>{savingPhysical ? 'Guardando...' : '✅ Guardar'}</Text>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
@@ -496,7 +617,7 @@ export default function PetDetailScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity className="absolute top-10 left-4 bg-white/80 rounded-full p-2" onPress={() => router.back()}>
+        <TouchableOpacity className="absolute top-10 left-4 bg-white/80 rounded-full p-2" onPress={() => from === 'home' ? router.navigate('/(owner)' as any) : router.back()}>
           <Text className="text-primary-700 text-base px-1">←</Text>
         </TouchableOpacity>
 
@@ -563,7 +684,7 @@ export default function PetDetailScreen() {
           </TouchableOpacity>
 
           {/* Info grid */}
-          <View className="flex-row gap-3 mb-4">
+          <View className="flex-row gap-3 mb-3">
             <View className="flex-1 bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
               <Text className="text-gray-400 text-xs">Nacimiento</Text>
               <Text className="font-semibold text-gray-800 mt-1">{pet.birthDate}</Text>
@@ -574,10 +695,58 @@ export default function PetDetailScreen() {
             </View>
           </View>
 
+          {/* Sex / Weight / Allergic row */}
+          <TouchableOpacity
+            onPress={openPhysicalEdit}
+            activeOpacity={0.75}
+            style={{ backgroundColor: 'white', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F0FDF4', shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4 }}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <Text style={{ color: '#6B7280', fontSize: 12 }}>Datos físicos</Text>
+              <Text style={{ fontSize: 12, color: '#2D6A4F', fontWeight: '600' }}>✏️ Editar</Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#9CA3AF', fontSize: 11 }}>Sexo</Text>
+                <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 14, marginTop: 2 }}>
+                  {pet.sex === 'M' ? '♂ Macho' : pet.sex === 'F' ? '♀ Hembra' : '—'}
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#9CA3AF', fontSize: 11 }}>Peso</Text>
+                <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 14, marginTop: 2 }}>
+                  {pet.weight != null ? `${pet.weight} kg` : '—'}
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#9CA3AF', fontSize: 11 }}>Alérgico</Text>
+                <Text style={{ fontWeight: '700', color: pet.allergic ? '#EF4444' : '#1F2937', fontSize: 14, marginTop: 2 }}>
+                  {pet.allergic == null ? '—' : pet.allergic ? 'Sí ⚠️' : 'No'}
+                </Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+
+          {pet.allergic && pet.allergyNotes ? (
+            <View style={{ backgroundColor: '#FFF5F5', borderRadius: 14, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#FCA5A5' }}>
+              <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: '700', marginBottom: 4 }}>⚠️ Alergias declaradas</Text>
+              <Text style={{ color: '#7F1D1D', fontSize: 14 }}>{pet.allergyNotes}</Text>
+            </View>
+          ) : null}
+
           {pet.chipNumber && (
             <View className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100">
               <Text className="text-gray-400 text-xs">Número de Chip</Text>
               <Text className="font-semibold text-gray-800 mt-1 font-mono">{pet.chipNumber}</Text>
+            </View>
+          )}
+
+          {pet.instagram && (
+            <View className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100">
+              <Text className="text-gray-400 text-xs">Instagram</Text>
+              <Text className="font-semibold text-gray-800 mt-1">
+                📸 {pet.instagram.replace(/^@/, '')}
+              </Text>
             </View>
           )}
 

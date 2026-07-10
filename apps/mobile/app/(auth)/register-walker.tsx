@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  ScrollView, KeyboardAvoidingView, Platform, Alert
+  ScrollView, KeyboardAvoidingView, Platform, Alert,
+  Modal, FlatList, Keyboard, ActionSheetIOS,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -13,6 +14,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../context/AuthContext';
 import { doc, setDoc } from 'firebase/firestore';
 import { initFirebase, uploadImage, handleEmailAlreadyInUse } from '@junglapp/firebase';
+import { validateRut, formatRut } from '../../lib/rut';
 
 const { db } = initFirebase();
 
@@ -31,7 +33,7 @@ const SIZE_OPTIONS = [
 
 const schema = z.object({
   name: z.string().min(2, 'Nombre requerido'),
-  rut: z.string().min(8, 'RUT inválido'),
+  rut: z.string().min(8, 'RUT inválido').refine(validateRut, 'RUT inválido (verifica el dígito verificador)'),
   phone: z.string().min(9, 'Teléfono inválido'),
   email: z.string().email('Email inválido'),
   password: z.string().min(6, 'Mínimo 6 caracteres'),
@@ -58,11 +60,26 @@ export default function RegisterWalkerScreen() {
   const [regionOpen, setRegionOpen] = useState(false);
   const [sizesAccepted, setSizesAccepted] = useState<string[]>(['all']);
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { experience: '1', maxDogs: '3' },
   });
+
+  function openRegionPicker() {
+    Keyboard.dismiss();
+    setTimeout(() => {
+      if (Platform.OS === 'ios') {
+        ActionSheetIOS.showActionSheetWithOptions(
+          { options: [...REGIONS, 'Cancelar'], cancelButtonIndex: REGIONS.length },
+          (buttonIndex) => { if (buttonIndex < REGIONS.length) setRegion(REGIONS[buttonIndex]); }
+        );
+      } else {
+        setRegionOpen(true);
+      }
+    }, 150);
+  }
 
   function toggleSize(id: string) {
     if (id === 'all') { setSizesAccepted(['all']); return; }
@@ -102,7 +119,9 @@ export default function RegisterWalkerScreen() {
       });
 
       if (newUser) {
-        const photoUrl = profileUri ? await uploadImage(profileUri) : null;
+        // Photo is a nice-to-have — don't let an upload failure leave the account
+        // half-created (auth user + no walker profile doc).
+        const photoUrl = profileUri ? await uploadImage(profileUri).catch(() => null) : null;
         await setDoc(doc(db, 'walkers', newUser.uid), {
           userId: newUser.uid,
           name: data.name,
@@ -118,8 +137,16 @@ export default function RegisterWalkerScreen() {
           status: 'pending',
           availability: {},
           rating: null,
+          walkFee: null,
+          careFee: null,
           createdAt: new Date().toISOString(),
+          trialExpiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
         });
+        Alert.alert(
+          '¡Solicitud enviada! 🦮',
+          'Tu cuenta está en revisión. Te notificaremos cuando sea aprobada. Ya puedes ingresar a tu panel.',
+          [{ text: 'Entendido' }]
+        );
       }
     } catch (e: any) {
       if (e.code === 'auth/email-already-in-use') {
@@ -135,13 +162,13 @@ export default function RegisterWalkerScreen() {
   return (
     <SafeAreaView className="flex-1 bg-background">
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
-        <ScrollView className="px-6">
+        <ScrollView className="px-6" keyboardShouldPersistTaps="handled">
           <TouchableOpacity onPress={() => router.back()} className="mt-4 mb-6">
             <Text className="text-primary-500 text-base">← Volver</Text>
           </TouchableOpacity>
 
           <View className="mb-6">
-            <Text className="text-3xl font-bold text-primary-700">🦮 Paseador de Perros</Text>
+            <Text className="text-3xl font-bold text-primary-700">🦮 Paseador / Cuidador de Mascotas</Text>
             <Text className="text-gray-500 mt-2">Tu cuenta será revisada antes de activarse</Text>
           </View>
 
@@ -176,17 +203,40 @@ export default function RegisterWalkerScreen() {
                   control={control}
                   name={f.name}
                   render={({ field: { onChange, value } }) => (
-                    <TextInput
-                      className="border border-gray-200 rounded-xl bg-white"
-                      style={inputStyle}
-                      placeholder={f.placeholder}
-                      placeholderTextColor="#9CA3AF"
-                      keyboardType={(f as any).keyboard || 'default'}
-                      autoCapitalize={(f as any).keyboard === 'email-address' ? 'none' : 'words'}
-                      secureTextEntry={(f as any).secure}
-                      onChangeText={onChange}
-                      value={value}
-                    />
+                    (f as any).secure ? (
+                      <View style={{ position: 'relative' }}>
+                        <TextInput
+                          className="border border-gray-200 rounded-xl bg-white"
+                          style={{ ...inputStyle, paddingRight: 48 }}
+                          placeholder={f.placeholder}
+                          placeholderTextColor="#9CA3AF"
+                          secureTextEntry={!showPassword}
+                          onChangeText={(t) => onChange(t.replace(/\s/g, ''))}
+                          value={value}
+                        />
+                        <TouchableOpacity
+                          onPress={() => setShowPassword((v) => !v)}
+                          style={{ position: 'absolute', right: 14, top: 0, bottom: 0, justifyContent: 'center' }}
+                        >
+                          <Text style={{ fontSize: 18 }}>{showPassword ? '🙈' : '👁️'}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TextInput
+                        className="border border-gray-200 rounded-xl bg-white"
+                        style={inputStyle}
+                        placeholder={f.placeholder}
+                        placeholderTextColor="#9CA3AF"
+                        keyboardType={(f as any).keyboard || 'default'}
+                        autoCapitalize={f.name === 'rut' ? 'characters' : (f as any).keyboard === 'email-address' ? 'none' : 'words'}
+                        onChangeText={(t) => onChange(
+                          f.name === 'rut' ? formatRut(t)
+                          : (f as any).keyboard === 'email-address' ? t.replace(/\s/g, '')
+                          : t
+                        )}
+                        value={value}
+                      />
+                    )
                   )}
                 />
                 {errors[f.name] && <Text className="text-red-500 text-xs mt-1">{errors[f.name]?.message}</Text>}
@@ -199,23 +249,38 @@ export default function RegisterWalkerScreen() {
               <TouchableOpacity
                 className="border border-gray-200 rounded-xl bg-white flex-row justify-between items-center px-4"
                 style={{ height: 52 }}
-                onPress={() => setRegionOpen(!regionOpen)}
+                onPress={openRegionPicker}
               >
                 <Text className="text-base text-gray-800">{region}</Text>
-                <Text className="text-gray-400">{regionOpen ? '▲' : '▼'}</Text>
+                <Text className="text-gray-400">▼</Text>
               </TouchableOpacity>
-              {regionOpen && (
-                <View className="border border-gray-200 rounded-xl mt-1 bg-white max-h-48">
-                  <ScrollView nestedScrollEnabled>
-                    {REGIONS.map((r) => (
-                      <TouchableOpacity key={r} className={`px-4 py-3 border-b border-gray-50 ${region === r ? 'bg-green-50' : ''}`} onPress={() => { setRegion(r); setRegionOpen(false); }}>
-                        <Text className={region === r ? 'text-primary-700 font-medium' : 'text-gray-700'}>{r}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
             </View>
+
+            <Modal visible={regionOpen} transparent animationType="slide" onRequestClose={() => setRegionOpen(false)}>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}
+                activeOpacity={1}
+                onPress={() => setRegionOpen(false)}
+              >
+                <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '60%' }}>
+                  <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}>
+                    <Text style={{ fontSize: 16, fontWeight: '700', textAlign: 'center', color: '#1F2937' }}>Selecciona tu región</Text>
+                  </View>
+                  <FlatList
+                    data={REGIONS}
+                    keyExtractor={(r) => r}
+                    renderItem={({ item: r }) => (
+                      <TouchableOpacity
+                        style={{ paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', backgroundColor: region === r ? '#f0fdf4' : '#fff' }}
+                        onPress={() => { setRegion(r); setRegionOpen(false); }}
+                      >
+                        <Text style={{ fontSize: 16, color: region === r ? '#15803d' : '#374151', fontWeight: region === r ? '600' : '400' }}>{r}</Text>
+                      </TouchableOpacity>
+                    )}
+                  />
+                </View>
+              </TouchableOpacity>
+            </Modal>
 
             {/* City */}
             <View>

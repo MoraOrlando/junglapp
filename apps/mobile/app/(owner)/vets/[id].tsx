@@ -1,19 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, TextInput, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
-  doc, getDoc, collection, query, where, getDocs, addDoc, serverTimestamp,
+  doc, getDoc, collection, query, where, getDocs, addDoc, setDoc, serverTimestamp,
 } from 'firebase/firestore';
-import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
+import { ref, set } from 'firebase/database';
+import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import type { Veterinarian, Pet } from '@junglapp/types';
 
-const { db } = initFirebase();
+const { db, rtdb } = initFirebase();
 
 function getNextDays(n: number): string[] {
   const days: string[] = [];
-  for (let i = 1; i <= n; i++) {
+  for (let i = 0; i < n; i++) {
     const d = new Date();
     d.setDate(d.getDate() + i);
     days.push(d.toISOString().split('T')[0]);
@@ -55,6 +56,7 @@ export default function VetDetailScreen() {
   const [selectedPet, setSelectedPet] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const [booking, setBooking] = useState(false);
+  const bookingInProgress = useRef(false);
 
   const [reviews, setReviews] = useState<Review[]>([]);
   const [canReview, setCanReview] = useState(false);
@@ -113,9 +115,11 @@ export default function VetDetailScreen() {
       Alert.alert('Falta información', 'Selecciona fecha, hora y mascota');
       return;
     }
+    if (bookingInProgress.current) return;
+    bookingInProgress.current = true;
     setBooking(true);
     try {
-      await addDoc(collection(db, COLLECTIONS.APPOINTMENTS), {
+      const apptRef = await addDoc(collection(db, COLLECTIONS.APPOINTMENTS), {
         petId: selectedPet,
         ownerId: user.uid,
         vetId: vet.id,
@@ -125,13 +129,39 @@ export default function VetDetailScreen() {
         status: 'pending',
         createdAt: new Date().toISOString(),
       });
+      // Grants the vet scoped read access to this owner's profile (see
+      // firestore.rules `users/{uid}` read rule) — only for owners they've
+      // actually booked with, not every owner in the app.
+      await setDoc(doc(db, COLLECTIONS.CLIENT_LINKS, `${vet.id}_${user.uid}`), {
+        professionalId: vet.id,
+        ownerId: user.uid,
+        createdAt: new Date().toISOString(),
+      });
+
+      // Notify vet via RTDB — non-critical, failure must not block the booking
+      try {
+        if (vet.userId && rtdb) {
+          const notifKey = `appt_${apptRef.id}`;
+          await set(ref(rtdb, `${RTDB_PATHS.NOTIFICATIONS}/${vet.userId}/${notifKey}`), {
+            type: 'new_appointment',
+            appointmentId: apptRef.id,
+            ownerName: user.name || 'Dueño',
+            date: selectedDate,
+            time: selectedTime,
+            createdAt: new Date().toISOString(),
+            read: false,
+          });
+        }
+      } catch {}
+
       Alert.alert('¡Listo!', 'Cita agendada correctamente', [
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      Alert.alert('Error al agendar', e.message);
     } finally {
       setBooking(false);
+      bookingInProgress.current = false;
     }
   }
 

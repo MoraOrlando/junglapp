@@ -10,7 +10,7 @@ import { doc, getDoc, updateDoc, collection, query, where, getDocs, addDoc } fro
 import { ref, set } from 'firebase/database';
 import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
-import type { Appointment, Pet, Veterinarian } from '@junglapp/types';
+import type { Appointment, Pet, Veterinarian, Walker } from '@junglapp/types';
 
 const { db, rtdb } = initFirebase();
 
@@ -41,6 +41,7 @@ export default function OwnerAppointmentDetailScreen() {
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [pet, setPet] = useState<Pet | null>(null);
   const [vet, setVet] = useState<Veterinarian | null>(null);
+  const [walker, setWalker] = useState<Walker | null>(null);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
   const [openingChat, setOpeningChat] = useState(false);
@@ -69,12 +70,18 @@ export default function OwnerAppointmentDetailScreen() {
 
       setAppointment(appt);
 
-      const [petSnap, vetSnap] = await Promise.all([
-        getDoc(doc(db, COLLECTIONS.PETS, appt.petId)),
-        getDoc(doc(db, COLLECTIONS.VETERINARIANS, appt.vetId)),
+      const isWalkerAppt = (appt as any).type === 'walk' || (appt as any).type === 'pet_care';
+      const providerCollection = isWalkerAppt ? COLLECTIONS.WALKERS : COLLECTIONS.VETERINARIANS;
+
+      const [petSnap, providerSnap] = await Promise.all([
+        appt.petId ? getDoc(doc(db, COLLECTIONS.PETS, appt.petId)) : Promise.resolve(null),
+        appt.vetId ? getDoc(doc(db, providerCollection, appt.vetId)) : Promise.resolve(null),
       ]);
-      if (petSnap.exists()) setPet({ id: petSnap.id, ...petSnap.data() } as Pet);
-      if (vetSnap.exists()) setVet({ id: vetSnap.id, ...vetSnap.data() } as Veterinarian);
+      if (petSnap?.exists()) setPet({ id: petSnap.id, ...petSnap.data() } as Pet);
+      if (providerSnap?.exists()) {
+        if (isWalkerAppt) setWalker({ id: providerSnap.id, ...providerSnap.data() } as Walker);
+        else setVet({ id: providerSnap.id, ...providerSnap.data() } as Veterinarian);
+      }
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -112,15 +119,18 @@ export default function OwnerAppointmentDetailScreen() {
   }
 
   async function openChat() {
-    if (!user || !appointment || !vet) return;
+    const provider = vet ?? walker;
+    if (!user || !appointment || !provider) return;
+    const chatType = vet ? 'vet' : 'walker';
+    const providerLabel = vet ? 'Veterinario' : 'Paseador';
     setOpeningChat(true);
     try {
-      // Find or create chat between owner and vet
+      // Find or create chat between owner and provider
       const snap = await getDocs(
         query(collection(db, COLLECTIONS.CHATS), where('participants', 'array-contains', user.uid))
       );
       const existing = snap.docs.find((d) =>
-        (d.data().participants as string[]).includes(vet.userId)
+        (d.data().participants as string[]).includes(provider.userId)
       );
 
       let chatId: string;
@@ -128,12 +138,12 @@ export default function OwnerAppointmentDetailScreen() {
         chatId = existing.id;
       } else {
         const newChat = await addDoc(collection(db, COLLECTIONS.CHATS), {
-          participants: [user.uid, vet.userId],
+          participants: [user.uid, provider.userId],
           participantNames: {
             [user.uid]: user.name || 'Dueño',
-            [vet.userId]: vet.name || 'Veterinario',
+            [provider.userId]: provider.name || providerLabel,
           },
-          chatType: 'vet',
+          chatType,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         });
@@ -142,7 +152,7 @@ export default function OwnerAppointmentDetailScreen() {
 
       // Register own entry first, then the other participant
       await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${user.uid}`), true);
-      await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${vet.userId}`), true);
+      await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${provider.userId}`), true);
 
       router.push(`/(owner)/chat/${chatId}` as any);
     } catch {
@@ -163,6 +173,7 @@ export default function OwnerAppointmentDetailScreen() {
   if (!appointment) return null;
 
   const status = appointment.status;
+  const isWalkerAppt = (appointment as any).type === 'walk' || (appointment as any).type === 'pet_care';
   const isCancelled = status === 'cancelled';
   const isCompleted = status === 'completed';
   const canCancel = !isCancelled && !isCompleted;
@@ -204,10 +215,12 @@ export default function OwnerAppointmentDetailScreen() {
           {/* Cancelled notice */}
           {isCancelled && (
             <View style={{ backgroundColor: '#FEF2F2', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#FECACA' }}>
-              <Text style={{ color: RED, fontWeight: '700', fontSize: 15, marginBottom: 4 }}>❌ Cita cancelada</Text>
+              <Text style={{ color: RED, fontWeight: '700', fontSize: 15, marginBottom: 4 }}>❌ {isWalkerAppt ? 'Reserva cancelada' : 'Cita cancelada'}</Text>
               <Text style={{ color: '#DC2626', fontSize: 13 }}>
                 {(appointment as any).cancelledBy === 'vet'
                   ? 'El veterinario canceló esta cita.'
+                  : (appointment as any).cancelledBy === 'walker'
+                  ? 'El paseador rechazó/canceló esta reserva.'
                   : 'Cancelaste esta cita.'}
               </Text>
             </View>
@@ -216,8 +229,12 @@ export default function OwnerAppointmentDetailScreen() {
           {/* Completed notice */}
           {isCompleted && (
             <View style={{ backgroundColor: '#F0FDF4', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#BBF7D0' }}>
-              <Text style={{ color: GREEN, fontWeight: '700', fontSize: 15, marginBottom: 4 }}>✅ Consulta completada</Text>
-              <Text style={{ color: '#047857', fontSize: 13 }}>La consulta fue realizada exitosamente.</Text>
+              <Text style={{ color: GREEN, fontWeight: '700', fontSize: 15, marginBottom: 4 }}>
+                {isWalkerAppt ? '✅ Servicio completado' : '✅ Consulta completada'}
+              </Text>
+              <Text style={{ color: '#047857', fontSize: 13 }}>
+                {isWalkerAppt ? 'El paseo/cuidado fue realizado exitosamente.' : 'La consulta fue realizada exitosamente.'}
+              </Text>
             </View>
           )}
 
@@ -281,6 +298,76 @@ export default function OwnerAppointmentDetailScreen() {
                   {openingChat ? <ActivityIndicator size="small" color={PRIMARY} /> : <Text style={{ fontSize: 16 }}>💬</Text>}
                   <Text style={{ color: PRIMARY, fontWeight: '700', fontSize: 14 }}>
                     {openingChat ? 'Abriendo chat...' : 'Enviar mensaje al veterinario'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+
+          {/* ── Paseador / Cuidador ── */}
+          {walker && (
+            <>
+              <Text style={{ fontWeight: '700', color: DARK, fontSize: 15, marginBottom: 10 }}>Paseador / Cuidador</Text>
+              <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: BORDER }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+                  {walker.photoUrl ? (
+                    <Image source={{ uri: walker.photoUrl }} style={{ width: 60, height: 60, borderRadius: 30 }} contentFit="cover" />
+                  ) : (
+                    <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: '#ECFDF5', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 28 }}>🦮</Text>
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontWeight: '700', color: DARK, fontSize: 16 }}>{walker.name}</Text>
+                    <Text style={{ color: GRAY, fontSize: 13 }}>{walker.city}, {walker.region}</Text>
+                  </View>
+                </View>
+
+                {/* Phone */}
+                {walker.phone ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+                    <View>
+                      <Text style={{ color: GRAY, fontSize: 12 }}>Teléfono</Text>
+                      <Text style={{ color: DARK, fontSize: 14, fontWeight: '600' }}>{walker.phone}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={{ backgroundColor: '#ECFDF5', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                      onPress={() => Linking.openURL(`tel:${walker.phone}`)}
+                    >
+                      <Text style={{ fontSize: 16 }}>📞</Text>
+                      <Text style={{ color: GREEN, fontWeight: '700', fontSize: 13 }}>Llamar</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+
+                {/* Fee */}
+                {(appointment as any).type === 'pet_care' ? (
+                  walker.careFee ? (
+                    <View style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+                      <Text style={{ color: GRAY, fontSize: 12 }}>Valor cuidado</Text>
+                      <Text style={{ color: DARK, fontSize: 14, fontWeight: '600' }}>
+                        ${Number(walker.careFee).toLocaleString('es-CL')} CLP/día
+                      </Text>
+                    </View>
+                  ) : null
+                ) : walker.walkFee ? (
+                  <View style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+                    <Text style={{ color: GRAY, fontSize: 12 }}>Valor paseo</Text>
+                    <Text style={{ color: DARK, fontSize: 14, fontWeight: '600' }}>
+                      ${Number(walker.walkFee).toLocaleString('es-CL')} CLP
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Message button */}
+                <TouchableOpacity
+                  style={{ marginTop: 10, backgroundColor: '#EFF6FF', borderRadius: 12, paddingVertical: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, opacity: openingChat ? 0.6 : 1 }}
+                  onPress={openChat}
+                  disabled={openingChat}
+                >
+                  {openingChat ? <ActivityIndicator size="small" color={PRIMARY} /> : <Text style={{ fontSize: 16 }}>💬</Text>}
+                  <Text style={{ color: PRIMARY, fontWeight: '700', fontSize: 14 }}>
+                    {openingChat ? 'Abriendo chat...' : 'Escribir al paseador'}
                   </Text>
                 </TouchableOpacity>
               </View>

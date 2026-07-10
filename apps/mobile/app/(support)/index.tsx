@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
@@ -12,30 +12,40 @@ const PURPLE = '#7C3AED';
 export default function SupportDashboard() {
   const { user, logOut } = useAuth();
   const router = useRouter();
-  const [stats, setStats] = useState({ users: 0, owners: 0, vets: 0, stores: 0, trainers: 0, pendingVets: 0, pendingStores: 0, pendingTrainers: 0 });
+  const [stats, setStats] = useState({ users: 0, owners: 0, vets: 0, stores: 0, trainers: 0, walkers: 0, groomers: 0, pendingVets: 0, pendingStores: 0, pendingTrainers: 0, pendingWalkers: 0, pendingGroomers: 0, pendingReports: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   async function loadStats() {
-    const [usersSnap, vetsSnap, storesSnap, trainersSnap] = await Promise.all([
+    const [usersSnap, vetsSnap, storesSnap, trainersSnap, walkersSnap, groomersSnap, pendingReportsSnap] = await Promise.all([
       getDocs(collection(db, COLLECTIONS.USERS)),
       getDocs(collection(db, COLLECTIONS.VETERINARIANS)),
       getDocs(collection(db, COLLECTIONS.STORES)),
       getDocs(collection(db, COLLECTIONS.TRAINERS)),
+      getDocs(collection(db, COLLECTIONS.WALKERS)),
+      getDocs(collection(db, COLLECTIONS.GROOMERS)),
+      getDocs(query(collection(db, COLLECTIONS.REPORTS), where('status', '==', 'pending'))),
     ]);
     const users = usersSnap.docs.map((d) => d.data());
     const vets = vetsSnap.docs.map((d) => d.data());
     const stores = storesSnap.docs.map((d) => d.data());
     const trainers = trainersSnap.docs.map((d) => d.data());
+    const walkers = walkersSnap.docs.map((d) => d.data());
+    const groomers = groomersSnap.docs.map((d) => d.data());
     setStats({
       users: users.length,
       owners: users.filter((u) => u.role === 'owner').length,
       vets: vets.length,
       stores: stores.length,
       trainers: trainers.length,
+      walkers: walkers.length,
+      groomers: groomers.length,
       pendingVets: vets.filter((v) => v.status === 'pending').length,
       pendingStores: stores.filter((s) => s.status === 'pending').length,
       pendingTrainers: trainers.filter((t) => t.status === 'pending').length,
+      pendingWalkers: walkers.filter((w) => w.status === 'pending').length,
+      pendingGroomers: groomers.filter((g) => g.status === 'pending').length,
+      pendingReports: pendingReportsSnap.docs.length,
     });
   }
 
@@ -54,12 +64,8 @@ export default function SupportDashboard() {
     { label: 'Veterinarios', value: stats.vets, emoji: '🩺', color: '#EFF6FF' },
     { label: 'Tiendas', value: stats.stores, emoji: '🛒', color: '#FFF7ED' },
     { label: 'Adiestradores', value: stats.trainers, emoji: '🐕', color: '#F0FDF4' },
-  ];
-
-  const pendingCards = [
-    { label: 'Vets pendientes', value: stats.pendingVets, emoji: '⏳' },
-    { label: 'Tiendas pendientes', value: stats.pendingStores, emoji: '⏳' },
-    { label: 'Adiest. pendientes', value: stats.pendingTrainers, emoji: '⏳' },
+    { label: 'Paseadores', value: stats.walkers, emoji: '🦮', color: '#FFF7ED' },
+    { label: 'Peluquerías', value: stats.groomers, emoji: '✂️', color: '#FAF5FF' },
   ];
 
   return (
@@ -74,9 +80,24 @@ export default function SupportDashboard() {
 
         <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
           {/* Pending approvals — tappable cards */}
-          {(stats.pendingVets + stats.pendingStores + stats.pendingTrainers) > 0 && (
+          {(stats.pendingVets + stats.pendingStores + stats.pendingTrainers + stats.pendingWalkers + stats.pendingGroomers + stats.pendingReports) > 0 && (
             <View style={{ marginBottom: 20 }}>
               <Text style={{ fontWeight: '700', color: '#374151', fontSize: 15, marginBottom: 10 }}>⚠️ Validaciones pendientes</Text>
+              {stats.pendingReports > 0 && (
+                <TouchableOpacity
+                  onPress={() => router.navigate('/(support)/reports' as any)}
+                  style={{ backgroundColor: '#FEF2F2', borderRadius: 14, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: '#FECACA', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Text style={{ fontSize: 24 }}>🚩</Text>
+                    <View>
+                      <Text style={{ fontWeight: '700', color: '#DC2626', fontSize: 15 }}>{stats.pendingReports}</Text>
+                      <Text style={{ color: '#DC2626', fontSize: 12 }}>Reportes pendientes</Text>
+                    </View>
+                  </View>
+                  <Text style={{ color: '#DC2626', fontSize: 20 }}>›</Text>
+                </TouchableOpacity>
+              )}
               {stats.pendingVets > 0 && (
                 <TouchableOpacity
                   onPress={() => router.navigate('/(support)/vets')}
@@ -108,7 +129,10 @@ export default function SupportDashboard() {
                 </TouchableOpacity>
               )}
               {stats.pendingTrainers > 0 && (
-                <View style={{ backgroundColor: '#F0FDF4', borderRadius: 14, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: '#BBF7D0', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <TouchableOpacity
+                  onPress={() => router.navigate('/(support)/trainers')}
+                  style={{ backgroundColor: '#F0FDF4', borderRadius: 14, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: '#BBF7D0', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                >
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                     <Text style={{ fontSize: 24 }}>🐕</Text>
                     <View>
@@ -116,7 +140,38 @@ export default function SupportDashboard() {
                       <Text style={{ color: '#15803D', fontSize: 12 }}>Adiestradores pendientes</Text>
                     </View>
                   </View>
-                </View>
+                  <Text style={{ color: '#15803D', fontSize: 20 }}>›</Text>
+                </TouchableOpacity>
+              )}
+              {stats.pendingWalkers > 0 && (
+                <TouchableOpacity
+                  onPress={() => router.navigate('/(support)/walkers')}
+                  style={{ backgroundColor: '#FFF7ED', borderRadius: 14, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: '#FED7AA', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Text style={{ fontSize: 24 }}>🦮</Text>
+                    <View>
+                      <Text style={{ fontWeight: '700', color: '#C2410C', fontSize: 15 }}>{stats.pendingWalkers}</Text>
+                      <Text style={{ color: '#C2410C', fontSize: 12 }}>Paseadores pendientes</Text>
+                    </View>
+                  </View>
+                  <Text style={{ color: '#C2410C', fontSize: 20 }}>›</Text>
+                </TouchableOpacity>
+              )}
+              {stats.pendingGroomers > 0 && (
+                <TouchableOpacity
+                  onPress={() => router.navigate('/(support)/groomers')}
+                  style={{ backgroundColor: '#FAF5FF', borderRadius: 14, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: '#E9D5FF', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Text style={{ fontSize: 24 }}>✂️</Text>
+                    <View>
+                      <Text style={{ fontWeight: '700', color: '#7C3AED', fontSize: 15 }}>{stats.pendingGroomers}</Text>
+                      <Text style={{ color: '#7C3AED', fontSize: 12 }}>Peluquerías pendientes</Text>
+                    </View>
+                  </View>
+                  <Text style={{ color: '#7C3AED', fontSize: 20 }}>›</Text>
+                </TouchableOpacity>
               )}
             </View>
           )}

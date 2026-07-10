@@ -3,6 +3,7 @@ import { initializeAuth, getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 import { getDatabase, Database } from 'firebase/database';
+import { getFunctions, Functions } from 'firebase/functions';
 
 // Static dot-notation access required so Metro/Babel can inline values at bundle time.
 // Dynamic process.env[variable] lookups are NOT replaced in Hermes production bundles.
@@ -21,6 +22,7 @@ let auth: Auth;
 let db: Firestore;
 let storage: FirebaseStorage;
 let rtdb: Database | undefined;
+let functionsInstance: Functions;
 
 function initFirebase() {
   if (!app) {
@@ -40,11 +42,12 @@ function initFirebase() {
     }
     db = getFirestore(app);
     storage = getStorage(app);
+    functionsInstance = getFunctions(app);
     const databaseURL = process.env.EXPO_PUBLIC_FIREBASE_DATABASE_URL || process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || '';
     if (databaseURL) rtdb = getDatabase(app, databaseURL);
   }
-  return { app, auth, db, storage, rtdb };
+  return { app, auth, db, storage, rtdb, functions: functionsInstance };
 }
 
 export { initFirebase, firebaseConfig };
-export type { FirebaseApp, Auth, Firestore, FirebaseStorage, Database };
+export type { FirebaseApp, Auth, Firestore, FirebaseStorage, Database, Functions };

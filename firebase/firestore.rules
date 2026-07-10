@@ -25,13 +25,22 @@ service cloud.firestore {
       return !(field in request.resource.data.diff(resource.data).affectedKeys());
     }
 
+    // A professional (vet/walker/grooming/trainer) may only read an owner's
+    // profile if that owner has actually booked with them (see clientLinks,
+    // written client-side at booking time). Without this, any approved
+    // professional could read every owner's PII just by knowing their uid.
+    function isLinkedClient(ownerId) {
+      return exists(/databases/$(database)/documents/clientLinks/$(request.auth.uid + '_' + ownerId));
+    }
+
     // ── Users ──────────────────────────────────────────────────────────────
     match /users/{uid} {
-      allow read: if isSelf(uid) || isSupport() || (isAuth() && getRole() == 'vet');
+      allow read: if isSelf(uid) || isSupport()
+        || (isAuth() && getRole() in ['vet', 'walker', 'grooming', 'trainer'] && isLinkedClient(uid));
       allow create: if isSelf(uid)
         && request.resource.data.uid == uid
-        && request.resource.data.role in ['owner', 'vet', 'store', 'trainer'];
-      allow update: if (isSelf(uid) && fieldUnchanged('role') && fieldUnchanged('uid'))
+        && request.resource.data.role in ['owner', 'vet', 'store', 'trainer', 'walker', 'grooming'];
+      allow update: if (isSelf(uid) && fieldUnchanged('role') && fieldUnchanged('uid') && fieldUnchanged('accountStatus'))
         || isSupport();
       // Hard-deny role escalation even for support via update
       allow delete: if false;
@@ -192,17 +201,35 @@ service cloud.firestore {
     }
 
     // ── Appointments ───────────────────────────────────────────────────────
-    // vetId is the Firestore document ID of the vet profile, not the auth UID.
-    // We resolve ownership via get() on the veterinarians collection.
+    // vetId is the Firestore document ID of the provider profile (vet, trainer or walker),
+    // not the auth UID. We resolve ownership via get() on the matching provider collection.
     function isVetOfAppointment(vetDocId) {
       return vetDocId != null &&
         get(/databases/$(database)/documents/veterinarians/$(vetDocId)).data.userId == request.auth.uid;
+    }
+    function isTrainerOfAppointment(providerDocId) {
+      return providerDocId != null &&
+        exists(/databases/$(database)/documents/trainers/$(providerDocId)) &&
+        get(/databases/$(database)/documents/trainers/$(providerDocId)).data.userId == request.auth.uid;
+    }
+    function isWalkerOfAppointment(providerDocId) {
+      return providerDocId != null &&
+        exists(/databases/$(database)/documents/walkers/$(providerDocId)) &&
+        get(/databases/$(database)/documents/walkers/$(providerDocId)).data.userId == request.auth.uid;
+    }
+    function isGroomerOfAppointment(providerDocId) {
+      return providerDocId != null &&
+        exists(/databases/$(database)/documents/groomers/$(providerDocId)) &&
+        get(/databases/$(database)/documents/groomers/$(providerDocId)).data.userId == request.auth.uid;
     }
 
     match /appointments/{apptId} {
       allow read: if isAuth() && (
         resource.data.ownerId == request.auth.uid ||
         isVetOfAppointment(resource.data.vetId) ||
+        isTrainerOfAppointment(resource.data.vetId) ||
+        isWalkerOfAppointment(resource.data.vetId) ||
+        isGroomerOfAppointment(resource.data.vetId) ||
         isSupport()
       );
       allow create: if isAuth()
@@ -210,6 +237,9 @@ service cloud.firestore {
       allow update: if isAuth() && (
         resource.data.ownerId == request.auth.uid ||
         isVetOfAppointment(resource.data.vetId) ||
+        isTrainerOfAppointment(resource.data.vetId) ||
+        isWalkerOfAppointment(resource.data.vetId) ||
+        isGroomerOfAppointment(resource.data.vetId) ||
         isSupport()
       );
       allow delete: if isAuth() && (
@@ -308,6 +338,44 @@ service cloud.firestore {
       allow create: if isAuth() && request.resource.data.ownerId == request.auth.uid;
       allow update: if isAuth() && (resource.data.ownerId == request.auth.uid || isSupport());
       allow delete: if isAuth() && (resource.data.ownerId == request.auth.uid || isSupport());
+    }
+
+    // ── Content Reports (user-generated content moderation) ────────────────
+    match /reports/{reportId} {
+      allow read: if isSupport();
+      allow create: if isAuth()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.reportedUserId is string
+        && request.resource.data.chatId is string
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.status == 'pending';
+      allow update: if isSupport();
+      allow delete: if false;
+    }
+
+    // ── User Blocks ──────────────────────────────────────────────────────
+    match /blocks/{blockId} {
+      allow read: if isAuth() && resource.data.blockerId == request.auth.uid;
+      allow create: if isAuth()
+        && request.resource.data.blockerId == request.auth.uid
+        && request.resource.data.blockedId is string
+        && request.resource.data.blockedId != request.auth.uid;
+      allow delete: if isAuth() && resource.data.blockerId == request.auth.uid;
+      allow update: if false;
+    }
+
+    // ── Client Links (professional ↔ owner booking relationships) ──────────
+    // Written client-side when an owner books an appointment. Used only to
+    // scope `users/{uid}` read access — see isLinkedClient() above.
+    match /clientLinks/{linkId} {
+      allow read: if isAuth() && resource.data.professionalId == request.auth.uid;
+      allow create: if isAuth()
+        && request.resource.data.ownerId is string
+        && request.resource.data.professionalId is string
+        && (request.auth.uid == request.resource.data.ownerId || request.auth.uid == request.resource.data.professionalId)
+        && linkId == request.resource.data.professionalId + '_' + request.resource.data.ownerId;
+      allow update, delete: if false;
     }
 
     // ── Password Reset Cooldowns (server-side only) ────────────────────────

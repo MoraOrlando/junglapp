@@ -20,12 +20,22 @@ function generateSlots(durationMin: number): string[] {
   return slots;
 }
 
+// `toISOString()` converts to UTC first, which rolls the date over to the next
+// day once local time is past (24 - |UTC offset|) hours — e.g. any time after
+// 20:00 in Chile (UTC-4). Format from local date parts instead.
+function toLocalDateString(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function getNextDays(n: number): string[] {
   const days: string[] = [];
   for (let i = 0; i < n; i++) {
     const d = new Date();
     d.setDate(d.getDate() + i);
-    days.push(d.toISOString().split('T')[0]);
+    days.push(toLocalDateString(d));
   }
   return days;
 }
@@ -34,7 +44,7 @@ export default function VetCalendarScreen() {
   const { user } = useAuth();
   const [vetId, setVetId] = useState<string | null>(null);
   const [availability, setAvailability] = useState<Record<string, string[]>>({});
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(toLocalDateString(new Date()));
   const [consultationFee, setConsultationFee] = useState('');
   const [slotDuration, setSlotDuration] = useState(30);
   const [saving, setSaving] = useState(false);

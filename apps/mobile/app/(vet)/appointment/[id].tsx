@@ -330,9 +330,23 @@ export default function AppointmentDetailScreen() {
                     <Text style={{ fontWeight: '800', color: DARK, fontSize: 18 }}>{pet.name}</Text>
                     <Text style={{ color: GRAY, fontSize: 13 }}>{pet.breed} · {pet.color}</Text>
                     <Text style={{ color: GRAY, fontSize: 12, marginTop: 2 }}>Nacimiento: {pet.birthDate}</Text>
+                    {pet.sex ? <Text style={{ color: GRAY, fontSize: 12 }}>{pet.sex === 'M' ? '♂ Macho' : '♀ Hembra'}</Text> : null}
+                    {pet.weight != null ? <Text style={{ color: GRAY, fontSize: 12 }}>Peso: {pet.weight} kg</Text> : null}
                     {pet.chipNumber ? <Text style={{ color: GRAY, fontSize: 12 }}>Chip: {pet.chipNumber}</Text> : null}
                   </View>
                 </View>
+
+                {/* Alergia declarada por el dueño */}
+                {pet.allergic && (
+                  <View style={{ backgroundColor: '#FEF2F2', borderRadius: 10, padding: 12, borderWidth: 2, borderColor: '#EF4444', marginBottom: 10 }}>
+                    <Text style={{ color: '#DC2626', fontSize: 13, fontWeight: '800', marginBottom: 2 }}>
+                      ⚠️ ALÉRGICO/A — Declarado por el dueño
+                    </Text>
+                    {pet.allergyNotes ? (
+                      <Text style={{ color: '#7F1D1D', fontSize: 13, marginTop: 4 }}>{pet.allergyNotes}</Text>
+                    ) : null}
+                  </View>
+                )}
 
                 {/* Condiciones */}
                 {(pet.medicalRecord as any).conditions?.length > 0 && (

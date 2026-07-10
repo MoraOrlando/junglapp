@@ -17,7 +17,7 @@ const { db } = initFirebase();
 const AMBER = '#D97706';
 
 export default function StoreProfileScreen() {
-  const { user, logOut } = useAuth();
+  const { user, logOut, deleteAccount } = useAuth();
   const [store, setStore] = useState<Store | null>(null);
   const [storeDocId, setStoreDocId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -110,6 +110,15 @@ export default function StoreProfileScreen() {
         <Text style={{ fontSize: 22, fontWeight: '800', color: AMBER, marginTop: 20, marginBottom: 20 }}>
           Mi Tienda 🏪
         </Text>
+
+        {user?.accountStatus === 'under_review' && (
+          <View style={{ backgroundColor: '#FEF3C7', borderRadius: 16, borderWidth: 1, borderColor: '#FDE68A', padding: 14, marginBottom: 16 }}>
+            <Text style={{ color: '#92400E', fontWeight: '700', fontSize: 13 }}>⚠️ Cuenta en revisión</Text>
+            <Text style={{ color: '#92400E', fontSize: 12, marginTop: 2 }}>
+              Un administrador está evaluando un reporte sobre tu cuenta.
+            </Text>
+          </View>
+        )}
 
         {/* Store card */}
         <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 20, marginBottom: 16, alignItems: 'center', borderWidth: 1, borderColor: '#F3F4F6' }}>
@@ -219,9 +228,22 @@ export default function StoreProfileScreen() {
 
         <TouchableOpacity
           onPress={logOut}
-          style={{ borderWidth: 1, borderColor: '#FCA5A5', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 40, backgroundColor: '#FEF2F2' }}
+          style={{ borderWidth: 1, borderColor: '#FCA5A5', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 12, backgroundColor: '#FEE2E2' }}
         >
-          <Text style={{ color: '#EF4444', fontWeight: '700' }}>Cerrar sesión</Text>
+          <Text style={{ color: '#DC2626', fontWeight: '700' }}>Cerrar sesión</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => Alert.alert(
+            'Eliminar cuenta',
+            'Esta acción es irreversible. Se eliminarán todos tus datos permanentemente. ¿Estás seguro?',
+            [
+              { text: 'Cancelar', style: 'cancel' },
+              { text: 'Eliminar', style: 'destructive', onPress: async () => { try { await deleteAccount(); } catch (e: any) { Alert.alert('Error', e.message); } } },
+            ]
+          )}
+          style={{ borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 40, backgroundColor: '#F3F4F6' }}
+        >
+          <Text style={{ color: '#6B7280', fontWeight: '700' }}>Eliminar cuenta</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

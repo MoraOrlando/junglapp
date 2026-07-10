@@ -1,50 +1,78 @@
-import { View, Text, TouchableOpacity, Image, Dimensions } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, Image } from 'react-native';
+import { Redirect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const { height } = Dimensions.get('window');
+const HAS_LAUNCHED_KEY = 'junglapp_has_launched_before';
 
-export default function WelcomeScreen() {
+export default function AuthEntryScreen() {
   const router = useRouter();
+  const [checking, setChecking] = useState(true);
+  const [showWelcome, setShowWelcome] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const seen = await AsyncStorage.getItem(HAS_LAUNCHED_KEY);
+        if (!seen) {
+          setShowWelcome(true);
+          await AsyncStorage.setItem(HAS_LAUNCHED_KEY, 'true');
+        }
+      } catch {
+        // If storage isn't available for some reason, just skip the welcome screen.
+      } finally {
+        setChecking(false);
+      }
+    })();
+  }, []);
+
+  if (checking) {
+    return <View style={{ flex: 1, backgroundColor: '#2D6A4F' }} />;
+  }
+
+  if (!showWelcome) {
+    return <Redirect href="/(auth)/login" />;
+  }
 
   return (
-    <SafeAreaView className="flex-1 bg-primary-500">
-      <View className="flex-1 items-center justify-between px-6 py-10">
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#2D6A4F' }}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 40 }}>
         {/* Header branding */}
-        <View className="items-center mt-10">
+        <View style={{ alignItems: 'center', marginTop: 40 }}>
           <Image
             source={require('../../assets/icon.png')}
-            className="w-28 h-28 rounded-2xl mb-4"
+            style={{ width: 96, height: 96, borderRadius: 24, marginBottom: 16 }}
             resizeMode="contain"
           />
-          <Text className="text-white text-4xl font-bold tracking-wide">JunglApp</Text>
-          <Text className="text-accent text-base mt-2 text-center">
+          <Text style={{ color: 'white', fontSize: 34, fontWeight: '800', letterSpacing: 0.5 }}>JunglApp</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 16, marginTop: 8, textAlign: 'center' }}>
             Conecta con el mundo de tus mascotas
           </Text>
         </View>
 
-        {/* Illustration area */}
-        <View className="items-center">
-          <Text className="text-8xl">🐕🐈</Text>
-          <Text className="text-white/70 text-sm text-center mt-4 max-w-xs">
+        {/* Illustration */}
+        <View style={{ alignItems: 'center' }}>
+          <Text style={{ fontSize: 72 }}>🐕🐈</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, textAlign: 'center', marginTop: 16, maxWidth: 280 }}>
             Veterinarios, tiendas, match de mascotas y mucho más. Todo en un solo lugar.
           </Text>
         </View>
 
         {/* Action buttons */}
-        <View className="w-full gap-4">
+        <View style={{ width: '100%', gap: 16 }}>
           <TouchableOpacity
-            className="bg-white rounded-2xl py-4 items-center shadow-md"
+            style={{ backgroundColor: 'white', borderRadius: 16, paddingVertical: 16, alignItems: 'center' }}
             onPress={() => router.push('/(auth)/login')}
           >
-            <Text className="text-primary-500 text-base font-semibold">Iniciar Sesión</Text>
+            <Text style={{ color: '#2D6A4F', fontSize: 16, fontWeight: '700' }}>Iniciar Sesión</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            className="bg-white/20 border border-white/40 rounded-2xl py-4 items-center"
+            style={{ backgroundColor: 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)', borderRadius: 16, paddingVertical: 16, alignItems: 'center' }}
             onPress={() => router.push('/(auth)/register')}
           >
-            <Text className="text-white text-base font-semibold">Crear Cuenta</Text>
+            <Text style={{ color: 'white', fontSize: 16, fontWeight: '700' }}>Crear Cuenta</Text>
           </TouchableOpacity>
         </View>
       </View>

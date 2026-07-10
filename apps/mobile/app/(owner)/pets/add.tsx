@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   KeyboardAvoidingView, Platform, Alert, Switch,
@@ -10,10 +10,12 @@ import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import YearCalendar from '../../../components/YearCalendar';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import { initFirebase, COLLECTIONS, uploadImages } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+
+const MAX_PETS = 5;
 
 const { db } = initFirebase();
 
@@ -136,6 +138,7 @@ const schema = z.object({
   familyDate: z.string().min(8, 'Fecha de unión requerida'),
   description: z.string().optional(),
   chipNumber: z.string().optional(),
+  instagram: z.string().optional(),
 });
 type FormData = z.infer<typeof schema>;
 
@@ -151,13 +154,34 @@ export default function AddPetScreen() {
   const [loading, setLoading] = useState(false);
   const [photos, setPhotos] = useState<string[]>([]);
   const [lookingForPartner, setLookingForPartner] = useState(false);
+  const [sex, setSex] = useState<'M' | 'F' | ''>('');
+  const [weight, setWeight] = useState('');
+  const [allergic, setAllergic] = useState(false);
+  const [allergyDetail, setAllergyDetail] = useState('');
 
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { species: 'dog' },
   });
 
+  useEffect(() => {
+    if (!user) return;
+    getDocs(query(collection(db, COLLECTIONS.PETS), where('ownerId', '==', user.uid))).then((snap) => {
+      if (snap.size >= MAX_PETS) {
+        Alert.alert('Límite alcanzado', `Puedes registrar hasta ${MAX_PETS} mascotas por cuenta.`, [
+          { text: 'Entendido', onPress: () => router.back() },
+        ]);
+      }
+    }).catch(() => {});
+  }, [user?.uid]);
+
+  const MAX_PHOTOS = 3;
+
   async function pickPhoto() {
+    if (photos.length >= MAX_PHOTOS) {
+      Alert.alert('Límite alcanzado', `Puedes agregar hasta ${MAX_PHOTOS} fotos por mascota.`);
+      return;
+    }
     Alert.alert('Agregar foto', '¿Cómo quieres agregar la foto?', [
       {
         text: 'Cámara',
@@ -165,7 +189,7 @@ export default function AddPetScreen() {
           const { status } = await ImagePicker.requestCameraPermissionsAsync();
           if (status !== 'granted') { Alert.alert('Permiso denegado', 'Necesitamos acceso a tu cámara.'); return; }
           const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
-          if (!result.canceled) setPhotos((p) => [...p, result.assets[0].uri]);
+          if (!result.canceled) setPhotos((p) => [...p, result.assets[0].uri].slice(0, MAX_PHOTOS));
         },
       },
       {
@@ -174,8 +198,11 @@ export default function AddPetScreen() {
           const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: 'images',
             allowsMultipleSelection: true, quality: 0.8,
+            selectionLimit: MAX_PHOTOS - photos.length,
           });
-          if (!result.canceled) setPhotos((p) => [...p, ...result.assets.map((a) => a.uri)]);
+          if (!result.canceled) {
+            setPhotos((p) => [...p, ...result.assets.map((a) => a.uri)].slice(0, MAX_PHOTOS));
+          }
         },
       },
       { text: 'Cancelar', style: 'cancel' },
@@ -186,6 +213,12 @@ export default function AddPetScreen() {
     if (!user) return;
     setLoading(true);
     try {
+      const existing = await getDocs(query(collection(db, COLLECTIONS.PETS), where('ownerId', '==', user.uid)));
+      if (existing.size >= MAX_PETS) {
+        Alert.alert('Límite alcanzado', `Puedes registrar hasta ${MAX_PETS} mascotas por cuenta.`);
+        setLoading(false);
+        return;
+      }
       const photoUrls = await uploadImages(photos);
       await addDoc(collection(db, COLLECTIONS.PETS), {
         ownerId: user.uid,
@@ -199,7 +232,12 @@ export default function AddPetScreen() {
         familyDate: toISO(data.familyDate),
         description: data.description || '',
         chipNumber: data.chipNumber || '',
+        instagram: data.instagram || '',
         lookingForPartner,
+        sex: sex || null,
+        weight: weight ? parseFloat(weight) : null,
+        allergic,
+        allergyNotes: allergic ? allergyDetail : '',
         photos: photoUrls,
         medicalRecord: { vaccinations: [], allergies: [], conditions: [], notes: '', lastUpdated: new Date().toISOString() },
         createdAt: new Date().toISOString(),
@@ -318,6 +356,89 @@ export default function AddPetScreen() {
                   <TextInput style={inputStyle} placeholder="985121234567890" placeholderTextColor="#9CA3AF" keyboardType="number-pad" onChangeText={onChange} value={value} />
                 )}
               />
+            </View>
+
+            {/* Instagram */}
+            <View>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 6 }}>Instagram (opcional)</Text>
+              <Controller
+                control={control}
+                name="instagram"
+                render={({ field: { onChange, value } }) => (
+                  <TextInput
+                    style={inputStyle}
+                    placeholder="@usuario"
+                    placeholderTextColor="#9CA3AF"
+                    autoCapitalize="none"
+                    onChangeText={(t) => onChange(t.replace(/\s/g, ''))}
+                    value={value}
+                  />
+                )}
+              />
+            </View>
+
+            {/* Sex */}
+            <View>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 8 }}>Sexo</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {[{ id: 'M', label: '♂ Macho' }, { id: 'F', label: '♀ Hembra' }].map((s) => (
+                  <TouchableOpacity
+                    key={s.id}
+                    style={{
+                      flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1,
+                      borderColor: sex === s.id ? PRIMARY : BORDER,
+                      backgroundColor: sex === s.id ? PRIMARY : 'white',
+                      alignItems: 'center',
+                    }}
+                    onPress={() => setSex(s.id as 'M' | 'F')}
+                  >
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: sex === s.id ? 'white' : GRAY_TEXT }}>{s.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Weight */}
+            <View>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 6 }}>Peso (kg, opcional)</Text>
+              <TextInput
+                style={inputStyle}
+                placeholder="4.5"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="decimal-pad"
+                value={weight}
+                onChangeText={setWeight}
+              />
+            </View>
+
+            {/* Allergic */}
+            <View style={{ backgroundColor: 'white', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: BORDER }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View>
+                  <Text style={{ fontWeight: '600', color: DARK_TEXT, fontSize: 15 }}>⚠️ Es alérgico/a</Text>
+                  <Text style={{ color: GRAY_TEXT, fontSize: 12, marginTop: 2 }}>El veterinario podrá verlo en la ficha</Text>
+                </View>
+                <Switch
+                  value={allergic}
+                  onValueChange={setAllergic}
+                  trackColor={{ false: '#D1D5DB', true: '#FCA5A5' }}
+                  thumbColor={allergic ? '#EF4444' : '#F3F4F6'}
+                />
+              </View>
+              {allergic && (
+                <TextInput
+                  style={{ marginTop: 12, borderWidth: 1, borderColor: '#FCA5A5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: DARK_TEXT, textAlignVertical: 'top', minHeight: 72, backgroundColor: '#FFF5F5' }}
+                  placeholder="Describe las alergias conocidas..."
+                  placeholderTextColor="#FCA5A5"
+                  multiline
+                  maxLength={120}
+                  value={allergyDetail}
+                  onChangeText={setAllergyDetail}
+                />
+              )}
+              {allergic && (
+                <Text style={{ fontSize: 11, color: '#9CA3AF', textAlign: 'right', marginTop: 4 }}>{allergyDetail.length}/120</Text>
+              )}
             </View>
 
             <View>

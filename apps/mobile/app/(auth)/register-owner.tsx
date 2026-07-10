@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  ScrollView, KeyboardAvoidingView, Platform, Alert
+  ScrollView, KeyboardAvoidingView, Platform, Alert,
+  Modal, FlatList, Keyboard, ActionSheetIOS,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,6 +12,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as Location from 'expo-location';
 import { useAuth } from '../../context/AuthContext';
 import { handleEmailAlreadyInUse } from '@junglapp/firebase';
+import { validateRut, formatRut } from '../../lib/rut';
 
 const REGIONS = [
   'Arica y Parinacota', 'Tarapacá', 'Antofagasta', 'Atacama', 'Coquimbo',
@@ -20,7 +22,7 @@ const REGIONS = [
 
 const schema = z.object({
   name: z.string().min(2, 'Nombre requerido'),
-  rut: z.string().min(8, 'RUT inválido'),
+  rut: z.string().min(8, 'RUT inválido').refine(validateRut, 'RUT inválido (verifica el dígito verificador)'),
   phone: z.string().min(9, 'Teléfono inválido'),
   email: z.string().email('Email inválido'),
   password: z.string().min(6, 'Mínimo 6 caracteres'),
@@ -31,9 +33,8 @@ type FormData = z.infer<typeof schema>;
 
 export default function RegisterOwnerScreen() {
   const router = useRouter();
-  const { signUp, signInWithGoogle, signInWithMicrosoft } = useAuth();
+  const { signUp } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [socialLoading, setSocialLoading] = useState<'google' | 'microsoft' | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [region, setRegion] = useState('Metropolitana');
   const [regionOpen, setRegionOpen] = useState(false);
@@ -44,6 +45,20 @@ export default function RegisterOwnerScreen() {
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
   });
+
+  function openRegionPicker() {
+    Keyboard.dismiss();
+    setTimeout(() => {
+      if (Platform.OS === 'ios') {
+        ActionSheetIOS.showActionSheetWithOptions(
+          { options: [...REGIONS, 'Cancelar'], cancelButtonIndex: REGIONS.length },
+          (buttonIndex) => { if (buttonIndex < REGIONS.length) setRegion(REGIONS[buttonIndex]); }
+        );
+      } else {
+        setRegionOpen(true);
+      }
+    }, 150);
+  }
 
   async function captureLocation() {
     Alert.alert(
@@ -72,18 +87,6 @@ export default function RegisterOwnerScreen() {
         },
       ]
     );
-  }
-
-  async function handleGoogle() {
-    if (!termsAccepted) { Alert.alert('Requerido', 'Debes aceptar los términos de uso para continuar.'); return; }
-    setSocialLoading('google');
-    try { await signInWithGoogle(); } catch (e: any) { Alert.alert('Error', e.message); } finally { setSocialLoading(null); }
-  }
-
-  async function handleMicrosoft() {
-    if (!termsAccepted) { Alert.alert('Requerido', 'Debes aceptar los términos de uso para continuar.'); return; }
-    setSocialLoading('microsoft');
-    try { await signInWithMicrosoft(); } catch (e: any) { Alert.alert('Error', e.message); } finally { setSocialLoading(null); }
   }
 
   async function onSubmit(data: FormData) {
@@ -124,7 +127,7 @@ export default function RegisterOwnerScreen() {
   return (
     <SafeAreaView className="flex-1 bg-background">
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
-        <ScrollView className="px-6">
+        <ScrollView className="px-6" keyboardShouldPersistTaps="handled">
           <TouchableOpacity onPress={() => router.back()} className="mt-4 mb-6">
             <Text className="text-primary-500 text-base">← Volver</Text>
           </TouchableOpacity>
@@ -149,7 +152,7 @@ export default function RegisterOwnerScreen() {
                           style={{ paddingRight: 48 }}
                           placeholder={f.placeholder}
                           secureTextEntry={!showPassword}
-                          onChangeText={onChange}
+                          onChangeText={(t) => onChange(t.replace(/\s/g, ''))}
                           value={value}
                         />
                         <TouchableOpacity
@@ -164,8 +167,12 @@ export default function RegisterOwnerScreen() {
                         className="border border-gray-200 rounded-xl px-4 py-3 bg-white text-base"
                         placeholder={f.placeholder}
                         keyboardType={f.keyboard || 'default'}
-                        autoCapitalize={f.keyboard === 'email-address' ? 'none' : 'words'}
-                        onChangeText={onChange}
+                        autoCapitalize={f.name === 'rut' ? 'characters' : f.keyboard === 'email-address' ? 'none' : 'words'}
+                        onChangeText={
+                          f.name === 'rut' ? (t) => onChange(formatRut(t))
+                          : f.keyboard === 'email-address' ? (t) => onChange(t.replace(/\s/g, ''))
+                          : onChange
+                        }
                         value={value}
                       />
                     )
@@ -182,27 +189,38 @@ export default function RegisterOwnerScreen() {
               <Text className="text-sm font-medium text-gray-700 mb-1">Región</Text>
               <TouchableOpacity
                 className="border border-gray-200 rounded-xl px-4 py-3 bg-white flex-row justify-between items-center"
-                onPress={() => setRegionOpen(!regionOpen)}
+                onPress={openRegionPicker}
               >
                 <Text className="text-base text-gray-800">{region}</Text>
-                <Text className="text-gray-400">{regionOpen ? '▲' : '▼'}</Text>
+                <Text className="text-gray-400">▼</Text>
               </TouchableOpacity>
-              {regionOpen && (
-                <View className="border border-gray-200 rounded-xl mt-1 bg-white max-h-60">
-                  <ScrollView nestedScrollEnabled>
-                    {REGIONS.map((r) => (
+            </View>
+
+            <Modal visible={regionOpen} transparent animationType="slide" onRequestClose={() => setRegionOpen(false)}>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}
+                activeOpacity={1}
+                onPress={() => setRegionOpen(false)}
+              >
+                <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '60%' }}>
+                  <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}>
+                    <Text style={{ fontSize: 16, fontWeight: '700', textAlign: 'center', color: '#1F2937' }}>Selecciona tu región</Text>
+                  </View>
+                  <FlatList
+                    data={REGIONS}
+                    keyExtractor={(r) => r}
+                    renderItem={({ item: r }) => (
                       <TouchableOpacity
-                        key={r}
-                        className={`px-4 py-3 border-b border-gray-50 ${region === r ? 'bg-green-50' : ''}`}
+                        style={{ paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', backgroundColor: region === r ? '#f0fdf4' : '#fff' }}
                         onPress={() => { setRegion(r); setRegionOpen(false); }}
                       >
-                        <Text className={region === r ? 'text-primary-700 font-medium' : 'text-gray-700'}>{r}</Text>
+                        <Text style={{ fontSize: 16, color: region === r ? '#15803d' : '#374151', fontWeight: region === r ? '600' : '400' }}>{r}</Text>
                       </TouchableOpacity>
-                    ))}
-                  </ScrollView>
+                    )}
+                  />
                 </View>
-              )}
-            </View>
+              </TouchableOpacity>
+            </Modal>
 
             {/* City */}
             <View>
@@ -250,37 +268,6 @@ export default function RegisterOwnerScreen() {
               </Text>
             </Text>
           </TouchableOpacity>
-
-          {/* Divider */}
-          <View className="flex-row items-center my-4">
-            <View className="flex-1 h-px bg-gray-200" />
-            <Text className="mx-4 text-gray-400 text-sm">o regístrate con</Text>
-            <View className="flex-1 h-px bg-gray-200" />
-          </View>
-
-          {/* Social buttons */}
-          <View className="gap-3 mb-4">
-            <TouchableOpacity
-              className="flex-row items-center justify-center border border-gray-200 rounded-2xl py-3 bg-white gap-2"
-              onPress={handleGoogle}
-              disabled={socialLoading !== null}
-            >
-              <Text className="text-lg">🔴</Text>
-              <Text className="font-semibold text-gray-700">
-                {socialLoading === 'google' ? 'Conectando...' : 'Continuar con Google'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="flex-row items-center justify-center border border-gray-200 rounded-2xl py-3 bg-white gap-2"
-              onPress={handleMicrosoft}
-              disabled={socialLoading !== null}
-            >
-              <Text className="text-lg">🔷</Text>
-              <Text className="font-semibold text-gray-700">
-                {socialLoading === 'microsoft' ? 'Conectando...' : 'Continuar con Microsoft'}
-              </Text>
-            </TouchableOpacity>
-          </View>
 
           <TouchableOpacity
             className={`bg-primary-500 rounded-2xl py-4 items-center mb-10 ${loading ? 'opacity-70' : ''}`}

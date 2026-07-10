@@ -96,6 +96,34 @@ export default function LostPetDetailScreen() {
     );
   }
 
+  function handleMarkFoundByOwner() {
+    if (!lostPet || !isOwner) return;
+    Alert.alert(
+      '🎉 ¡Qué bueno!',
+      `¿Confirmas que ${(lostPet as any).petName} apareció? Se quitará la publicación de la lista de mascotas perdidas.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Sí, apareció',
+          onPress: async () => {
+            setMarking(true);
+            try {
+              await updateDoc(doc(db, COLLECTIONS.LOST_PETS, id!), {
+                isFound: true,
+                foundAt: new Date().toISOString(),
+              });
+              setLostPet((prev) => prev ? { ...prev, isFound: true } : prev);
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            } finally {
+              setMarking(false);
+            }
+          },
+        },
+      ]
+    );
+  }
+
   if (!lostPet) return (
     <SafeAreaView className="flex-1 bg-background items-center justify-center">
       <Text className="text-gray-400">Cargando...</Text>
@@ -218,11 +246,22 @@ export default function LostPetDetailScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            <View className="bg-orange-50 border border-orange-200 rounded-2xl p-4">
-              <Text className="text-orange-700 font-semibold text-center">Esta es tu publicación</Text>
-              <Text className="text-orange-500 text-xs text-center mt-1">
-                Cuando alguien encuentre a {lp.petName}, recibirás un mensaje en el chat
-              </Text>
+            <View className="gap-3">
+              <View className="bg-orange-50 border border-orange-200 rounded-2xl p-4">
+                <Text className="text-orange-700 font-semibold text-center">Esta es tu publicación</Text>
+                <Text className="text-orange-500 text-xs text-center mt-1">
+                  Cuando alguien encuentre a {lp.petName}, recibirás un mensaje en el chat
+                </Text>
+              </View>
+              <TouchableOpacity
+                className={`bg-primary-500 rounded-2xl py-4 items-center ${marking ? 'opacity-70' : ''}`}
+                onPress={handleMarkFoundByOwner}
+                disabled={marking}
+              >
+                <Text className="text-white font-bold text-base">
+                  {marking ? 'Guardando...' : `🎉 ${lp.petName} apareció — Marcar como encontrada`}
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>

@@ -8,9 +8,30 @@ import { uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 
 export default function ProfileScreen() {
-  const { user, logOut, updateProfile } = useAuth();
+  const { user, logOut, deleteAccount, updateProfile } = useAuth();
   const router = useRouter();
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  async function confirmDeleteAccount() {
+    Alert.alert(
+      'Eliminar cuenta',
+      'Esta acción es irreversible. Se eliminarán todos tus datos permanentemente. ¿Estás seguro?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteAccount();
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            }
+          },
+        },
+      ]
+    );
+  }
 
   async function confirmLogout() {
     // Alert.alert doesn't work on web — use confirm() as fallback
@@ -131,6 +152,14 @@ export default function ProfileScreen() {
 
         {/* Info card */}
         <View className="px-6 -mt-6">
+          {user?.accountStatus === 'under_review' && (
+            <View style={{ backgroundColor: '#FEF3C7', borderRadius: 16, borderWidth: 1, borderColor: '#FDE68A', padding: 14, marginBottom: 12 }}>
+              <Text style={{ color: '#92400E', fontWeight: '700', fontSize: 13 }}>⚠️ Cuenta en revisión</Text>
+              <Text style={{ color: '#92400E', fontSize: 12, marginTop: 2 }}>
+                Un administrador está evaluando un reporte sobre tu cuenta.
+              </Text>
+            </View>
+          )}
           <View className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             {rows.map((r, i) => (
               <View
@@ -150,28 +179,19 @@ export default function ProfileScreen() {
           <View className="mt-4 gap-3">
             <TouchableOpacity
               className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex-row items-center"
+              onPress={() => router.push('/(owner)/addresses' as any)}
+            >
+              <Text className="text-xl mr-3">📍</Text>
+              <Text className="flex-1 text-gray-800 font-medium">Mis direcciones</Text>
+              <Text className="text-gray-300 text-xl">›</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex-row items-center"
               onPress={() => router.push('/(owner)/chat' as any)}
             >
               <Text className="text-xl mr-3">💬</Text>
               <Text className="flex-1 text-gray-800 font-medium">Mis conversaciones</Text>
-              <Text className="text-gray-300 text-xl">›</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex-row items-center"
-              onPress={() => router.push('/(owner)/lost' as any)}
-            >
-              <Text className="text-xl mr-3">🔍</Text>
-              <Text className="flex-1 text-gray-800 font-medium">Mascotas extraviadas</Text>
-              <Text className="text-gray-300 text-xl">›</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex-row items-center"
-              onPress={() => router.push('/(owner)/pets/search-owner' as any)}
-            >
-              <Text className="text-xl mr-3">🔎</Text>
-              <Text className="flex-1 text-gray-800 font-medium">Buscar dueño por correo / RUT</Text>
               <Text className="text-gray-300 text-xl">›</Text>
             </TouchableOpacity>
 
@@ -187,10 +207,18 @@ export default function ProfileScreen() {
 
           {/* Logout */}
           <TouchableOpacity
-            className="mt-6 rounded-2xl py-4 items-center border border-red-200 bg-red-50"
+            className="mt-6 rounded-2xl py-4 items-center border border-red-300 bg-red-100"
             onPress={confirmLogout}
           >
-            <Text className="text-red-500 font-semibold">Cerrar sesión</Text>
+            <Text className="text-red-600 font-semibold">Cerrar sesión</Text>
+          </TouchableOpacity>
+
+          {/* Delete account */}
+          <TouchableOpacity
+            className="mt-3 rounded-2xl py-4 items-center border border-gray-200 bg-gray-50"
+            onPress={confirmDeleteAccount}
+          >
+            <Text className="text-gray-500 font-semibold">Eliminar cuenta</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

@@ -80,7 +80,7 @@ export default function ChangePasswordScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24 }}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24 }} keyboardShouldPersistTaps="handled">
           {/* Header */}
           <View style={{ alignItems: 'center', marginTop: 40, marginBottom: 32 }}>
             <View style={{ backgroundColor: '#FEF9C3', borderRadius: 40, width: 80, height: 80, alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
@@ -106,7 +106,7 @@ export default function ChangePasswordScreen() {
                 placeholderTextColor="#9CA3AF"
                 secureTextEntry={!showNew}
                 value={newPassword}
-                onChangeText={setNewPassword}
+                onChangeText={(t) => setNewPassword(t.replace(/\s/g, ''))}
                 autoCapitalize="none"
               />
               <TouchableOpacity onPress={() => setShowNew(!showNew)} style={{ paddingHorizontal: 14 }}>
@@ -131,7 +131,7 @@ export default function ChangePasswordScreen() {
                 placeholderTextColor="#9CA3AF"
                 secureTextEntry={!showConfirm}
                 value={confirmPassword}
-                onChangeText={setConfirmPassword}
+                onChangeText={(t) => setConfirmPassword(t.replace(/\s/g, ''))}
                 autoCapitalize="none"
               />
               <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)} style={{ paddingHorizontal: 14 }}>

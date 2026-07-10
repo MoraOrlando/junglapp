@@ -8,6 +8,12 @@ import type { User } from '@junglapp/types';
 const { db } = initFirebase();
 const PURPLE = '#7C3AED';
 
+const ACCOUNT_STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
+  active: { bg: '#ECFDF5', text: '#059669', label: 'Activo' },
+  under_review: { bg: '#FFFBEB', text: '#D97706', label: 'En revisión' },
+  blocked: { bg: '#FEF2F2', text: '#EF4444', label: 'Bloqueado' },
+};
+
 type TabType = 'users' | 'providers';
 
 interface Provider { id: string; name: string; email: string; type: string; status: string; address?: string; }
@@ -38,6 +44,23 @@ export default function UsersScreen() {
   const lowerSearch = search.toLowerCase();
   const filteredUsers = users.filter((u) => !search || u.name?.toLowerCase().includes(lowerSearch) || u.email?.toLowerCase().includes(lowerSearch));
   const filteredProviders = providers.filter((p) => !search || p.name?.toLowerCase().includes(lowerSearch) || p.email?.toLowerCase().includes(lowerSearch));
+
+  async function toggleUserActive(u: User) {
+    const isBlocked = u.accountStatus === 'blocked';
+    const action = isBlocked ? 'reactivar' : 'bloquear';
+    Alert.alert('Confirmar', `¿Deseas ${action} la cuenta de "${u.name}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Confirmar',
+        style: isBlocked ? 'default' : 'destructive',
+        onPress: async () => {
+          const newStatus = isBlocked ? 'active' : 'blocked';
+          await updateDoc(doc(db, COLLECTIONS.USERS, u.uid), { accountStatus: newStatus });
+          setUsers((prev) => prev.map((x) => x.uid === u.uid ? { ...x, accountStatus: newStatus } : x));
+        },
+      },
+    ]);
+  }
 
   async function toggleProviderActive(p: Provider) {
     const isActive = p.status !== 'inactive';
@@ -123,15 +146,35 @@ export default function UsersScreen() {
         ) : (
           <>
             <Text style={{ color: '#9CA3AF', fontSize: 12, marginBottom: 8 }}>{filteredUsers.length} usuario(s) encontrado(s)</Text>
-            {filteredUsers.map((u) => (
-              <View key={u.uid} style={{ backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#F3F4F6' }}>
-                <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15 }}>{u.name}</Text>
-                <Text style={{ color: '#9CA3AF', fontSize: 12 }}>{u.email}</Text>
-                <View style={{ backgroundColor: '#EEF2FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', marginTop: 6 }}>
-                  <Text style={{ color: PURPLE, fontSize: 11, fontWeight: '600' }}>{u.role}</Text>
+            {filteredUsers.map((u) => {
+              const accountStatus = u.accountStatus || 'active';
+              const isBlocked = accountStatus === 'blocked';
+              const sc = ACCOUNT_STATUS_COLORS[accountStatus] || ACCOUNT_STATUS_COLORS.active;
+              return (
+                <View key={u.uid} style={{ backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#F3F4F6', opacity: isBlocked ? 0.65 : 1 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15 }}>{u.name}</Text>
+                      <Text style={{ color: '#9CA3AF', fontSize: 12 }}>{u.email}</Text>
+                      <View style={{ backgroundColor: '#EEF2FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', marginTop: 6 }}>
+                        <Text style={{ color: PURPLE, fontSize: 11, fontWeight: '600' }}>{u.role}</Text>
+                      </View>
+                    </View>
+                    <View style={{ backgroundColor: sc.bg, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                      <Text style={{ color: sc.text, fontSize: 11, fontWeight: '600' }}>{sc.label}</Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => toggleUserActive(u)}
+                    style={{ marginTop: 10, borderRadius: 10, paddingVertical: 8, alignItems: 'center', backgroundColor: isBlocked ? '#ECFDF5' : '#FEF2F2' }}
+                  >
+                    <Text style={{ fontWeight: '700', fontSize: 13, color: isBlocked ? '#059669' : '#EF4444' }}>
+                      {isBlocked ? '🟢 Reactivar cuenta' : '🔴 Bloquear cuenta'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </>
         )}
         <View style={{ height: 40 }} />

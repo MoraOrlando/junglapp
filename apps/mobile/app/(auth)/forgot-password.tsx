@@ -50,7 +50,7 @@ export default function ForgotPasswordScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24 }}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24 }} keyboardShouldPersistTaps="handled">
           <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16, marginBottom: 32 }}>
             <Text style={{ color: '#16a34a', fontSize: 16 }}>← Volver</Text>
           </TouchableOpacity>
@@ -103,7 +103,7 @@ export default function ForgotPasswordScreen() {
                 autoCapitalize="none"
                 autoComplete="email"
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(t) => setEmail(t.replace(/\s/g, ''))}
                 onSubmitEditing={handleReset}
               />
 

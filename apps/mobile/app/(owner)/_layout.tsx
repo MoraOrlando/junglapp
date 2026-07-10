@@ -144,14 +144,17 @@ export default function OwnerLayout() {
         }}
       />
       {/* Hidden routes */}
-      <Tabs.Screen name="profile"   options={{ href: null }} />
-      <Tabs.Screen name="pets"      options={{ href: null }} />
-      <Tabs.Screen name="lost"      options={{ href: null }} />
-      <Tabs.Screen name="vets"      options={{ href: null }} />
-      <Tabs.Screen name="store"     options={{ href: null }} />
-      <Tabs.Screen name="trainers"  options={{ href: null }} />
-      <Tabs.Screen name="litter"      options={{ href: null }} />
+      <Tabs.Screen name="profile"    options={{ href: null }} />
+      <Tabs.Screen name="pets"       options={{ href: null }} />
+      <Tabs.Screen name="lost"       options={{ href: null }} />
+      <Tabs.Screen name="vets"       options={{ href: null }} />
+      <Tabs.Screen name="store"      options={{ href: null }} />
+      <Tabs.Screen name="trainers"   options={{ href: null }} />
+      <Tabs.Screen name="litter"     options={{ href: null }} />
       <Tabs.Screen name="appointment" options={{ href: null }} />
+      <Tabs.Screen name="addresses"  options={{ href: null }} />
+      <Tabs.Screen name="groomers"   options={{ href: null }} />
+      <Tabs.Screen name="walkers"    options={{ href: null }} />
     </Tabs>
   );
 }

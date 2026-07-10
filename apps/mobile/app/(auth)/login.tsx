@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity,
+  View, Text, TextInput, TouchableOpacity, Image,
   KeyboardAvoidingView, Platform, ScrollView, Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -43,9 +43,8 @@ const inputStyle = {
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { signIn, signInWithGoogle, signInWithMicrosoft } = useAuth();
+  const { signIn, logOut } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [socialLoading, setSocialLoading] = useState<'google' | 'microsoft' | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricType, setBiometricType] = useState('Biométrico');
@@ -124,45 +123,60 @@ export default function LoginScreen() {
           { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY }
         );
       }
-      // Verificar si debe cambiar contraseña
+      // Verificar si la cuenta fue bloqueada por soporte
       if (firebaseUser?.uid) {
         const userDoc = await getDoc(doc(db, COLLECTIONS.USERS, firebaseUser.uid));
+        if (userDoc.data()?.accountStatus === 'blocked') {
+          await logOut();
+          Alert.alert(
+            'Cuenta suspendida',
+            'Tu cuenta fue desactivada por incumplir las normas de la comunidad. Si crees que es un error, contáctanos.'
+          );
+          return;
+        }
+        // Verificar si debe cambiar contraseña
         if (userDoc.data()?.mustChangePassword) {
           router.replace('/(auth)/change-password');
           return;
         }
       }
     } catch (e: any) {
-      const msg = e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password'
-        ? 'Correo o contraseña incorrectos'
-        : e.message || 'Error al iniciar sesión';
-      Alert.alert('Error', msg);
+      // Firebase Auth intentionally returns the same code for "wrong password"
+      // and "no account with this email" (as of firebase-js-sdk ~9.15+), to
+      // prevent apps from being used to enumerate which emails are registered.
+      // Don't try to tell these apart — offer a generic message plus a way
+      // to register, without revealing which case actually happened.
+      if (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found') {
+        Alert.alert(
+          'No pudimos iniciar sesión',
+          'Revisa tu correo y contraseña. Si aún no tienes una cuenta, puedes crear una ahora.',
+          [
+            { text: 'Reintentar', style: 'cancel' },
+            { text: '¿No tienes cuenta? Regístrate', onPress: () => router.push('/(auth)/register' as any) },
+          ]
+        );
+      } else {
+        Alert.alert('Error', e.message || 'Error al iniciar sesión');
+      }
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleGoogle() {
-    setSocialLoading('google');
-    try { await signInWithGoogle(); } catch (e: any) { Alert.alert('Error', e.message); } finally { setSocialLoading(null); }
-  }
-
-  async function handleMicrosoft() {
-    setSocialLoading('microsoft');
-    try { await signInWithMicrosoft(); } catch (e: any) { Alert.alert('Error', e.message); } finally { setSocialLoading(null); }
-  }
-
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24 }}>
-          <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16, marginBottom: 32 }}>
-            <Text style={{ color: '#16a34a', fontSize: 16 }}>← Volver</Text>
-          </TouchableOpacity>
-
-          <View style={{ marginBottom: 32 }}>
-            <Text style={{ fontSize: 28, fontWeight: '700', color: '#15803d' }}>Bienvenido de vuelta 🐾</Text>
-            <Text style={{ color: '#6B7280', marginTop: 8 }}>Inicia sesión en tu cuenta</Text>
+        <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24 }} keyboardShouldPersistTaps="handled">
+          <View style={{ alignItems: 'center', marginTop: 32, marginBottom: 24 }}>
+            <Image
+              source={require('../../assets/icon.png')}
+              style={{ width: 80, height: 80, borderRadius: 20, marginBottom: 12 }}
+              resizeMode="contain"
+            />
+            <Text style={{ fontSize: 24, fontWeight: '800', color: '#15803d', textAlign: 'center' }}>
+              Welcome to the JunglApp 🐾
+            </Text>
+            <Text style={{ color: '#6B7280', marginTop: 6, textAlign: 'center' }}>Inicia sesión en tu cuenta</Text>
           </View>
 
           {/* Biometric quick login — only shows in native builds */}
@@ -208,7 +222,7 @@ export default function LoginScreen() {
                     autoCapitalize="none"
                     autoComplete="email"
                     textContentType="emailAddress"
-                    onChangeText={onChange}
+                    onChangeText={(t) => onChange(t.replace(/\s/g, ''))}
                     value={value}
                   />
                 )}
@@ -236,7 +250,7 @@ export default function LoginScreen() {
                       secureTextEntry={!showPassword}
                       autoComplete="password"
                       textContentType="password"
-                      onChangeText={onChange}
+                      onChangeText={(t) => onChange(t.replace(/\s/g, ''))}
                       value={value}
                     />
                     <TouchableOpacity
@@ -265,45 +279,6 @@ export default function LoginScreen() {
             >
               <Text style={{ color: 'white', fontWeight: '600', fontSize: 16 }}>
                 {loading ? 'Ingresando...' : 'Iniciar Sesión'}
-              </Text>
-            </TouchableOpacity>
-
-            {/* Divider */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 8 }}>
-              <View style={{ flex: 1, height: 1, backgroundColor: '#E5E7EB' }} />
-              <Text style={{ marginHorizontal: 16, color: '#9CA3AF', fontSize: 13 }}>o continuar con</Text>
-              <View style={{ flex: 1, height: 1, backgroundColor: '#E5E7EB' }} />
-            </View>
-
-            {/* Google */}
-            <TouchableOpacity
-              style={{
-                flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 16,
-                paddingVertical: 14, backgroundColor: 'white', gap: 8,
-              }}
-              onPress={handleGoogle}
-              disabled={socialLoading !== null}
-            >
-              <Text style={{ fontSize: 18 }}>🔴</Text>
-              <Text style={{ fontWeight: '600', color: '#374151' }}>
-                {socialLoading === 'google' ? 'Conectando...' : 'Google'}
-              </Text>
-            </TouchableOpacity>
-
-            {/* Microsoft */}
-            <TouchableOpacity
-              style={{
-                flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 16,
-                paddingVertical: 14, backgroundColor: 'white', gap: 8,
-              }}
-              onPress={handleMicrosoft}
-              disabled={socialLoading !== null}
-            >
-              <Text style={{ fontSize: 18 }}>🔷</Text>
-              <Text style={{ fontWeight: '600', color: '#374151' }}>
-                {socialLoading === 'microsoft' ? 'Conectando...' : 'Microsoft'}
               </Text>
             </TouchableOpacity>
           </View>

@@ -48,6 +48,13 @@ export default function VetLayout() {
         }}
       />
       <Tabs.Screen
+        name="chat/index"
+        options={{
+          title: 'Mensajes',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="💬" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Mi Perfil',

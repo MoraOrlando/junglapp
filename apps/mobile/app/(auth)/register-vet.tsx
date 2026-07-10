@@ -11,34 +11,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { initFirebase, uploadImage, COLLECTIONS } from '@junglapp/firebase';
+import { validateRut, formatRut } from '../../lib/rut';
 
 const { auth, db } = initFirebase();
 const GREEN = '#2D6A4F';
 const INDIGO = '#4F46E5';
-
-// ── Chilean RUT validation ───────────────────────────────────────────────────
-function validateRut(rut: string): boolean {
-  const clean = rut.replace(/[.\-]/g, '').toUpperCase();
-  if (clean.length < 2) return false;
-  const body = clean.slice(0, -1);
-  const dv = clean.slice(-1);
-  if (!/^\d+$/.test(body)) return false;
-  const digits = body.split('').reverse().map(Number);
-  const multipliers = [2, 3, 4, 5, 6, 7];
-  const sum = digits.reduce((acc, d, i) => acc + d * multipliers[i % multipliers.length], 0);
-  const remainder = 11 - (sum % 11);
-  const expected = remainder === 11 ? '0' : remainder === 10 ? 'K' : String(remainder);
-  return dv === expected;
-}
-
-function formatRut(value: string): string {
-  const clean = value.replace(/[^0-9kK]/g, '').toUpperCase();
-  if (clean.length <= 1) return clean;
-  const body = clean.slice(0, -1);
-  const dv = clean.slice(-1);
-  const formatted = body.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  return `${formatted}-${dv}`;
-}
 
 // ── Chile regions & communes ─────────────────────────────────────────────────
 const REGIONS: Record<string, string[]> = {
@@ -157,9 +134,12 @@ export default function RegisterVetScreen() {
       const cred = await createUserWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
       fbUser = cred.user;
 
+      // Credential is mandatory for professional verification — a failed upload should
+      // still block registration. Profile photo is a nice-to-have, so its failure
+      // shouldn't leave the account half-created.
       const [credentialUrl, photoUrl] = await Promise.all([
         uploadImage(credentialUri),
-        profileUri ? uploadImage(profileUri) : Promise.resolve(null),
+        profileUri ? uploadImage(profileUri).catch(() => null) : Promise.resolve(null),
       ]);
 
       await setDoc(doc(db, COLLECTIONS.USERS, fbUser.uid), {
@@ -230,7 +210,7 @@ export default function RegisterVetScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView style={{ paddingHorizontal: 24 }} showsVerticalScrollIndicator={false}>
+        <ScrollView style={{ paddingHorizontal: 24 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16, marginBottom: 20 }}>
             <Text style={{ color: GREEN, fontSize: 16 }}>← Volver</Text>
           </TouchableOpacity>
@@ -275,8 +255,8 @@ export default function RegisterVetScreen() {
 
           {field('Nº Registro Profesional', licenseNumber, setLicenseNumber, { placeholder: 'CVCh 12345' })}
           {field('Teléfono', phone, setPhone, { placeholder: '+56 9 1234 5678', keyboard: 'phone-pad' })}
-          {field('Correo electrónico', email, setEmail, { placeholder: 'dr@ejemplo.com', keyboard: 'email-address' })}
-          {field('Contraseña', password, setPassword, { placeholder: '••••••••', secure: true })}
+          {field('Correo electrónico', email, (v) => setEmail(v.replace(/\s/g, '')), { placeholder: 'dr@ejemplo.com', keyboard: 'email-address' })}
+          {field('Contraseña', password, (v) => setPassword(v.replace(/\s/g, '')), { placeholder: '••••••••', secure: true })}
           {field('Dirección de consulta', address, setAddress, { placeholder: 'Av. Veterinaria 123' })}
 
           {/* Region picker */}

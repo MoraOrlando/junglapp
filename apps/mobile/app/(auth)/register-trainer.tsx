@@ -10,6 +10,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { doc, setDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS, uploadImage, handleEmailAlreadyInUse } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
+import { validateRut, formatRut } from '../../lib/rut';
 
 const { db } = initFirebase();
 const INDIGO = '#4F46E5';
@@ -50,6 +51,10 @@ export default function RegisterTrainerScreen() {
   async function onSubmit() {
     if (!form.name || !form.rut || !form.email || !form.password || !form.phone || !form.address) {
       Alert.alert('Campos requeridos', 'Completa todos los campos obligatorios.');
+      return;
+    }
+    if (!validateRut(form.rut)) {
+      Alert.alert('RUT inválido', 'Ingresa un RUT chileno válido (ej: 12.345.678-9)');
       return;
     }
     if (!idImage) {
@@ -127,7 +132,7 @@ export default function RegisterTrainerScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView style={{ paddingHorizontal: 24 }} showsVerticalScrollIndicator={false}>
+        <ScrollView style={{ paddingHorizontal: 24 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16, marginBottom: 20 }}>
             <Text style={{ color: INDIGO, fontSize: 16 }}>← Volver</Text>
           </TouchableOpacity>
@@ -150,11 +155,15 @@ export default function RegisterTrainerScreen() {
                   }}
                   placeholder={f.placeholder}
                   keyboardType={f.keyboard || 'default'}
-                  autoCapitalize={f.keyboard === 'email-address' ? 'none' : 'words'}
+                  autoCapitalize={f.key === 'rut' ? 'characters' : f.keyboard === 'email-address' ? 'none' : 'words'}
                   secureTextEntry={f.secure}
                   multiline={f.multiline}
                   value={form[f.key]}
-                  onChangeText={(v) => setField(f.key, v)}
+                  onChangeText={(v) => setField(f.key,
+                    f.key === 'rut' ? formatRut(v)
+                    : (f.key === 'email' || f.secure) ? v.replace(/\s/g, '')
+                    : v
+                  )}
                 />
               </View>
             ))}

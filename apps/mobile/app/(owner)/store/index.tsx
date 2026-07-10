@@ -7,17 +7,10 @@ import { collection, getDocs, where, query } from 'firebase/firestore';
 import * as Location from 'expo-location';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import type { Store } from '@junglapp/types';
+import { distanceKm } from '../../../lib/distance';
 
 const { db } = initFirebase();
 const GREEN = '#2D6A4F';
-
-function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number) {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
 
 interface StoreWithDistance extends Store {
   distanceKm?: number;

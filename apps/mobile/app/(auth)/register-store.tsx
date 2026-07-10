@@ -15,6 +15,7 @@ import { initFirebase, handleEmailAlreadyInUse, uploadImage } from '@junglapp/fi
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import * as Location from 'expo-location';
+import { validateRut, formatRut } from '../../lib/rut';
 
 const { db } = initFirebase();
 
@@ -65,7 +66,7 @@ function PickerModal({ visible, title, options, onSelect, onClose }: {
 
 const schema = z.object({
   name: z.string().min(2, 'Nombre requerido'),
-  rut: z.string().min(8, 'RUT inválido'),
+  rut: z.string().min(8, 'RUT inválido').refine(validateRut, 'RUT inválido (verifica el dígito verificador)'),
   storeName: z.string().min(2, 'Nombre de tienda requerido'),
   storeDescription: z.string().min(10, 'Descripción requerida'),
   phone: z.string().min(9, 'Teléfono inválido'),
@@ -148,7 +149,9 @@ export default function RegisterStoreScreen() {
 
       const uid = firebaseUser?.uid;
       if (uid) {
-        const photoUrl = photoUri ? await uploadImage(photoUri) : null;
+        // Photo is a nice-to-have — don't let an upload failure leave the account
+        // half-created (auth user + no store profile doc).
+        const photoUrl = photoUri ? await uploadImage(photoUri).catch(() => null) : null;
         await setDoc(doc(db, 'stores', uid), {
           userId: uid,
           rut: data.rut,
@@ -201,7 +204,7 @@ export default function RegisterStoreScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView style={{ paddingHorizontal: 24 }} showsVerticalScrollIndicator={false}>
+        <ScrollView style={{ paddingHorizontal: 24 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16, marginBottom: 24 }}>
             <Text style={{ color: AMBER, fontSize: 16 }}>← Volver</Text>
           </TouchableOpacity>
@@ -251,11 +254,15 @@ export default function RegisterStoreScreen() {
                       }}
                       placeholder={f.placeholder}
                       keyboardType={f.keyboard || 'default'}
-                      autoCapitalize={f.keyboard === 'email-address' ? 'none' : 'words'}
+                      autoCapitalize={f.name === 'rut' ? 'characters' : f.keyboard === 'email-address' ? 'none' : 'words'}
                       secureTextEntry={f.secure}
                       multiline={f.multiline}
                       numberOfLines={f.multiline ? 3 : 1}
-                      onChangeText={onChange}
+                      onChangeText={(t) => onChange(
+                        f.name === 'rut' ? formatRut(t)
+                        : f.keyboard === 'email-address' || f.secure ? t.replace(/\s/g, '')
+                        : t
+                      )}
                       value={value}
                     />
                   )}
