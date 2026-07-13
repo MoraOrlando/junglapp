@@ -15,7 +15,7 @@
     "web": "cd apps/web && npm run dev",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "postinstall": "patch-package"
+    "postinstall": "node node_modules/patch-package/index.js"
   },
   "dependencies": {
     "patch-package": "^8.0.1"
