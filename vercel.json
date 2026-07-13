@@ -1,6 +1,6 @@
 {
   "buildCommand": "cd apps/web && npx next build",
-  "outputDirectory": "apps/web/.next",
-  "installCommand": "npm install",
+  "outputDirectory": "apps/web/out",
+  "installCommand": "npm install --include=dev",
   "framework": "nextjs"
 }
