@@ -17,8 +17,10 @@
     "ios": "expo run:ios",
     "postinstall": "patch-package"
   },
+  "dependencies": {
+    "patch-package": "^8.0.1"
+  },
   "devDependencies": {
-    "patch-package": "^8.0.1",
     "react-native": "0.76.9",
     "turbo": "^2.0.0",
     "typescript": "^5.4.0"
