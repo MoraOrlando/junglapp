@@ -1,4 +1,10 @@
 {
+  "hosting": {
+    "public": "apps/web/out",
+    "cleanUrls": true,
+    "trailingSlash": false,
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+  },
   "functions": {
     "source": "functions",
     "runtime": "nodejs20"
