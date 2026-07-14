@@ -192,8 +192,10 @@ service cloud.firestore {
     // ── Products ───────────────────────────────────────────────────────────
     match /products/{productId} {
       allow read: if isAuth();
-      allow create: if isAuth()
-        && request.resource.data.userId == request.auth.uid;
+      allow create: if isAuth() && (
+        request.resource.data.userId == request.auth.uid
+        || isSupport()
+      );
       allow update, delete: if isAuth() && (
         resource.data.userId == request.auth.uid
         || isSupport()
