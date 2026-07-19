@@ -26,15 +26,20 @@ export default function OwnerPortalPage() {
   useEffect(() => {
     if (!user) return;
     async function load() {
+      // Fetched independently: an error in one query (e.g. a missing Firestore
+      // index for appointments) must not blank out the other's results.
       try {
-        const [petsSnap, aptsSnap] = await Promise.all([
-          getDocs(query(collection(db, COLLECTIONS.PETS), where('ownerId', '==', user!.uid))),
-          getDocs(query(collection(db, COLLECTIONS.APPOINTMENTS), where('ownerId', '==', user!.uid), where('status', '!=', 'cancelled'))),
-        ]);
+        const petsSnap = await getDocs(query(collection(db, COLLECTIONS.PETS), where('ownerId', '==', user!.uid)));
         setPets(petsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)));
+      } catch {}
+      try {
+        // Filtering by status !== 'cancelled' in Firestore needs a composite
+        // index; filter client-side instead, matching the mobile app.
+        const aptsSnap = await getDocs(query(collection(db, COLLECTIONS.APPOINTMENTS), where('ownerId', '==', user!.uid)));
         setAppointments(
           aptsSnap.docs
             .map((d) => ({ id: d.id, ...d.data() } as Appointment))
+            .filter((a) => a.status !== 'cancelled')
             .sort((a, b) => (b.date > a.date ? 1 : -1))
             .slice(0, 5)
         );
