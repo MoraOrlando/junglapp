@@ -66,7 +66,7 @@ export default function StorePortalPage() {
           <span className="text-sm text-white/80">{user.name || user.email}</span>
           <button
             onClick={() => logOut().then(() => router.replace('/acceso'))}
-            className="text-sm bg-white/20 hover:bg-white/30 px-4 py-1.5 rounded-full transition"
+            className="text-sm bg-white/20 hover:bg-white/30 px-4 py-1.5 rounded-full transition active:scale-[0.97]"
           >
             Cerrar sesión
           </button>

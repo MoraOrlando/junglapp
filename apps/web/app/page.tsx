@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import IPhoneMockup from '../components/IPhoneMockup';
+import StaggerReveal from '../components/StaggerReveal';
 
 export default function LandingPage() {
   return (
@@ -17,7 +18,7 @@ export default function LandingPage() {
             </Link>
             <Link
               href="https://apps.apple.com/cl/app/junglapp/id6780333739"
-              className="bg-primary-500 text-white text-sm font-semibold px-5 py-2 rounded-full hover:bg-primary-600 transition"
+              className="bg-primary-500 text-white text-sm font-semibold px-5 py-2 rounded-full hover:bg-primary-600 transition active:scale-[0.97]"
               target="_blank"
             >
               Descargar
@@ -43,13 +44,13 @@ export default function LandingPage() {
               <Link
                 href="https://apps.apple.com/cl/app/junglapp/id6780333739"
                 target="_blank"
-                className="bg-white text-primary-700 font-bold px-8 py-4 rounded-2xl text-base hover:bg-gray-50 transition flex items-center gap-2"
+                className="bg-white text-primary-700 font-bold px-8 py-4 rounded-2xl text-base hover:bg-gray-50 transition active:scale-[0.97] flex items-center gap-2"
               >
                 🍎 Descargar en App Store
               </Link>
               <Link
                 href="/acceso"
-                className="border-2 border-white text-white font-semibold px-8 py-4 rounded-2xl text-base hover:bg-white/10 transition"
+                className="border-2 border-white text-white font-semibold px-8 py-4 rounded-2xl text-base hover:bg-white/10 transition active:scale-[0.97]"
               >
                 Acceder como empresa →
               </Link>
@@ -68,7 +69,7 @@ export default function LandingPage() {
             <h2 className="text-3xl font-bold text-gray-900">Todo lo que tu mascota necesita</h2>
             <p className="text-gray-500 mt-2 text-lg">Una plataforma completa para dueños responsables</p>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <StaggerReveal className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
               { icon: '🩺', title: 'Veterinarios', desc: 'Agenda citas y mantén el historial médico de tu mascota al día.' },
               { icon: '🛒', title: 'Tiendas', desc: 'Compra alimentos, accesorios y productos especializados.' },
@@ -83,7 +84,7 @@ export default function LandingPage() {
                 <p className="text-gray-500 text-sm leading-relaxed">{f.desc}</p>
               </div>
             ))}
-          </div>
+          </StaggerReveal>
         </div>
       </section>
 
@@ -96,7 +97,7 @@ export default function LandingPage() {
           </p>
           <Link
             href="/acceso"
-            className="inline-block bg-white text-primary-700 font-bold px-8 py-4 rounded-2xl hover:bg-gray-50 transition"
+            className="inline-block bg-white text-primary-700 font-bold px-8 py-4 rounded-2xl hover:bg-gray-50 transition active:scale-[0.97]"
           >
             Acceder a mi cuenta →
           </Link>
@@ -109,7 +110,7 @@ export default function LandingPage() {
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold text-gray-900">¿Cómo funciona?</h2>
           </div>
-          <div className="grid md:grid-cols-3 gap-8">
+          <StaggerReveal className="grid md:grid-cols-3 gap-8">
             {[
               { step: '01', title: 'Descarga la app', desc: 'Disponible gratis en App Store para iPhone.' },
               { step: '02', title: 'Crea tu perfil', desc: 'Registra tu cuenta y agrega a tus mascotas.' },
@@ -123,7 +124,7 @@ export default function LandingPage() {
                 </div>
               </div>
             ))}
-          </div>
+          </StaggerReveal>
         </div>
       </section>
 

@@ -35,7 +35,7 @@ export default function StoresPage() {
         <h1 className="text-3xl font-bold text-gray-800">Tiendas 🏪</h1>
         <button
           onClick={() => router.push('/dashboard/stores/import')}
-          className="bg-amber-50 border border-amber-200 text-amber-800 font-semibold px-4 py-2 rounded-xl hover:bg-amber-100 transition text-sm"
+          className="bg-amber-50 border border-amber-200 text-amber-800 font-semibold px-4 py-2 rounded-xl hover:bg-amber-100 transition active:scale-[0.97] text-sm"
         >
           📊 Importar productos Excel
         </button>
@@ -47,7 +47,7 @@ export default function StoresPage() {
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition ${
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition active:scale-[0.97] ${
               filter === f ? 'bg-primary-500 text-white' : 'bg-white border border-gray-200 text-gray-600'
             }`}
           >

@@ -25,6 +25,14 @@ module.exports = {
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
       },
+      // keep in sync with the inline cubic-beziers used in
+      // components/IPhoneMockup.tsx (dot indicator: in-out-strong; confirm
+      // pulse: out-strong), components/StaggerReveal.tsx (out-strong), and
+      // dashboard/stores/import/page.tsx (progress bar: out-strong)
+      transitionTimingFunction: {
+        'out-strong': 'cubic-bezier(0.23, 1, 0.32, 1)',
+        'in-out-strong': 'cubic-bezier(0.77, 0, 0.175, 1)',
+      },
     },
   },
   plugins: [],

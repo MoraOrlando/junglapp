@@ -102,7 +102,7 @@ const screens = [
               <div key={t} style={{ background: i === 2 ? '#DCFCE7' : '#fff', border: `1px solid ${i === 2 ? '#16A34A' : '#E2E8F0'}`, borderRadius: 8, padding: '5px 10px', fontSize: 11, fontWeight: 600, color: i === 2 ? '#16A34A' : '#374151' }}>{t}</div>
             ))}
           </div>
-          <div style={{ background: '#16A34A', borderRadius: 14, padding: '12px', textAlign: 'center' }}>
+          <div className="confirm-pulse-btn" style={{ background: '#16A34A', borderRadius: 14, padding: '12px', textAlign: 'center' }}>
             <p style={{ color: '#fff', fontWeight: 700, fontSize: 13 }}>Confirmar cita</p>
           </div>
         </div>
@@ -147,8 +147,23 @@ export default function IPhoneMockup() {
   const [current, setCurrent] = useState(0);
   const [animating, setAnimating] = useState(false);
   const [direction, setDirection] = useState<'in' | 'out'>('in');
+  const [reducedMotion, setReducedMotion] = useState(false);
 
   useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setReducedMotion(mq.matches);
+    const onChange = () => setReducedMotion(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  useEffect(() => {
+    if (reducedMotion) {
+      const interval = setInterval(() => {
+        setCurrent((prev) => (prev + 1) % screens.length);
+      }, 3000);
+      return () => clearInterval(interval);
+    }
     const interval = setInterval(() => {
       setDirection('out');
       setAnimating(true);
@@ -159,20 +174,22 @@ export default function IPhoneMockup() {
       }, 350);
     }, 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [reducedMotion]);
 
-  const slideStyle: React.CSSProperties = {
-    position: 'absolute',
-    inset: 0,
-    transition: 'transform 350ms cubic-bezier(0.4,0,0.2,1), opacity 350ms ease',
-    transform: animating && direction === 'out'
-      ? 'translateX(-100%)'
-      : animating && direction === 'in'
-      ? 'translateX(100%)'
-      : 'translateX(0)',
-    opacity: animating ? 0 : 1,
-    overflow: 'hidden',
-  };
+  const slideStyle: React.CSSProperties = reducedMotion
+    ? { position: 'absolute', inset: 0, overflow: 'hidden' }
+    : {
+        position: 'absolute',
+        inset: 0,
+        transition: 'transform 350ms cubic-bezier(0.4,0,0.2,1), opacity 350ms ease',
+        transform: animating && direction === 'out'
+          ? 'translateX(-100%)'
+          : animating && direction === 'in'
+          ? 'translateX(100%)'
+          : 'translateX(0)',
+        opacity: animating ? 0 : 1,
+        overflow: 'hidden',
+      };
 
   return (
     <div style={{ position: 'relative', width: 260, height: 530 }}>
@@ -220,11 +237,13 @@ export default function IPhoneMockup() {
             key={i}
             onClick={() => setCurrent(i)}
             style={{
-              width: i === current ? 18 : 6, height: 6,
+              width: 6, height: 6,
               borderRadius: 3,
               background: i === current ? '#fff' : 'rgba(255,255,255,0.4)',
               border: 'none', cursor: 'pointer', padding: 0,
-              transition: 'all 300ms ease',
+              transformOrigin: 'left center',
+              transform: i === current ? 'scaleX(3)' : 'scaleX(1)',
+              transition: 'transform 200ms cubic-bezier(0.77, 0, 0.175, 1), background-color 200ms ease',
             }}
           />
         ))}

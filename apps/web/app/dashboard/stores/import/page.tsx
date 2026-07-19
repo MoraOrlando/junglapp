@@ -157,7 +157,7 @@ export default function ImportProductsPage() {
         </p>
         <button
           onClick={downloadTemplate}
-          className="bg-amber-50 border border-amber-200 text-amber-800 font-semibold px-5 py-2.5 rounded-xl hover:bg-amber-100 transition text-sm"
+          className="bg-amber-50 border border-amber-200 text-amber-800 font-semibold px-5 py-2.5 rounded-xl hover:bg-amber-100 transition active:scale-[0.97] text-sm"
         >
           📥 Descargar plantilla Excel
         </button>
@@ -195,7 +195,7 @@ export default function ImportProductsPage() {
         />
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="bg-gray-800 text-white font-semibold px-5 py-2.5 rounded-xl hover:bg-gray-700 transition text-sm"
+          className="bg-gray-800 text-white font-semibold px-5 py-2.5 rounded-xl hover:bg-gray-700 transition active:scale-[0.97] text-sm"
         >
           📂 Elegir archivo .xlsx
         </button>
@@ -270,10 +270,15 @@ export default function ImportProductsPage() {
                 <span>Importando...</span>
                 <span className="font-bold text-amber-600">{progress}%</span>
               </div>
-              <div className="w-full bg-amber-50 rounded-full h-2">
+              <div className="w-full bg-amber-50 rounded-full h-2 overflow-hidden">
                 <div
-                  className="bg-amber-500 h-2 rounded-full transition-all"
-                  style={{ width: `${progress}%` }}
+                  className="bg-amber-500 h-2 rounded-full"
+                  style={{
+                    width: '100%',
+                    transformOrigin: 'left center',
+                    transform: `scaleX(${progress / 100})`,
+                    transition: 'transform 200ms cubic-bezier(0.23, 1, 0.32, 1)',
+                  }}
                 />
               </div>
               <p className="text-xs text-gray-400">
@@ -284,7 +289,7 @@ export default function ImportProductsPage() {
             <button
               onClick={startImport}
               disabled={!selectedStoreId}
-              className="bg-green-700 text-white font-bold px-6 py-3 rounded-xl hover:bg-green-800 transition disabled:opacity-40 disabled:cursor-not-allowed"
+              className="bg-green-700 text-white font-bold px-6 py-3 rounded-xl hover:bg-green-800 transition active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed"
             >
               🚀 Importar {validCount} producto{validCount !== 1 ? 's' : ''}
             </button>
@@ -302,13 +307,13 @@ export default function ImportProductsPage() {
           <div className="flex gap-3 justify-center mt-4">
             <button
               onClick={() => { setRows([]); setDone(false); setProgress(0); }}
-              className="border border-green-300 text-green-700 px-4 py-2 rounded-xl text-sm font-medium hover:bg-green-100 transition"
+              className="border border-green-300 text-green-700 px-4 py-2 rounded-xl text-sm font-medium hover:bg-green-100 transition active:scale-[0.97]"
             >
               Importar otro archivo
             </button>
             <button
               onClick={() => router.push('/dashboard/stores')}
-              className="bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-green-800 transition"
+              className="bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-green-800 transition active:scale-[0.97]"
             >
               Ver tiendas
             </button>

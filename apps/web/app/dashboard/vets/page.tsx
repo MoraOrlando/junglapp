@@ -37,7 +37,7 @@ export default function VetsPage() {
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition ${
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition active:scale-[0.97] ${
               filter === f ? 'bg-primary-500 text-white' : 'bg-white border border-gray-200 text-gray-600'
             }`}
           >

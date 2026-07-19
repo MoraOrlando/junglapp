@@ -7,3 +7,21 @@ body {
   font-family: 'Inter', system-ui, sans-serif;
   background-color: #F8FFF4;
 }
+
+/* IPhoneMockup booking screen: one-shot tap pulse on the confirm button,
+   plays automatically each time this screen remounts as the active slide. */
+@keyframes confirmPulse {
+  0% { transform: scale(1); }
+  40% { transform: scale(0.96); }
+  100% { transform: scale(1); }
+}
+
+.confirm-pulse-btn {
+  animation: confirmPulse 600ms cubic-bezier(0.23, 1, 0.32, 1) 400ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confirm-pulse-btn {
+    animation: none;
+  }
+}

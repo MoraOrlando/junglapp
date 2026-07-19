@@ -72,7 +72,7 @@ export default function SoporteLoginPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl py-3 transition disabled:opacity-70"
+            className="w-full bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl py-3 transition active:scale-[0.97] disabled:opacity-70"
           >
             {submitting ? 'Ingresando...' : 'Iniciar Sesión'}
           </button>

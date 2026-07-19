@@ -58,7 +58,7 @@ export default function OwnerPortalPage() {
           <span className="text-sm text-white/80">Hola, {user.name || user.email}</span>
           <button
             onClick={() => logOut().then(() => router.replace('/acceso'))}
-            className="text-sm bg-white/20 hover:bg-white/30 px-4 py-1.5 rounded-full transition"
+            className="text-sm bg-white/20 hover:bg-white/30 px-4 py-1.5 rounded-full transition active:scale-[0.97]"
           >
             Cerrar sesión
           </button>
@@ -154,7 +154,7 @@ export default function OwnerPortalPage() {
             href="https://apps.apple.com/cl/app/junglapp/id6780333739"
             target="_blank"
             rel="noreferrer"
-            className="inline-block bg-white text-primary-700 font-bold px-6 py-3 rounded-xl hover:bg-gray-50 transition"
+            className="inline-block bg-white text-primary-700 font-bold px-6 py-3 rounded-xl hover:bg-gray-50 transition active:scale-[0.97]"
           >
             🍎 Descargar en App Store
           </a>
