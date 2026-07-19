@@ -13,7 +13,8 @@ JunglApp ("la Aplicación") respeta tu privacidad. Esta política describe qué 
 - **Datos de mascotas**: nombre, raza, registros médicos y vacunas que tú registras.
 - **Credenciales de acceso**: si activas el ingreso biométrico, tus credenciales se almacenan cifradas únicamente en tu dispositivo.
 - **Lugares y reseñas**: nombre, categoría, ubicación, foto y descripción de parques y restaurantes pet-friendly que tú u otros usuarios agregan, y las reseñas/calificaciones asociadas.
-- **Datos de uso (analítica)**: eventos anónimos sobre qué funciones usas (por ejemplo, categorías que visitas en "Cerca de ti", citas agendadas) mediante Firebase Analytics, para entender cómo se usa la Aplicación y mejorarla. No se usan para publicidad ni se vinculan a identificadores publicitarios.
+- **Datos de uso (analítica)**: eventos anónimos sobre qué funciones usas (por ejemplo, categorías que visitas en "Cerca de ti", citas agendadas) mediante Firebase Analytics, para entender cómo se usa la Aplicación y mejorarla.
+- **Identificador de publicidad (Advertising ID)**: en dispositivos Android, la Aplicación puede acceder a tu identificador de publicidad (AAID) a través de Firebase Analytics, con fines de analítica de uso y prevención de fraude.
 
 ## 2. Cómo usamos tus datos
 
