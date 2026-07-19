@@ -102,6 +102,36 @@ function inDateRange(iso: string | undefined, start: string, end: string) {
   return d >= start && d <= end;
 }
 
+// Two-note chime synthesized with the Web Audio API — no sound file to ship.
+// Browsers block audio before any user interaction on the page, but by the
+// time an order can arrive the store has already logged in and clicked
+// around, so this reliably has permission to play.
+function playOrderChime() {
+  try {
+    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+    const ctx = new AudioContextCtor();
+    const now = ctx.currentTime;
+    [
+      { start: 0, freq: 880 },
+      { start: 0.15, freq: 1174.66 },
+    ].forEach(({ start, freq }) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, now + start);
+      gain.gain.linearRampToValueAtTime(0.3, now + start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + start + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + start);
+      osc.stop(now + start + 0.35);
+    });
+  } catch {
+    // Web Audio unsupported/blocked — a missed chime shouldn't break anything else.
+  }
+}
+
 function StatCard({ label, value, icon, color }: { label: string; value: string | number; icon: string; color: string }) {
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
@@ -312,17 +342,11 @@ export default function StorePortalPage() {
   }, [activeChatId]);
 
   async function loadStoreData(sid: string) {
-    const [productsSnap, ordersSnap, posSalesSnap] = await Promise.all([
+    const [productsSnap, posSalesSnap] = await Promise.all([
       getDocs(query(collection(db, COLLECTIONS.PRODUCTS), where('storeId', '==', sid))),
-      getDocs(query(collection(db, COLLECTIONS.ORDERS), where('storeId', '==', sid))),
       getDocs(query(collection(db, COLLECTIONS.POS_SALES), where('storeId', '==', sid))),
     ]);
     setProducts(productsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Product)));
-    setOrders(
-      ordersSnap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as Order))
-        .sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1))
-    );
     setPosSales(
       posSalesSnap.docs
         .map((d) => ({ id: d.id, ...d.data() } as PosSale))
@@ -348,6 +372,26 @@ export default function StorePortalPage() {
     }
     load();
   }, [user]);
+
+  // Live orders feed — plays a chime when a brand-new order shows up while the
+  // portal is open, so the store notices without staring at the screen.
+  useEffect(() => {
+    if (!storeId) return;
+    let isFirstSnapshot = true;
+    const q = query(collection(db, COLLECTIONS.ORDERS), where('storeId', '==', storeId));
+    const unsub = onSnapshot(q, (snap) => {
+      if (!isFirstSnapshot && snap.docChanges().some((change) => change.type === 'added')) {
+        playOrderChime();
+      }
+      isFirstSnapshot = false;
+      setOrders(
+        snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as Order))
+          .sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1))
+      );
+    });
+    return () => unsub();
+  }, [storeId]);
 
   async function setOrderStatus(order: Order, status: string) {
     setUpdatingOrderId(order.id);
