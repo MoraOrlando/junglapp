@@ -375,6 +375,19 @@ service cloud.firestore {
       allow delete: if isSupport();
     }
 
+    // In-store (physical) POS sales, recorded from the web store portal.
+    // Deliberately separate from /orders (no buyer, no shipping, no status
+    // flow) — immutable once created, only the owning store can read/create.
+    match /posSales/{saleId} {
+      allow read: if isAuth() && (
+        get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.userId == request.auth.uid
+        || isSupport()
+      );
+      allow create: if isAuth()
+        && get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.userId == request.auth.uid;
+      allow update, delete: if isSupport();
+    }
+
     // ── Litters (camadas disponibles) ──────────────────────────────────────
     match /litters/{litterId} {
       allow read: if isAuth();

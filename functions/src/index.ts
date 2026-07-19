@@ -227,6 +227,39 @@ export const onAppointmentUpdated = functions.firestore
     }
   });
 
+// Descuenta stock cuando la tienda confirma un pedido — no al crearlo, para
+// no tocar inventario por pedidos que terminan siendo rechazados.
+export const onOrderConfirmed = functions.firestore
+  .document('orders/{orderId}')
+  .onUpdate(async (change) => {
+    const before = change.before.data();
+    const after = change.after.data();
+    if (before.status === after.status || after.status !== 'confirmed') return;
+
+    const items: { productId?: string; quantity?: number }[] = after.products || [];
+    const now = new Date().toISOString();
+
+    await Promise.all(
+      items.map(async (item) => {
+        if (!item.productId || !item.quantity) return;
+        const productRef = admin.firestore().collection('products').doc(item.productId);
+        try {
+          await admin.firestore().runTransaction(async (tx) => {
+            const snap = await tx.get(productRef);
+            if (!snap.exists) return;
+            const currentStock = snap.data()?.stock ?? 0;
+            tx.update(productRef, {
+              stock: Math.max(0, currentStock - (item.quantity as number)),
+              lastSoldAt: now,
+            });
+          });
+        } catch {
+          // A single missing/racing product shouldn't fail the rest of the order.
+        }
+      })
+    );
+  });
+
 // Notifica al destinatario cuando llega un mensaje de chat
 export const onChatMessageCreated = functions.database
   .ref('messages/{chatId}/{messageId}')
