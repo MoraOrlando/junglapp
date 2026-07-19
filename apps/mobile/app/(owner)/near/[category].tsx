@@ -3,14 +3,15 @@ import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndic
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { getDocs } from 'firebase/firestore';
 import * as Location from 'expo-location';
-import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
+import { COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import { distanceKm, hasUpcomingAvailability } from '../../../lib/distance';
+import { regionScopedQuery } from '../../../lib/nearbyQuery';
+import { ownerFilterRegionKey } from '../../../lib/locationKey';
+import { logNearCategoryViewed, logNearResultOpened } from '../../../lib/analytics';
 import type { Veterinarian, Store } from '@junglapp/types';
-
-const { db } = initFirebase();
 
 type Category = 'vet' | 'veterinaria' | 'urgencias' | 'walker' | 'store' | 'groomer' | 'trainer';
 
@@ -64,13 +65,15 @@ export default function NearCategoryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  async function detectOwnerLocation(): Promise<{ city: string | null; region: string | null; coords: { lat: number; lng: number } | null }> {
+  async function detectOwnerLocation(): Promise<{ city: string | null; region: string | null; coords: { lat: number; lng: number } | null; filterRegionKey: string | null }> {
     const addresses: any[] = (user as any)?.addresses ?? [];
     const selectedId = (user as any)?.selectedAddressId;
     const selectedAddr = addresses.find((a) => a.id === selectedId) ?? addresses[0];
     let city = selectedAddr?.city ?? null;
     let region = selectedAddr?.region ?? null;
     let coords: { lat: number; lng: number } | null = null;
+
+    const filterRegionKey = ownerFilterRegionKey(user);
 
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -87,7 +90,7 @@ export default function NearCategoryScreen() {
 
     if (!city) { city = user?.city ?? null; }
     if (!region) { region = user?.region ?? null; }
-    return { city, region, coords };
+    return { city, region, coords, filterRegionKey };
   }
 
   function matchesLocation(itemCity: string, itemRegion: string | undefined, city: string | null, region: string | null) {
@@ -112,24 +115,30 @@ export default function NearCategoryScreen() {
 
   async function loadData() {
     if (!user) return;
-    const { city, region, coords } = await detectOwnerLocation();
+    const { city, region, coords, filterRegionKey } = await detectOwnerLocation();
 
     let list: NearItem[] = [];
 
     if (cat === 'vet' || cat === 'veterinaria' || cat === 'urgencias') {
-      const snap = await getDocs(query(collection(db, COLLECTIONS.VETERINARIANS), where('status', 'in', ['approved', 'pending'])));
+      const snap = await getDocs(regionScopedQuery(COLLECTIONS.VETERINARIANS, filterRegionKey));
       list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as Veterinarian))
         .filter((v) => {
           const statusOk = (v as any).status === 'approved' || isRecent(v);
           if (!statusOk || !matchesLocation((v as any).city ?? '', (v as any).region, city, region)) return false;
-          const isClinic = !!v.is24_7 || (v.clinicServices?.length ?? 0) > 0;
+          // isClinic must be an explicit choice, not inferred from is24_7 — a
+          // solo vet offering 24/7 urgent care isn't necessarily a clinic.
+          // Legacy docs without the field set fall back to clinicServices only.
+          const isClinic = v.isClinic ?? ((v.clinicServices?.length ?? 0) > 0);
           if (cat === 'vet') return !isClinic;
           if (cat === 'veterinaria') return isClinic;
           return v.is24_7 === true; // urgencias
         })
         .map((v) => {
-          const isClinic = !!v.is24_7 || (v.clinicServices?.length ?? 0) > 0;
+          // isClinic must be an explicit choice, not inferred from is24_7 — a
+          // solo vet offering 24/7 urgent care isn't necessarily a clinic.
+          // Legacy docs without the field set fall back to clinicServices only.
+          const isClinic = v.isClinic ?? ((v.clinicServices?.length ?? 0) > 0);
           return {
             id: v.id,
             kind: (isClinic ? 'veterinaria' : 'vet') as 'vet' | 'veterinaria',
@@ -149,7 +158,7 @@ export default function NearCategoryScreen() {
           };
         });
     } else if (cat === 'store') {
-      const snap = await getDocs(query(collection(db, COLLECTIONS.STORES), where('status', 'in', ['approved', 'pending'])));
+      const snap = await getDocs(regionScopedQuery(COLLECTIONS.STORES, filterRegionKey));
       list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as Store))
         .filter((s) => {
@@ -168,7 +177,7 @@ export default function NearCategoryScreen() {
           location: (s as any).location,
         }));
     } else if (cat === 'groomer') {
-      const snap = await getDocs(query(collection(db, COLLECTIONS.GROOMERS), where('status', 'in', ['approved', 'pending'])));
+      const snap = await getDocs(regionScopedQuery(COLLECTIONS.GROOMERS, filterRegionKey));
       list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as any))
         .filter((g) => (g.status === 'approved' || isRecent(g)) && matchesLocation(g.city ?? '', g.region, city, region))
@@ -186,7 +195,7 @@ export default function NearCategoryScreen() {
           location: g.location,
         }));
     } else if (cat === 'walker') {
-      const snap = await getDocs(query(collection(db, COLLECTIONS.WALKERS), where('status', 'in', ['approved', 'pending'])));
+      const snap = await getDocs(regionScopedQuery(COLLECTIONS.WALKERS, filterRegionKey));
       list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as any))
         .filter((w) => (w.status === 'approved' || isRecent(w)) && matchesLocation(w.city ?? '', w.region, city, region))
@@ -204,7 +213,7 @@ export default function NearCategoryScreen() {
           location: w.location,
         }));
     } else if (cat === 'trainer') {
-      const snap = await getDocs(query(collection(db, COLLECTIONS.TRAINERS), where('status', 'in', ['approved', 'pending'])));
+      const snap = await getDocs(regionScopedQuery(COLLECTIONS.TRAINERS, filterRegionKey));
       list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as any))
         .filter((t) => (t.status === 'approved' || isRecent(t)) && matchesLocation(t.city ?? '', t.region, city, region))
@@ -248,7 +257,11 @@ export default function NearCategoryScreen() {
     }
   }
 
-  useFocusEffect(useCallback(() => { setLoading(true); loadData().catch(() => {}).finally(() => setLoading(false)); }, [user?.uid, cat]));
+  useFocusEffect(useCallback(() => {
+    logNearCategoryViewed(cat);
+    setLoading(true);
+    loadData().catch(() => {}).finally(() => setLoading(false));
+  }, [user?.uid, cat]));
 
   async function onRefresh() {
     setRefreshing(true);
@@ -291,7 +304,15 @@ export default function NearCategoryScreen() {
                 return (
                   <TouchableOpacity
                     key={`${it.kind}-${it.id}`}
-                    onPress={() => router.push(it.route as any)}
+                    onPress={() => {
+                      logNearResultOpened(it.kind);
+                      // vets/store/walkers/groomers/trainers live in their own
+                      // hidden tab stacks, not this one — router.back() from
+                      // there has nothing to pop to and falls through to the
+                      // Inicio tab. Pass an explicit return path instead.
+                      const backTo = encodeURIComponent(`/(owner)/near/${cat}`);
+                      router.push(`${it.route}?backTo=${backTo}` as any);
+                    }}
                     style={{
                       backgroundColor: '#FFFFFF',
                       borderRadius: 20,

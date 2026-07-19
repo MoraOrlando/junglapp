@@ -1,0 +1,94 @@
+diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/src/main/kotlin/expo/modules/plugin/AutolinkigCommandBuilder.kt b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/src/main/kotlin/expo/modules/plugin/AutolinkigCommandBuilder.kt
+index 2064ca4..b98864c 100644
+--- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/src/main/kotlin/expo/modules/plugin/AutolinkigCommandBuilder.kt
++++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/src/main/kotlin/expo/modules/plugin/AutolinkigCommandBuilder.kt
+@@ -4,11 +4,16 @@ package expo.modules.plugin
+  * Builder for creating command to run using `expo-modules-autolinking`.
+  */
+ class AutolinkingCommandBuilder {
++  // Android Studio's Gradle daemon doesn't inherit the shell PATH on Mac (Homebrew's
++  // node isn't found via a bare "node" lookup, unlike a plain terminal/CLI Gradle run).
++  private val nodeBinary: String = listOf("/opt/homebrew/bin/node", "/usr/local/bin/node")
++    .firstOrNull { java.io.File(it).exists() } ?: "node"
++
+   /**
+    * Command for finding and running `expo-modules-autolinking`.
+    */
+   private val baseCommand = listOf(
+-    "node",
++    nodeBinary,
+     "--no-warnings",
+     "--eval",
+     "require('expo/bin/autolinking')",
+diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsExtension.kt b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsExtension.kt
+index 4255d95..bfd3ef4 100644
+--- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsExtension.kt
++++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsExtension.kt
+@@ -19,6 +19,11 @@ open class ExpoAutolinkingSettingsExtension(
+    */
+   var projectRoot: File = settings.rootDir
+ 
++  // Android Studio's Gradle daemon doesn't inherit the shell PATH on Mac (Homebrew's
++  // node isn't found via a bare "node" lookup, unlike a plain terminal/CLI Gradle run).
++  private val resolvedNodeBinary: String = listOf("/opt/homebrew/bin/node", "/usr/local/bin/node")
++    .firstOrNull { File(it).exists() } ?: "node"
++
+   /**
+    * Command that should be provided to `react-native` to resolve the configuration.
+    */
+@@ -57,7 +62,7 @@ open class ExpoAutolinkingSettingsExtension(
+     File(
+       settings.providers.exec { env ->
+         env.workingDir(projectRoot)
+-        env.commandLine("node", "--print", "require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] })")
++        env.commandLine(resolvedNodeBinary, "--print", "require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] })")
+       }.standardOutput.asText.get().trim(),
+     ).parentFile
+   }
+@@ -69,7 +74,7 @@ open class ExpoAutolinkingSettingsExtension(
+     File(
+       settings.providers.exec { env ->
+         env.workingDir(projectRoot)
+-        env.commandLine("node", "--print", "require.resolve('react-native/package.json')")
++        env.commandLine(resolvedNodeBinary, "--print", "require.resolve('react-native/package.json')")
+       }.standardOutput.asText.get().trim(),
+     ).parentFile
+   }
+diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsPlugin.kt b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsPlugin.kt
+index 99ccc9f..a197082 100644
+--- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsPlugin.kt
++++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsPlugin.kt
+@@ -33,10 +33,14 @@ open class ExpoAutolinkingSettingsPlugin : Plugin<Settings> {
+   }
+ 
+   private fun getExpoGradlePluginsFile(settings: Settings): File {
++    // Android Studio's Gradle daemon doesn't inherit the shell PATH on Mac (Homebrew's
++    // node isn't found via a bare "node" lookup, unlike a plain terminal/CLI Gradle run).
++    val resolvedNodeBinary = listOf("/opt/homebrew/bin/node", "/usr/local/bin/node")
++      .firstOrNull { File(it).exists() } ?: "node"
+     val expoModulesAutolinkingPath =
+       settings.providers.exec { env ->
+         env.workingDir(settings.rootDir)
+-        env.commandLine("node", "--print", "require.resolve('expo-modules-autolinking/package.json', { paths: [require.resolve('expo/package.json')] })")
++        env.commandLine(resolvedNodeBinary, "--print", "require.resolve('expo-modules-autolinking/package.json', { paths: [require.resolve('expo/package.json')] })")
+       }.standardOutput.asText.get().trim()
+ 
+     val expoAutolinkingDir = File(expoModulesAutolinkingPath).parentFile
+diff --git a/node_modules/expo-modules-autolinking/scripts/android/autolinking_implementation.gradle b/node_modules/expo-modules-autolinking/scripts/android/autolinking_implementation.gradle
+index 27f1fe9..c4e1b41 100644
+--- a/node_modules/expo-modules-autolinking/scripts/android/autolinking_implementation.gradle
++++ b/node_modules/expo-modules-autolinking/scripts/android/autolinking_implementation.gradle
+@@ -181,8 +181,12 @@ class ExpoAutolinkingManager {
+   }
+ 
+   static private String[] convertOptionsToCommandArgs(String command, Map options) {
++    // Android Studio's Gradle daemon doesn't inherit the shell PATH on Mac
++    // (Homebrew's node isn't found via a bare "node" lookup, unlike a plain
++    // terminal/CLI Gradle run) — resolve an absolute path first.
++    String nodeBinary = ['/opt/homebrew/bin/node', '/usr/local/bin/node'].find { new File(it).exists() } ?: 'node'
+     String[] args = [
+-      'node',
++      nodeBinary,
+       '--no-warnings',
+       '--eval',
+       'require(\'expo/bin/autolinking\')',

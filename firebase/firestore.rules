@@ -143,6 +143,38 @@ service cloud.firestore {
       allow update, delete: if isAuth() && resource.data.ownerId == request.auth.uid;
     }
 
+    // ── Places (community-added parks/restaurants in "Entretención") ────────
+    match /places/{placeId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.category in ['park', 'restaurant']
+        && request.resource.data.location is map
+        && request.resource.data.rating == 0
+        && request.resource.data.reviewCount == 0;
+      allow update: if isAuth() && (
+        (resource.data.createdBy == request.auth.uid
+          && fieldUnchanged('rating')
+          && fieldUnchanged('reviewCount'))
+        || isSupport()
+      );
+      allow delete: if isSupport() || resource.data.createdBy == request.auth.uid;
+    }
+
+    match /placeReviews/{reviewId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && request.resource.data.comment is string
+        && request.resource.data.comment.size() <= 2000;
+      allow update, delete: if isAuth() && resource.data.ownerId == request.auth.uid;
+    }
+
     // ── Medical Visits ─────────────────────────────────────────────────────
     match /medicalVisits/{visitId} {
       // Vets need full read access to patient history for any pet in their care.
@@ -323,10 +355,19 @@ service cloud.firestore {
       );
       allow create: if isAuth()
         && request.resource.data.buyerId == request.auth.uid;
-      // Store owner can only update status + updatedAt
+      // Store owner can only update status + updatedAt. The buyer may only
+      // cancel their own order (while it's still pending or while an
+      // alternative is being negotiated) or accept an offered alternative —
+      // never touch products/total/shippingAddress after the store has seen it.
       allow update: if isAuth() && (
         (get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.userId == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
+        || (resource.data.buyerId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'cancelledBy'])
+          && (
+            (resource.data.status == 'pending' && request.resource.data.status == 'cancelled') ||
+            (resource.data.status == 'alternative_offered' && request.resource.data.status in ['cancelled', 'confirmed'])
+          ))
         || isSupport()
       );
       allow delete: if isSupport();
@@ -346,7 +387,7 @@ service cloud.firestore {
       allow create: if isAuth()
         && request.resource.data.reporterId == request.auth.uid
         && request.resource.data.reportedUserId is string
-        && request.resource.data.chatId is string
+        && (request.resource.data.chatId is string || request.resource.data.placeId is string)
         && request.resource.data.reason is string
         && request.resource.data.reason.size() > 0
         && request.resource.data.status == 'pending';

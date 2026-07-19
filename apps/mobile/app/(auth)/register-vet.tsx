@@ -12,6 +12,9 @@ import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { initFirebase, uploadImage, COLLECTIONS } from '@junglapp/firebase';
 import { validateRut, formatRut } from '../../lib/rut';
+import { validateEmail } from '../../lib/email';
+import { locationKeys } from '../../lib/locationKey';
+import { logSignUpCompleted } from '../../lib/analytics';
 
 const { auth, db } = initFirebase();
 const GREEN = '#2D6A4F';
@@ -120,7 +123,7 @@ export default function RegisterVetScreen() {
     if (!validateRut(rut)) { Alert.alert('Error', 'Ingresa un RUT válido (ej: 12.345.678-9)'); return; }
     if (!licenseNumber.trim()) { Alert.alert('Error', 'El Nº de registro profesional es requerido'); return; }
     if (!phone.trim()) { Alert.alert('Error', 'El teléfono es requerido'); return; }
-    if (!email.trim() || !email.includes('@')) { Alert.alert('Error', 'Email inválido'); return; }
+    if (!validateEmail(email)) { Alert.alert('Error', 'Ingresa un correo electrónico válido'); return; }
     if (password.length < 6) { Alert.alert('Error', 'La contraseña debe tener al menos 6 caracteres'); return; }
     if (!address.trim()) { Alert.alert('Error', 'La dirección es requerida'); return; }
     if (!region) { Alert.alert('Error', 'Selecciona una región'); return; }
@@ -151,6 +154,7 @@ export default function RegisterVetScreen() {
         address: address.trim(),
         region,
         city,
+        ...locationKeys(city, region),
         createdAt: new Date().toISOString(),
       });
 
@@ -163,6 +167,7 @@ export default function RegisterVetScreen() {
         email: email.trim().toLowerCase(),
         region,
         city,
+        ...locationKeys(city, region),
         licenseNumber: licenseNumber.trim(),
         photoUrl: photoUrl || null,
         credentialUrl,
@@ -175,6 +180,7 @@ export default function RegisterVetScreen() {
         createdAt: new Date().toISOString(),
       });
 
+      logSignUpCompleted('vet');
       Alert.alert('✅ ¡Bienvenido!', 'Tu cuenta fue creada. Ahora puedes iniciar sesión.', [
         { text: 'OK', onPress: () => router.replace('/(auth)/login') },
       ]);

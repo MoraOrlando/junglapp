@@ -1,0 +1,20 @@
+diff --git a/node_modules/expo-modules-core/expo-module-gradle-plugin/src/main/kotlin/expo/modules/plugin/gradle/ExpoGradleHelperExtension.kt b/node_modules/expo-modules-core/expo-module-gradle-plugin/src/main/kotlin/expo/modules/plugin/gradle/ExpoGradleHelperExtension.kt
+index 7c387ab..7e65b6b 100644
+--- a/node_modules/expo-modules-core/expo-module-gradle-plugin/src/main/kotlin/expo/modules/plugin/gradle/ExpoGradleHelperExtension.kt
++++ b/node_modules/expo-modules-core/expo-module-gradle-plugin/src/main/kotlin/expo/modules/plugin/gradle/ExpoGradleHelperExtension.kt
+@@ -40,10 +40,14 @@ open class ExpoGradleHelperExtension {
+       ?.projectDir
+       ?.parentFile
+ 
++    // Android Studio's Gradle daemon doesn't inherit the shell PATH on Mac (Homebrew's
++    // node isn't found via a bare "node" lookup, unlike a plain terminal/CLI Gradle run).
++    val resolvedNodeBinary = listOf("/opt/homebrew/bin/node", "/usr/local/bin/node")
++      .firstOrNull { File(it).exists() } ?: "node"
+     reactNativeDir = reactNativeDirFromSource ?: File(
+       project.providers.exec { env ->
+         env.workingDir(project.rootDir)
+-        env.commandLine("node", "--print", "require.resolve('react-native/package.json')")
++        env.commandLine(resolvedNodeBinary, "--print", "require.resolve('react-native/package.json')")
+       }.standardOutput.asText.get().trim()
+     ).parentFile
+ 

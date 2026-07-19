@@ -24,15 +24,20 @@ buildscript {
 
 apply plugin: "com.facebook.react.rootproject"
 
+// Android Studio's Gradle daemon doesn't inherit the shell PATH on Mac
+// (Homebrew's node isn't found via a bare "node" lookup, unlike a plain
+// terminal/CLI Gradle run) — resolve an absolute path first.
+def resolvedNodeBinary = ['/opt/homebrew/bin/node', '/usr/local/bin/node'].find { new File(it).exists() } ?: 'node'
+
 allprojects {
     repositories {
         maven {
             // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
-            url(new File(['node', '--print', "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim(), '../android'))
+            url(new File([resolvedNodeBinary, '--print', "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim(), '../android'))
         }
         maven {
             // Android JSC is installed from npm
-            url(new File(['node', '--print', "require.resolve('jsc-android/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim(), '../dist'))
+            url(new File([resolvedNodeBinary, '--print', "require.resolve('jsc-android/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim(), '../dist'))
         }
 
         google()

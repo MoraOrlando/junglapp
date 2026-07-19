@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, Image,
-  KeyboardAvoidingView, Platform, ScrollView, Alert,
+  KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -43,8 +43,9 @@ const inputStyle = {
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { signIn, logOut } = useAuth();
+  const { signIn, logOut, continueAsGuest } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricType, setBiometricType] = useState('Biométrico');
@@ -283,12 +284,38 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 24, marginBottom: 40 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 24 }}>
             <Text style={{ color: '#6B7280' }}>¿No tienes cuenta? </Text>
             <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
               <Text style={{ color: '#16a34a', fontWeight: '600' }}>Regístrate</Text>
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity
+            onPress={async () => {
+              setGuestLoading(true);
+              try { await continueAsGuest(); } catch (e: any) { Alert.alert('Error', e.message || 'No se pudo continuar como invitado.'); }
+              finally { setGuestLoading(false); }
+            }}
+            disabled={guestLoading}
+            style={{
+              flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center',
+              borderRadius: 14, paddingVertical: 13, marginBottom: 24,
+              borderWidth: 1, borderColor: '#16a34a', borderStyle: 'dashed',
+              backgroundColor: '#F0FDF4', opacity: guestLoading ? 0.7 : 1,
+            }}
+          >
+            {guestLoading ? (
+              <ActivityIndicator color="#16a34a" />
+            ) : (
+              <>
+                <Text style={{ fontSize: 15 }}>🔍</Text>
+                <Text style={{ color: '#16a34a', fontSize: 13, fontWeight: '700' }}>
+                  Explorar veterinarios y tiendas sin cuenta
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

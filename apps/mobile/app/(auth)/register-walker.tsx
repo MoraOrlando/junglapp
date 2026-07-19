@@ -15,6 +15,7 @@ import { useAuth } from '../../context/AuthContext';
 import { doc, setDoc } from 'firebase/firestore';
 import { initFirebase, uploadImage, handleEmailAlreadyInUse } from '@junglapp/firebase';
 import { validateRut, formatRut } from '../../lib/rut';
+import { locationKeys } from '../../lib/locationKey';
 
 const { db } = initFirebase();
 
@@ -130,6 +131,7 @@ export default function RegisterWalkerScreen() {
           email: data.email,
           region,
           city: data.city,
+          ...locationKeys(data.city, region),
           experience: Number(data.experience),
           maxDogs: Number(data.maxDogs),
           sizesAccepted,

@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
+import { useAuth } from '../../../context/AuthContext';
 import type { Pet } from '@junglapp/types';
 
 const { db } = initFirebase();
@@ -63,6 +64,7 @@ const PERSONALITY = [
 ];
 
 export default function MatchProfileScreen() {
+  const { user } = useAuth();
   const { petId } = useLocalSearchParams<{ petId: string }>();
   const router = useRouter();
   const [pet, setPet] = useState<Pet | null>(null);
@@ -110,6 +112,9 @@ export default function MatchProfileScreen() {
     try {
       await updateDoc(doc(db, COLLECTIONS.PETS, petId!), {
         lookingForPartner: true,
+        // Denormalized so Match candidate queries can filter by region
+        // without exposing the owner's full profile — see pets/[id].tsx.
+        ...((user as any)?.regionKey ? { regionKey: (user as any).regionKey } : {}),
         matchProfile: { about, hobbies, personality, lookingFor, preferredAge, preferredGender, preferredSize, updatedAt: new Date().toISOString() },
       });
       Alert.alert('¡Listo! 🔥', `${pet?.name} ya está en modo Match. ¡Buena suerte!`, [

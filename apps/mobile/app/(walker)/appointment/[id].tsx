@@ -6,11 +6,18 @@ import {
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, updateDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { ref, set } from 'firebase/database';
 import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+import { logAppointmentCompleted, logAppointmentCancelled } from '../../../lib/analytics';
 import type { Appointment, Pet, Walker } from '@junglapp/types';
+
+function appointmentCategory(type: string | undefined): 'walker' | 'groomer' | 'trainer' {
+  if (type === 'grooming') return 'groomer';
+  if (type === 'training') return 'trainer';
+  return 'walker';
+}
 
 const { db, rtdb } = initFirebase();
 
@@ -77,12 +84,38 @@ export default function WalkerAppointmentDetailScreen() {
 
       setAppointment(appt);
 
-      const [petSnap, ownerSnap] = await Promise.all([
-        appt.petId ? getDoc(doc(db, COLLECTIONS.PETS, appt.petId)) : Promise.resolve(null),
-        getDoc(doc(db, 'users', appt.ownerId)),
-      ]);
-      if (petSnap?.exists()) setPet({ id: petSnap.id, ...petSnap.data() } as Pet);
-      if (ownerSnap.exists()) setOwnerProfile({ id: ownerSnap.id, ...ownerSnap.data() });
+      // Self-heal: reservas creadas antes de que existiera el registro
+      // clientLinks (o si esa escritura falló) no tendrían el vínculo que
+      // exige la regla de lectura de `users/{uid}` — lo recreamos acá para
+      // que el perfil del dueño no falle en silencio más abajo. Debe usar
+      // el UID de auth del paseador (user.uid), no el ID del documento
+      // walkers (walker.id) — la regla de lectura chequea request.auth.uid.
+      try {
+        const linkRef = doc(db, COLLECTIONS.CLIENT_LINKS, `${user!.uid}_${appt.ownerId}`);
+        const linkSnap = await getDoc(linkRef);
+        if (!linkSnap.exists()) {
+          await setDoc(linkRef, {
+            professionalId: user!.uid,
+            ownerId: appt.ownerId,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      } catch {}
+
+      // La mascota se carga aparte del perfil del dueño: el paseador no
+      // tiene acceso garantizado a `pets` por rol (a diferencia del vet), así
+      // que igual puede fallar, pero no debe bloquear que se muestre si el
+      // perfil del dueño falla (o viceversa).
+      if (appt.petId) {
+        try {
+          const petSnap = await getDoc(doc(db, COLLECTIONS.PETS, appt.petId));
+          if (petSnap.exists()) setPet({ id: petSnap.id, ...petSnap.data() } as Pet);
+        } catch {}
+      }
+      try {
+        const ownerSnap = await getDoc(doc(db, 'users', appt.ownerId));
+        if (ownerSnap.exists()) setOwnerProfile({ id: ownerSnap.id, ...ownerSnap.data() });
+      } catch {}
     } catch (e: any) {
       Alert.alert('Error cargando reserva', e.message);
     } finally {
@@ -99,6 +132,9 @@ export default function WalkerAppointmentDetailScreen() {
         updatedAt: new Date().toISOString(),
         ...extra,
       });
+      const category = appointmentCategory((appointment as any).type);
+      if (newStatus === 'completed') logAppointmentCompleted(category);
+      if (newStatus === 'cancelled') logAppointmentCancelled(category);
       setAppointment((p) => p ? { ...p, status: newStatus as any, ...extra } : null);
     } catch (e: any) {
       Alert.alert('Error', e.message);

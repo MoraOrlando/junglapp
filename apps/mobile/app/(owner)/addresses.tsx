@@ -8,6 +8,8 @@ import { useRouter } from 'expo-router';
 import { doc, updateDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
+import { locationKeys } from '../../lib/locationKey';
+import { logAddressAdded } from '../../lib/analytics';
 import type { UserAddress } from '@junglapp/types';
 
 const { db } = initFirebase();
@@ -53,16 +55,19 @@ export default function AddressesScreen() {
     if (!user) return;
     setSaving(true);
     try {
+      const keys = locationKeys(form.city, form.region);
       let updated: UserAddress[];
       if (editing) {
         updated = addresses.map((a) =>
-          a.id === editing.id ? { ...a, ...form } : a
+          a.id === editing.id ? { ...a, ...form, ...keys } : a
         );
       } else {
         const newAddr: UserAddress = {
           id: `addr_${Date.now()}`,
           ...form,
+          ...keys,
         };
+        logAddressAdded();
         updated = [...addresses, newAddr];
         // Auto-select if it's the first address
         if (updated.length === 1) {

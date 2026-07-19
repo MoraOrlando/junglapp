@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { initFirebase } from '@junglapp/firebase';
+import { validateEmail } from '../../lib/email';
 
 const { app } = initFirebase();
 const fns = getFunctions(app, 'us-central1');
@@ -31,7 +32,7 @@ export default function ForgotPasswordScreen() {
 
   async function handleReset() {
     const trimmed = email.trim().toLowerCase();
-    if (!trimmed || !trimmed.includes('@')) {
+    if (!validateEmail(trimmed)) {
       Alert.alert('Correo inválido', 'Ingresa un correo electrónico válido.');
       return;
     }

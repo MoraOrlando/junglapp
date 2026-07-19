@@ -21,6 +21,7 @@ apps/web/out
 firebase-debug.log
 firestore-debug.log
 firebase/service-account.json
+firebase/*firebase-adminsdk*.json
 **/google-services.json
 **/GoogleService-Info.plist
 .claude/

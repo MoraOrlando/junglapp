@@ -11,12 +11,36 @@ import {
   doc, getDoc, onSnapshot, limit,
 } from 'firebase/firestore';
 import { ref, set } from 'firebase/database';
+import * as Location from 'expo-location';
 import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+import { distanceKm } from '../../../lib/distance';
+import { ownerFilterRegionKey } from '../../../lib/locationKey';
+import { logMatchLiked, logMatchMutual } from '../../../lib/analytics';
 import type { Pet } from '@junglapp/types';
+
+const MAX_CANDIDATES = 200;
 
 const { width } = Dimensions.get('window');
 const { db, rtdb } = initFirebase();
+
+function calculateAge(birthDate: string): number | null {
+  if (!birthDate) return null;
+  const birth = new Date(birthDate);
+  if (isNaN(birth.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const monthDiff = now.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birth.getDate())) age--;
+  return Math.max(age, 0);
+}
+
+function petHealthTag(pet: Pet): { emoji: string; label: string; bg: string; color: string } | null {
+  const record = pet.medicalRecord;
+  if (record?.conditions?.length > 0) return { emoji: '⚠️', label: 'Condición médica', bg: 'rgba(220,38,38,0.85)', color: '#fff' };
+  if (record?.vaccinations?.length > 0) return { emoji: '💉', label: 'Vacunado', bg: 'rgba(22,163,74,0.85)', color: '#fff' };
+  return null;
+}
 
 export default function MatchScreen() {
   const { user } = useAuth();
@@ -29,9 +53,25 @@ export default function MatchScreen() {
   const [mutualMatch, setMutualMatch] = useState<{ chatId: string; candidateName: string; myPetName: string } | null>(null);
   const [galleryPet, setGalleryPet] = useState<Pet | null>(null);
   const [galleryPhotoIndex, setGalleryPhotoIndex] = useState(0);
+  const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   const flameScale = useRef(new Animated.Value(0)).current;
   const flameOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // Prefer the location saved at registration; fall back to live GPS
+    // (same pattern as the "Cerca de ti" screens) so the distance badge can
+    // still show up for owners who didn't capture it at signup.
+    if ((user as any)?.location) { setMyLocation((user as any).location); return; }
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        setMyLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      } catch {}
+    })();
+  }, [user?.uid]);
 
   useEffect(() => {
     if (!user) return;
@@ -62,8 +102,11 @@ export default function MatchScreen() {
   async function loadCandidates(myPet: Pet) {
     if (!user) return;
     setSelectedMyPet(myPet);
+    const filterRegionKey = ownerFilterRegionKey(user);
+    const constraints = [where('lookingForPartner', '==', true)];
+    if (filterRegionKey) constraints.push(where('regionKey', '==', filterRegionKey));
     const snap = await getDocs(
-      query(collection(db, COLLECTIONS.PETS), where('lookingForPartner', '==', true))
+      query(collection(db, COLLECTIONS.PETS), ...constraints, limit(MAX_CANDIDATES))
     );
     const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet));
     const likedSnap = await getDocs(
@@ -83,6 +126,7 @@ export default function MatchScreen() {
     const candidate = candidates[currentIndex];
 
     if (liked) {
+      logMatchLiked();
       const mutualSnap = await getDocs(
         query(
           collection(db, COLLECTIONS.MATCHES),
@@ -118,6 +162,7 @@ export default function MatchScreen() {
           await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatRef.id}/${user.uid}`), true);
           await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatRef.id}/${candidate.ownerId}`), true);
         } catch {}
+        logMatchMutual();
         setMutualMatch({ chatId: chatRef.id, candidateName: candidate.name, myPetName: selectedMyPet.name });
       } else {
         await addDoc(collection(db, COLLECTIONS.MATCHES), {
@@ -313,68 +358,97 @@ export default function MatchScreen() {
         </View>
       ) : candidate ? (
         <View className="flex-1 px-6 mt-6">
-          <View className="bg-white rounded-3xl shadow-lg border border-gray-100 overflow-hidden mb-6">
-            {/* Tappable photo area */}
-            <TouchableOpacity
-              activeOpacity={0.92}
-              onPress={() => { setGalleryPhotoIndex(0); setGalleryPet(candidate); }}
-              style={{ height: 280, backgroundColor: '#fff7ed', alignItems: 'center', justifyContent: 'center' }}
-            >
-              {candidate.photos?.[0] ? (
-                <Image
-                  source={{ uri: candidate.photos[0] }}
-                  style={{ width: '100%', height: '100%' }}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                  priority="high"
-                />
-              ) : (
-                <Text style={{ fontSize: 100 }}>{candidate.species === 'cat' ? '🐈' : '🐕'}</Text>
-              )}
-              {/* Photo count badge + hint */}
-              <View style={{ position: 'absolute', bottom: 12, right: 12, flexDirection: 'row', gap: 6 }}>
-                {(candidate.photos?.length ?? 0) > 1 && (
-                  <View style={{ backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 }}>
-                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>📷 {candidate.photos.length}</Text>
-                  </View>
-                )}
-                <View style={{ backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 }}>
-                  <Text style={{ color: '#fff', fontSize: 12 }}>Ver más →</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
+          {(() => {
+            const age = calculateAge(candidate.birthDate);
+            const healthTag = petHealthTag(candidate);
+            const personality: string[] = (candidate as any).matchProfile?.personality || [];
+            const distance = (myLocation && candidate.location)
+              ? distanceKm(myLocation.lat, myLocation.lng, candidate.location.lat, candidate.location.lng)
+              : null;
+            return (
+              <View style={{
+                borderRadius: 28, overflow: 'hidden', marginBottom: 20,
+                borderWidth: 3, borderColor: '#f97316',
+                shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6,
+              }}>
+                <TouchableOpacity
+                  activeOpacity={0.92}
+                  onPress={() => { setGalleryPhotoIndex(0); setGalleryPet(candidate); }}
+                  style={{ height: width * 1.15, backgroundColor: '#fff7ed', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  {candidate.photos?.[0] ? (
+                    <Image
+                      source={{ uri: candidate.photos[0] }}
+                      style={{ width: '100%', height: '100%' }}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                      priority="high"
+                    />
+                  ) : (
+                    <Text style={{ fontSize: 120 }}>{candidate.species === 'cat' ? '🐈' : '🐕'}</Text>
+                  )}
 
-            <View className="p-5">
-              <View className="flex-row justify-between items-start">
-                <View>
-                  <Text className="text-2xl font-bold text-gray-800">{candidate.name}</Text>
-                  <Text className="text-gray-500">{candidate.breed}</Text>
-                  <Text className="text-gray-400 text-sm">{candidate.color}</Text>
-                  {candidate.sex ? (
-                    <Text className="text-gray-400 text-sm">
-                      {candidate.sex === 'M' ? '♂ Macho' : '♀ Hembra'}
+                  {/* Photo count + "ver más" hint, top-right */}
+                  <View style={{ position: 'absolute', top: 12, right: 12, flexDirection: 'row', gap: 6 }}>
+                    {(candidate.photos?.length ?? 0) > 1 && (
+                      <View style={{ backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 }}>
+                        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>📷 {candidate.photos.length}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={{ position: 'absolute', top: 12, left: 12, backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 }}>
+                    <Text style={{ color: '#6B7280', fontSize: 11, fontWeight: '600' }}>{currentIndex + 1} / {candidates.length}</Text>
+                  </View>
+
+                  {/* Bottom scrim with name/age/breed/tags/distance, overlaid on the photo */}
+                  <View style={{
+                    position: 'absolute', bottom: 0, left: 0, right: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 18, paddingTop: 14, paddingBottom: 16,
+                  }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, flexShrink: 1 }}>
+                        <Text style={{ color: '#fff', fontSize: 26, fontWeight: '800' }} numberOfLines={1}>{candidate.name}</Text>
+                        {age != null && <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 18, fontWeight: '600' }}>, {age}</Text>}
+                        {candidate.chipNumber ? <Text style={{ fontSize: 16 }}>✅</Text> : null}
+                      </View>
+                      {distance != null && (
+                        <View style={{ backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 }}>
+                          <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>
+                            📍 {distance < 1 ? `${Math.round(distance * 1000)} m` : `${distance.toFixed(1)} km`}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, marginTop: 2 }}>
+                      {candidate.breed}
+                      {candidate.sex ? ` · ${candidate.sex === 'M' ? '♂ Macho' : '♀ Hembra'}` : ''}
                       {candidate.weight != null ? ` · ${candidate.weight} kg` : ''}
                     </Text>
-                  ) : null}
-                </View>
-                <Text className="text-gray-400 text-sm">{currentIndex + 1} / {candidates.length}</Text>
+                    {(healthTag || personality.length > 0) && (
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                        {healthTag && (
+                          <View style={{ backgroundColor: healthTag.bg, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 }}>
+                            <Text style={{ color: healthTag.color, fontSize: 11, fontWeight: '700' }}>{healthTag.emoji} {healthTag.label}</Text>
+                          </View>
+                        )}
+                        {personality.map((p) => (
+                          <View key={p} style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 }}>
+                            <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>{p}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
               </View>
-              {((candidate as any).matchProfile?.about || candidate.description) ? (
-                <Text className="text-gray-600 text-sm mt-3 leading-relaxed" numberOfLines={3}>
-                  {(candidate as any).matchProfile?.about || candidate.description}
-                </Text>
-              ) : null}
-              {(candidate as any).matchProfile?.personality?.length > 0 && (
-                <View className="flex-row flex-wrap gap-1 mt-3">
-                  {((candidate as any).matchProfile.personality as string[]).map((p: string) => (
-                    <View key={p} style={{ backgroundColor: '#fff7ed', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 3 }}>
-                      <Text style={{ color: '#ea580c', fontSize: 11 }}>{p}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-          </View>
+            );
+          })()}
+
+          {((candidate as any).matchProfile?.about || candidate.description) ? (
+            <Text className="text-gray-600 text-sm mb-4 leading-relaxed" numberOfLines={3}>
+              {(candidate as any).matchProfile?.about || candidate.description}
+            </Text>
+          ) : null}
 
           <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 40 }}>
             <TouchableOpacity

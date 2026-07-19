@@ -8,7 +8,6 @@ import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/fire
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import type { Trainer } from '@junglapp/types';
-import PlanSelector, { type AccountPlan } from '../../components/PlanSelector';
 
 const { db } = initFirebase();
 const INDIGO = '#4F46E5';
@@ -22,7 +21,6 @@ export default function TrainerProfileScreen() {
   const [address, setAddress] = useState('');
   const [experience, setExperience] = useState('');
   const [serviceArea, setServiceArea] = useState('');
-  const [plan, setPlan] = useState<AccountPlan>('free');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -40,7 +38,6 @@ export default function TrainerProfileScreen() {
         setAddress(t.address);
         setExperience(t.experience || '');
         setServiceArea(t.serviceArea || '');
-        setPlan((t as any).plan || 'free');
         if (t.location) setLocation(t.location);
       }
     });
@@ -83,7 +80,7 @@ export default function TrainerProfileScreen() {
     if (!docId) return;
     setSaving(true);
     try {
-      const updates: any = { name, phone, address, experience, serviceArea, plan };
+      const updates: any = { name, phone, address, experience, serviceArea, plan: 'free' };
       if (location) updates.location = location;
       await updateDoc(doc(db, COLLECTIONS.TRAINERS, docId), updates);
       Alert.alert('✅', 'Perfil actualizado correctamente');
@@ -189,13 +186,6 @@ export default function TrainerProfileScreen() {
               ✅ Ubicación guardada — se usa para calcular la distancia en "Cerca de ti"
             </Text>
           )}
-        </View>
-
-        {/* Plan */}
-        <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#F3F4F6' }}>
-          <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15, marginBottom: 4 }}>Plan de cuenta</Text>
-          <Text style={{ color: '#9CA3AF', fontSize: 12, marginBottom: 14 }}>Elige el plan que mejor se adapte a tu perfil.</Text>
-          <PlanSelector value={plan} onChange={setPlan} />
         </View>
 
         {/* Specialties */}

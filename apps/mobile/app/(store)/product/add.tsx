@@ -24,6 +24,7 @@ export default function AddProductScreen() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [offerPrice, setOfferPrice] = useState('');
   const [stock, setStock] = useState('');
 
   // Reset form every time this screen comes into focus so data from a previous
@@ -34,6 +35,7 @@ export default function AddProductScreen() {
     setName('');
     setDescription('');
     setPrice('');
+    setOfferPrice('');
     setStock('');
   }, []));
 
@@ -54,6 +56,10 @@ export default function AddProductScreen() {
     if (!name.trim()) { Alert.alert('Error', 'El nombre es requerido'); return; }
     if (!price.trim() || isNaN(Number(price))) { Alert.alert('Error', 'Ingresa un precio válido'); return; }
     if (!stock.trim() || isNaN(Number(stock))) { Alert.alert('Error', 'Ingresa el stock disponible'); return; }
+    if (offerPrice.trim() && (isNaN(Number(offerPrice)) || Number(offerPrice) >= Number(price))) {
+      Alert.alert('Error', 'El precio oferta debe ser menor al precio regular');
+      return;
+    }
     if (!user) return;
     setLoading(true);
     try {
@@ -75,18 +81,24 @@ export default function AddProductScreen() {
       }
 
       const photoUrls = photos.length > 0 ? await uploadImages(photos) : [];
-      await addDoc(collection(db, COLLECTIONS.PRODUCTS), {
+      // When there's an offer price, the DB `price` field holds the actual
+      // charged amount (the lower one) and `originalPrice` holds the regular
+      // price shown crossed out — see Product type in packages/types.
+      const hasOffer = !!offerPrice.trim();
+      const payload: any = {
         storeId,
         userId: user.uid,
         name: name.trim(),
         description: description.trim(),
-        price: Number(price),
+        price: hasOffer ? Number(offerPrice) : Number(price),
         stock: Number(stock),
         category,
         photos: photoUrls,
         isActive: true,
         createdAt: new Date().toISOString(),
-      });
+      };
+      if (hasOffer) payload.originalPrice = Number(price);
+      await addDoc(collection(db, COLLECTIONS.PRODUCTS), payload);
       router.back();
     } catch (e: any) {
       Alert.alert('Error al publicar', e.message);
@@ -151,7 +163,8 @@ export default function AddProductScreen() {
             {[
               { label: 'Nombre del producto *', placeholder: 'Croquetas Premium 10kg', value: name, set: setName, keyboard: 'default' },
               { label: 'Descripción', placeholder: 'Alimento balanceado para perros adultos...', value: description, set: setDescription, multiline: true },
-              { label: 'Precio (CLP) *', placeholder: '25000', value: price, set: setPrice, keyboard: 'number-pad' },
+              { label: 'Precio regular (CLP) *', placeholder: '25000', value: price, set: setPrice, keyboard: 'number-pad' },
+              { label: 'Precio oferta (opcional, si el producto está en descuento)', placeholder: 'Ej: 19990 — debe ser menor al precio regular', value: offerPrice, set: setOfferPrice, keyboard: 'number-pad' },
               { label: 'Stock disponible *', placeholder: '50', value: stock, set: setStock, keyboard: 'number-pad' },
             ].map((f) => (
               <View key={f.label}>

@@ -11,6 +11,8 @@ import { doc, setDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS, uploadImage, handleEmailAlreadyInUse } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { validateRut, formatRut } from '../../lib/rut';
+import { validateEmail } from '../../lib/email';
+import { locationKeys } from '../../lib/locationKey';
 
 const { db } = initFirebase();
 const INDIGO = '#4F46E5';
@@ -57,6 +59,10 @@ export default function RegisterTrainerScreen() {
       Alert.alert('RUT inválido', 'Ingresa un RUT chileno válido (ej: 12.345.678-9)');
       return;
     }
+    if (!validateEmail(form.email)) {
+      Alert.alert('Correo inválido', 'Ingresa un correo electrónico válido');
+      return;
+    }
     if (!idImage) {
       Alert.alert('Documento requerido', 'Debes subir una foto de tu cédula o documento de identidad.');
       return;
@@ -90,6 +96,7 @@ export default function RegisterTrainerScreen() {
           address: form.address,
           region: form.region,
           city: form.city,
+          ...locationKeys(form.city, form.region),
           idImageUrl,
           experience: form.experience,
           serviceArea: form.serviceArea,

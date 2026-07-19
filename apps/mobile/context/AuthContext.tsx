@@ -3,6 +3,7 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  signInAnonymously,
   signOut,
   deleteUser,
 } from 'firebase/auth';
@@ -17,15 +18,19 @@ import {
 import * as Notifications from 'expo-notifications';
 import { initFirebase } from '@junglapp/firebase';
 import type { User } from '@junglapp/types';
+import { locationKeys } from '../lib/locationKey';
+import { logSignUpCompleted } from '../lib/analytics';
 
 const { auth, db } = initFirebase();
 
 interface AuthContextType {
   user: User | null;
   firebaseUser: import('firebase/auth').User | null;
+  isGuest: boolean;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<import('firebase/auth').User>;
   signUp: (email: string, password: string, userData: Omit<User, 'uid' | 'createdAt'>) => Promise<{ firebaseUser: import('firebase/auth').User }>;
+  continueAsGuest: () => Promise<void>;
   logOut: () => Promise<void>;
   deleteAccount: () => Promise<void>;
   updateProfile: (data: Partial<User>) => Promise<void>;
@@ -93,11 +98,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       ...userData,
       uid: fbUser.uid,
       email,
+      ...locationKeys(userData.city, userData.region),
       createdAt: new Date().toISOString(),
     };
     await setDoc(doc(db, 'users', fbUser.uid), newUser);
+    logSignUpCompleted(newUser.role);
     setUser(newUser);
     return { firebaseUser: fbUser };
+  }
+
+  async function continueAsGuest() {
+    await signInAnonymously(auth);
   }
 
   async function logOut() {
@@ -134,6 +145,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!currentFbUser) throw new Error('No hay una sesión activa. Vuelve a iniciar sesión e intenta de nuevo.');
     // Strip all privilege-escalation and immutable fields before writing
     const { role, uid, createdAt, mustChangePassword, tempPasswordExpiresAt, accountStatus, ...safeData } = data as any;
+    // Keep cityKey/regionKey in sync whenever city or region changes — they
+    // back the indexed queries in "Cerca de ti" instead of a full-collection
+    // scan + client-side string matching.
+    if (safeData.city !== undefined || safeData.region !== undefined) {
+      Object.assign(safeData, locationKeys(safeData.city ?? user?.city, safeData.region ?? user?.region));
+    }
     // Additional guard: never allow writing an empty object
     if (Object.keys(safeData).length === 0) return;
     await updateDoc(doc(db, 'users', currentFbUser.uid), safeData);
@@ -141,7 +158,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, firebaseUser, loading, signIn, signUp, logOut, deleteAccount, updateProfile }}>
+    <AuthContext.Provider value={{ user, firebaseUser, isGuest: !!firebaseUser?.isAnonymous, loading, signIn, signUp, continueAsGuest, logOut, deleteAccount, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, ActionSheetIOS } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -8,14 +8,20 @@ import * as Location from 'expo-location';
 import { collection, query, where, getDocs, doc, updateDoc, addDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
+import { locationKeys } from '../../lib/locationKey';
 import type { Veterinarian, ClinicService } from '@junglapp/types';
-import PlanSelector, { type AccountPlan } from '../../components/PlanSelector';
 
 const CLINIC_SERVICES: { id: ClinicService; label: string }[] = [
   { id: 'veterinaria', label: '🩺 Veterinaria' },
   { id: 'peluqueria', label: '✂️ Peluquería' },
   { id: 'rayos_x', label: '🩻 Rayos X' },
   { id: 'intervenciones', label: '🔬 Intervenciones' },
+];
+
+const REGIONS = [
+  'Arica y Parinacota', 'Tarapacá', 'Antofagasta', 'Atacama', 'Coquimbo',
+  'Valparaíso', 'Metropolitana', "O'Higgins", 'Maule', 'Ñuble',
+  'Biobío', 'Araucanía', 'Los Ríos', 'Los Lagos', 'Aysén', 'Magallanes',
 ];
 
 const { db } = initFirebase();
@@ -31,13 +37,15 @@ export default function VetProfileScreen() {
   const [rut, setRut] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [region, setRegion] = useState('Metropolitana');
   const [licenseNumber, setLicenseNumber] = useState('');
   const [specialtyInput, setSpecialtyInput] = useState('');
   const [fee, setFee] = useState('');
+  const [isClinic, setIsClinic] = useState(false);
   const [is24_7, setIs24_7] = useState(false);
   const [openingHours, setOpeningHours] = useState('');
   const [clinicServices, setClinicServices] = useState<ClinicService[]>([]);
-  const [plan, setPlan] = useState<AccountPlan>('free');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -54,13 +62,18 @@ export default function VetProfileScreen() {
         setRut(v.rut || '');
         setPhone(v.phone || '');
         setAddress(v.address || '');
+        setCity(v.city || '');
+        setRegion(v.region || 'Metropolitana');
         setLicenseNumber(v.licenseNumber || '');
         setFee(String(v.consultationFee ?? ''));
         setSpecialtyInput((v.specialties || []).join(', '));
+        // Legacy fallback for vets who registered before this toggle existed:
+        // infer from clinicServices only (NOT is24_7 — a solo vet offering
+        // 24/7 urgent care isn't necessarily a multi-vet clinic).
+        setIsClinic(v.isClinic ?? ((v.clinicServices?.length ?? 0) > 0));
         setIs24_7(!!v.is24_7);
         setOpeningHours(v.openingHours || '');
         setClinicServices(v.clinicServices || []);
-        setPlan((v as any).plan || 'free');
         if (v.location) setLocation(v.location);
       } else {
         const newDoc = await addDoc(collection(db, COLLECTIONS.VETERINARIANS), {
@@ -96,6 +109,13 @@ export default function VetProfileScreen() {
     }
   }
 
+  function openRegionPicker() {
+    ActionSheetIOS.showActionSheetWithOptions(
+      { options: [...REGIONS, 'Cancelar'], cancelButtonIndex: REGIONS.length },
+      (buttonIndex) => { if (buttonIndex < REGIONS.length) setRegion(REGIONS[buttonIndex]); }
+    );
+  }
+
   async function captureLocation() {
     setGettingLocation(true);
     try {
@@ -120,8 +140,8 @@ export default function VetProfileScreen() {
       const specialties = specialtyInput.split(',').map((s) => s.trim()).filter(Boolean);
       const numFee = Number(fee) || 0;
       const updates: any = {
-        name, rut, phone, address, licenseNumber, specialties, consultationFee: numFee,
-        is24_7, openingHours, clinicServices, plan,
+        name, rut, phone, address, city, region, ...locationKeys(city, region), licenseNumber, specialties, consultationFee: numFee,
+        isClinic, is24_7, openingHours, clinicServices, plan: 'free',
       };
       if (location) updates.location = location;
       await updateDoc(doc(db, COLLECTIONS.VETERINARIANS, vetDocId), updates);
@@ -208,6 +228,30 @@ export default function VetProfileScreen() {
               />
             </View>
           ))}
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, color: '#6B7280', marginBottom: 4, fontWeight: '500' }}>Ciudad / Comuna</Text>
+              <TextInput
+                style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: '#F9FAFB', fontSize: 14 }}
+                value={city}
+                onChangeText={setCity}
+                placeholder="Ej: Los Ángeles"
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, color: '#6B7280', marginBottom: 4, fontWeight: '500' }}>Región</Text>
+              <TouchableOpacity
+                onPress={openRegionPicker}
+                style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: '#F9FAFB', justifyContent: 'center' }}
+              >
+                <Text style={{ fontSize: 14, color: '#1F2937' }} numberOfLines={1}>{region}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <Text style={{ color: '#9CA3AF', fontSize: 11, marginTop: -8, marginBottom: 12 }}>
+            Se usan para mostrarte solo a dueños de mascota cerca de tu ciudad en "Cerca de ti".
+          </Text>
           <TouchableOpacity
             onPress={captureLocation}
             disabled={gettingLocation}
@@ -246,6 +290,26 @@ export default function VetProfileScreen() {
           <Text style={{ color: '#9CA3AF', fontSize: 12, marginBottom: 14 }}>
             Esta información se muestra a los dueños en "Cerca de ti" para que ubiquen atención de urgencia.
           </Text>
+
+          {/* Clinic vs. solo practitioner toggle — determines whether you show
+              up under "Veterinarios" or "Veterinarias" in "Cerca de ti". */}
+          <TouchableOpacity
+            onPress={() => setIsClinic((v) => !v)}
+            style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              borderWidth: 1, borderColor: isClinic ? '#93C5FD' : '#E5E7EB', borderRadius: 12,
+              paddingHorizontal: 14, paddingVertical: 12, marginBottom: 12,
+              backgroundColor: isClinic ? '#EFF6FF' : '#F9FAFB',
+            }}
+          >
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={{ fontWeight: '600', fontSize: 14, color: isClinic ? '#1D4ED8' : '#374151' }}>🏥 Somos una clínica veterinaria</Text>
+              <Text style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
+                Activa esto solo si trabajan varios veterinarios en el mismo lugar. Si eres un veterinario individual, déjalo apagado (aunque atiendas urgencias 24/7).
+              </Text>
+            </View>
+            <Text style={{ fontSize: 18 }}>{isClinic ? '✅' : '⬜'}</Text>
+          </TouchableOpacity>
 
           {/* 24/7 toggle */}
           <TouchableOpacity
@@ -295,13 +359,6 @@ export default function VetProfileScreen() {
               );
             })}
           </View>
-        </View>
-
-        {/* Plan */}
-        <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#F3F4F6' }}>
-          <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15, marginBottom: 4 }}>Plan de cuenta</Text>
-          <Text style={{ color: '#9CA3AF', fontSize: 12, marginBottom: 14 }}>Elige el plan que mejor se adapte a tu práctica.</Text>
-          <PlanSelector value={plan} onChange={setPlan} />
         </View>
 
         {/* Read-only info */}

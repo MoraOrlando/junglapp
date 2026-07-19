@@ -6,6 +6,8 @@ export interface UserAddress {
   address: string;
   city: string;
   region: string;
+  cityKey?: string;
+  regionKey?: string;
 }
 
 export interface User {
@@ -18,6 +20,8 @@ export interface User {
   address: string;
   region: string;
   city: string;
+  cityKey?: string;
+  regionKey?: string;
   postalCode?: string;
   location?: { lat: number; lng: number };
   photoUrl?: string;
@@ -64,6 +68,16 @@ export interface Pet {
   allergic?: boolean;
   allergyNotes?: string;
   lookingForPartner: boolean;
+  // Copied from the owner's own location (if captured) when they turn
+  // lookingForPartner on — Match candidates from other owners are readable
+  // by anyone (see firestore.rules), but another owner's full user profile
+  // is not, so this denormalized copy is what powers the distance badge in
+  // Match without exposing the owner's account.
+  location?: { lat: number; lng: number };
+  // Same denormalization rationale as location — lets Match candidate
+  // queries filter by where('regionKey', '==', ...) without exposing the
+  // owner's full profile to other owners.
+  regionKey?: string;
   medicalRecord: MedicalRecord;
   createdAt: string;
 }
@@ -78,6 +92,13 @@ export interface Veterinarian {
   name: string;
   rut: string;
   address: string;
+  // city/region are used to match this vet against a pet owner's location in
+  // "Cerca de ti" — without them, matchesLocation() can't compare against the
+  // owner's city/region and effectively matches everywhere.
+  city?: string;
+  region?: string;
+  cityKey?: string;
+  regionKey?: string;
   phone: string;
   email: string;
   consultationFee: number;
@@ -90,6 +111,10 @@ export interface Veterinarian {
   rating?: number;
   reviewCount?: number;
   // Clinic / emergency service info (shown in "Cerca de ti")
+  // isClinic distinguishes a multi-vet clinic from a solo practitioner —
+  // it must NOT be inferred from is24_7 (a solo vet can offer 24/7 urgent
+  // care without being a clinic) or from clinicServices alone.
+  isClinic?: boolean;
   is24_7?: boolean;
   openingHours?: string;
   clinicServices?: ClinicService[];
@@ -108,6 +133,8 @@ export interface Walker {
   email: string;
   region: string;
   city: string;
+  cityKey?: string;
+  regionKey?: string;
   address?: string;
   experience: number;
   maxDogs: number;
@@ -143,6 +170,8 @@ export interface Groomer {
   address?: string | null;
   region: string;
   city: string;
+  cityKey?: string;
+  regionKey?: string;
   services: string[];
   serviceOfferings?: GroomingService[];
   slotDuration?: 30 | 45 | 60;
@@ -165,6 +194,10 @@ export interface Trainer {
   phone: string;
   email: string;
   address: string;
+  region?: string;
+  city?: string;
+  cityKey?: string;
+  regionKey?: string;
   photoUrl?: string;
   idImageUrl?: string;
   status: 'pending' | 'approved' | 'rejected';
@@ -196,6 +229,13 @@ export interface Store {
   name: string;
   description: string;
   address: string;
+  // city/region are used to match this store against a pet owner's location in
+  // "Cerca de ti" — without them, matchesLocation() can't compare against the
+  // owner's city/region and effectively matches everywhere.
+  city?: string;
+  region?: string;
+  cityKey?: string;
+  regionKey?: string;
   phone: string;
   email: string;
   logoUrl?: string;
@@ -212,6 +252,9 @@ export interface Product {
   name: string;
   description: string;
   price: number;
+  // Set only when the product is on sale — the "was" price shown crossed out.
+  // A product is considered on sale when originalPrice is set and > price.
+  originalPrice?: number;
   photos: string[];
   stock: number;
   category: string;
@@ -272,13 +315,46 @@ export interface Message {
   createdAt: string;
 }
 
+export type PlaceCategory = 'park' | 'restaurant';
+
+export interface Place {
+  id: string;
+  name: string;
+  category: PlaceCategory;
+  address?: string;
+  description?: string;
+  photoUrl?: string;
+  location: { lat: number; lng: number };
+  cityKey?: string;
+  regionKey?: string;
+  createdBy: string;
+  createdByName: string;
+  rating: number;
+  reviewCount: number;
+  createdAt: string;
+}
+
+export interface PlaceReview {
+  id: string;
+  placeId: string;
+  ownerId: string;
+  ownerName: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+}
+
 export interface ContentReport {
   id: string;
   reporterId: string;
   reportedUserId: string;
   reportedUserName: string;
-  chatId: string;
+  // Exactly one context is present: a chat report (chatId, optional
+  // messageText) or a place/review report (placeId, placeName).
+  chatId?: string;
   messageText?: string;
+  placeId?: string;
+  placeName?: string;
   reason: string;
   status: 'pending' | 'reviewed';
   resolution?: 'blocked' | 'dismissed';

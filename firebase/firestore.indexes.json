@@ -17,6 +17,54 @@
         { "fieldPath": "owner1Id", "order": "ASCENDING" },
         { "fieldPath": "pet1Id", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "veterinarians",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "regionKey", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "walkers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "regionKey", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "stores",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "regionKey", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "groomers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "regionKey", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "trainers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "regionKey", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "lookingForPartner", "order": "ASCENDING" },
+        { "fieldPath": "regionKey", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

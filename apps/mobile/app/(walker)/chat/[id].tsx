@@ -12,6 +12,7 @@ import { initFirebase, COLLECTIONS, RTDB_PATHS, uploadImage } from '@junglapp/fi
 import { useAuth } from '../../../context/AuthContext';
 import { ReportBlockButton } from '../../../components/ReportBlockButton';
 import { isBlockedByRecipient } from '../../../lib/checkBlocked';
+import { logChatMessageSent } from '../../../lib/analytics';
 import type { Chat, Message } from '@junglapp/types';
 
 const { db, rtdb } = initFirebase();
@@ -118,6 +119,7 @@ export default function WalkerChatScreen() {
       ...(extraImageUrl ? { imageUrl: extraImageUrl } : {}),
       createdAt: new Date().toISOString(),
     });
+    logChatMessageSent();
 
     await updateDoc(doc(db, COLLECTIONS.CHATS, id), {
       lastMessage: extraImageUrl ? '📷 Foto' : msgText,

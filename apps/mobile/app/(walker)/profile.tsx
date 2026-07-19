@@ -10,6 +10,7 @@ import * as Location from 'expo-location';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
+import { locationKeys } from '../../lib/locationKey';
 import type { Walker } from '@junglapp/types';
 
 const { db } = initFirebase();
@@ -172,6 +173,7 @@ export default function WalkerProfileScreen() {
         address: address.trim(),
         city: city.trim(),
         region,
+        ...locationKeys(city.trim(), region),
         experience: expNum,
         maxDogs: maxDogsNum,
         updatedAt: new Date().toISOString(),

@@ -16,6 +16,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import * as Location from 'expo-location';
 import { validateRut, formatRut } from '../../lib/rut';
+import { locationKeys } from '../../lib/locationKey';
 
 const { db } = initFirebase();
 
@@ -101,32 +102,20 @@ export default function RegisterStoreScreen() {
   const selectedCity = watch('city');
 
   async function captureLocation() {
-    Alert.alert(
-      '📍 Ubicación de tu tienda',
-      'JunglApp usará tu ubicación para que clientes cercanos puedan encontrar tu tienda. ¿Deseas permitir el acceso?',
-      [
-        { text: 'No por ahora', style: 'cancel' },
-        {
-          text: 'Permitir',
-          onPress: async () => {
-            setGettingLocation(true);
-            try {
-              const { status } = await Location.requestForegroundPermissionsAsync();
-              if (status !== 'granted') {
-                Alert.alert('Permiso denegado', 'Puedes continuar el registro sin ubicación.');
-                return;
-              }
-              const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-              setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-            } catch {
-              Alert.alert('Error', 'No se pudo obtener la ubicación. Puedes continuar sin ella.');
-            } finally {
-              setGettingLocation(false);
-            }
-          },
-        },
-      ]
-    );
+    setGettingLocation(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permiso denegado', 'Puedes continuar el registro sin ubicación.');
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    } catch {
+      Alert.alert('Error', 'No se pudo obtener la ubicación. Puedes continuar sin ella.');
+    } finally {
+      setGettingLocation(false);
+    }
   }
 
   async function onSubmit(data: FormData) {
@@ -160,6 +149,7 @@ export default function RegisterStoreScreen() {
           address: data.address,
           region: data.region,
           city: data.city,
+          ...locationKeys(data.city, data.region),
           phone: data.phone,
           email: data.email,
           ...(photoUrl ? { photoUrl } : {}),

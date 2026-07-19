@@ -203,8 +203,14 @@ export default function PetDetailScreen() {
         ]
       );
     } else {
-      await updateDoc(doc(db, COLLECTIONS.PETS, id), { lookingForPartner: true });
-      setPet({ ...pet, lookingForPartner: true });
+      const updates: any = { lookingForPartner: true };
+      // Denormalize the owner's location/regionKey onto the pet so Match
+      // candidates (readable by any owner) can show a distance badge and be
+      // filtered by region without exposing the owner's full profile.
+      if ((user as any)?.location) updates.location = (user as any).location;
+      if ((user as any)?.regionKey) updates.regionKey = (user as any).regionKey;
+      await updateDoc(doc(db, COLLECTIONS.PETS, id), updates);
+      setPet({ ...pet, ...updates });
       triggerFlameAndNavigate();
     }
   }

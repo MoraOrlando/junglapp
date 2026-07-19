@@ -128,6 +128,9 @@ export default function ReportsAdminScreen() {
                 </View>
               </View>
 
+              {r.placeName && (
+                <Text style={{ color: '#7C3AED', fontSize: 12, marginBottom: 6 }}>📍 En lugar: {r.placeName}</Text>
+              )}
               <View style={{ backgroundColor: '#F9FAFB', borderRadius: 10, padding: 10, marginBottom: 8 }}>
                 <Text style={{ color: '#374151', fontSize: 13 }}>{r.reason}</Text>
               </View>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  Alert, ActivityIndicator
+  Alert, ActivityIndicator, ActionSheetIOS
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,8 +10,14 @@ import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
+import { locationKeys } from '../../lib/locationKey';
 import type { Store } from '@junglapp/types';
-import PlanSelector, { type AccountPlan } from '../../components/PlanSelector';
+
+const REGIONS = [
+  'Arica y Parinacota', 'Tarapacá', 'Antofagasta', 'Atacama', 'Coquimbo',
+  'Valparaíso', 'Metropolitana', "O'Higgins", 'Maule', 'Ñuble',
+  'Biobío', 'Araucanía', 'Los Ríos', 'Los Lagos', 'Aysén', 'Magallanes',
+];
 
 const { db } = initFirebase();
 const AMBER = '#D97706';
@@ -24,8 +30,9 @@ export default function StoreProfileScreen() {
   const [description, setDescription] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [region, setRegion] = useState('Metropolitana');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [plan, setPlan] = useState<AccountPlan>('free');
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [gettingLocation, setGettingLocation] = useState(false);
@@ -41,12 +48,20 @@ export default function StoreProfileScreen() {
         setDescription(s.description);
         setPhone(s.phone);
         setAddress(s.address);
+        setCity(s.city || '');
+        setRegion(s.region || 'Metropolitana');
         if (s.location) setLocation(s.location);
-        setPlan((s as any).plan || 'free');
         if ((s as any).photoUrl) setPhotoUrl((s as any).photoUrl);
       }
     });
   }, [user]);
+
+  function openRegionPicker() {
+    ActionSheetIOS.showActionSheetWithOptions(
+      { options: [...REGIONS, 'Cancelar'], cancelButtonIndex: REGIONS.length },
+      (buttonIndex) => { if (buttonIndex < REGIONS.length) setRegion(REGIONS[buttonIndex]); }
+    );
+  }
 
   async function captureLocation() {
     setGettingLocation(true);
@@ -85,7 +100,7 @@ export default function StoreProfileScreen() {
     if (!storeDocId) return;
     setSaving(true);
     try {
-      const updates: any = { name, description, phone, address, plan };
+      const updates: any = { name, description, phone, address, city, region, ...locationKeys(city, region), plan: 'free' };
       if (location) updates.location = location;
       await updateDoc(doc(db, COLLECTIONS.STORES, storeDocId), updates);
       Alert.alert('✅', 'Tienda actualizada correctamente');
@@ -177,13 +192,30 @@ export default function StoreProfileScreen() {
               />
             </View>
           ))}
-        </View>
-
-        {/* Plan */}
-        <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#F3F4F6' }}>
-          <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15, marginBottom: 4 }}>Plan de cuenta</Text>
-          <Text style={{ color: '#9CA3AF', fontSize: 12, marginBottom: 14 }}>Elige el plan que mejor se adapte a tu tienda.</Text>
-          <PlanSelector value={plan} onChange={setPlan} />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, color: '#6B7280', marginBottom: 4, fontWeight: '500' }}>Ciudad / Comuna</Text>
+              <TextInput
+                style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: '#F9FAFB', fontSize: 14 }}
+                value={city}
+                onChangeText={setCity}
+                placeholder="Ej: Los Ángeles"
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, color: '#6B7280', marginBottom: 4, fontWeight: '500' }}>Región</Text>
+              <TouchableOpacity
+                onPress={openRegionPicker}
+                style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: '#F9FAFB', justifyContent: 'center' }}
+              >
+                <Text style={{ fontSize: 14, color: '#1F2937' }} numberOfLines={1}>{region}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <Text style={{ color: '#9CA3AF', fontSize: 11, marginTop: 6 }}>
+            Se usan para mostrarte solo a dueños de mascota cerca de tu ciudad en "Cerca de ti".
+          </Text>
         </View>
 
         {/* Geolocalización */}

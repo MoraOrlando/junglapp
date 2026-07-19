@@ -287,6 +287,34 @@ export const onReviewCreated = functions.firestore
     }
   });
 
+// Recalculate a community place's rating server-side when a review is
+// created — same rationale as onReviewCreated (prevents client-side rating
+// manipulation).
+export const onPlaceReviewCreated = functions.firestore
+  .document('placeReviews/{reviewId}')
+  .onCreate(async (snap) => {
+    const review = snap.data();
+    const { placeId, rating } = review;
+    if (!placeId || typeof rating !== 'number') return;
+
+    const placeRef = admin.firestore().collection('places').doc(placeId);
+    const placeDoc = await placeRef.get();
+    if (!placeDoc.exists) return;
+
+    const allReviewsSnap = await admin.firestore()
+      .collection('placeReviews')
+      .where('placeId', '==', placeId)
+      .get();
+
+    const ratings = allReviewsSnap.docs.map((d) => d.data().rating as number);
+    const avg = ratings.reduce((s, r) => s + r, 0) / ratings.length;
+
+    await placeRef.update({
+      rating: Math.round(avg * 10) / 10,
+      reviewCount: ratings.length,
+    });
+  });
+
 // Notifies the admin by email whenever a user reports objectionable content,
 // so it can be reviewed and acted on within 24 hours (Apple Guideline 1.2).
 export const onReportCreated = functions.firestore

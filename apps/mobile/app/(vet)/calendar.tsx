@@ -40,6 +40,9 @@ function getNextDays(n: number): string[] {
   return days;
 }
 
+const WEEK_DAYS = 7;
+const MONTH_DAYS = 30;
+
 export default function VetCalendarScreen() {
   const { user } = useAuth();
   const [vetId, setVetId] = useState<string | null>(null);
@@ -72,6 +75,31 @@ export default function VetCalendarScreen() {
       ? current.filter((s) => s !== slot)
       : [...current, slot];
     setAvailability({ ...availability, [selectedDate]: updated });
+  }
+
+  function applyToRange(numDays: number, label: string) {
+    const template = availability[selectedDate] || [];
+    if (template.length === 0) {
+      Alert.alert('Selecciona horarios', 'Primero elige al menos un horario en el día actual para poder replicarlo.');
+      return;
+    }
+    const targetDates = getNextDays(numDays);
+    Alert.alert(
+      `Aplicar a ${label}`,
+      `Se usarán los ${template.length} horario(s) seleccionados de hoy (${selectedDate}) para los próximos ${numDays} días. Esto reemplaza la disponibilidad existente en esos días. ¿Continuar?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Aplicar', onPress: () => {
+            setAvailability((prev) => {
+              const next = { ...prev };
+              for (const d of targetDates) next[d] = [...template];
+              return next;
+            });
+          },
+        },
+      ]
+    );
   }
 
   async function saveAll() {
@@ -306,6 +334,28 @@ export default function VetCalendarScreen() {
               Limpiar día
             </Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Bulk apply to multiple days */}
+        <View style={{ marginBottom: 16 }}>
+          <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 4 }}>Aplicar a varios días</Text>
+          <Text style={{ fontSize: 12, color: '#94A3B8', marginBottom: 10 }}>
+            Usa los horarios seleccionados de hoy ({selectedDate}) y replícalos.
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity
+              onPress={() => applyToRange(WEEK_DAYS, 'toda la semana')}
+              style={{ flex: 1, borderWidth: 1.5, borderColor: '#1D4ED8', borderRadius: 12, paddingVertical: 12, alignItems: 'center', backgroundColor: '#EFF6FF' }}
+            >
+              <Text style={{ color: '#1D4ED8', fontWeight: '700', fontSize: 13 }}>📆 Toda la semana</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => applyToRange(MONTH_DAYS, 'todo el mes')}
+              style={{ flex: 1, borderWidth: 1.5, borderColor: '#1D4ED8', borderRadius: 12, paddingVertical: 12, alignItems: 'center', backgroundColor: '#EFF6FF' }}
+            >
+              <Text style={{ color: '#1D4ED8', fontWeight: '700', fontSize: 13 }}>🗓️ Todo el mes</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <TouchableOpacity

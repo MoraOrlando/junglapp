@@ -5,17 +5,19 @@
  * Requires: GOOGLE_APPLICATION_CREDENTIALS env var pointing to a Firebase service account JSON,
  * OR run from inside the firebase/ folder with admin SDK already initialized.
  */
-const admin = require('firebase-admin');
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
+const { getAuth } = require('firebase-admin/auth');
 const serviceAccount = require('../firebase/service-account.json');
 
-admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+const app = initializeApp({ credential: cert(serviceAccount) });
 
 const email = process.argv[2];
 if (!email) { console.error('Usage: node make-admin.js <email>'); process.exit(1); }
 
 (async () => {
-  const db = admin.firestore();
-  const auth = admin.auth();
+  const db = getFirestore(app);
+  const auth = getAuth(app);
 
   const user = await auth.getUserByEmail(email);
   await db.collection('users').doc(user.uid).update({ role: 'support' });

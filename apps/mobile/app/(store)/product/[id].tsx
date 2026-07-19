@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import type { Product } from '@junglapp/types';
 
@@ -20,6 +20,7 @@ export default function EditProductScreen() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [offerPrice, setOfferPrice] = useState('');
   const [stock, setStock] = useState('');
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [saving, setSaving] = useState(false);
@@ -32,7 +33,11 @@ export default function EditProductScreen() {
         setProduct(p);
         setName(p.name);
         setDescription(p.description);
-        setPrice(String(p.price));
+        // If there's an active offer, show the regular (higher) price in the
+        // "Precio regular" field and the actual charged amount in "Precio oferta".
+        const onSale = p.originalPrice != null && p.originalPrice > p.price;
+        setPrice(String(onSale ? p.originalPrice : p.price));
+        setOfferPrice(onSale ? String(p.price) : '');
         setStock(String(p.stock));
         setCategory(p.category);
       }
@@ -42,10 +47,17 @@ export default function EditProductScreen() {
   async function save() {
     if (!id) return;
     if (!name || !price || !stock) { Alert.alert('Requerido', 'Completa los campos'); return; }
+    if (offerPrice.trim() && (isNaN(Number(offerPrice)) || Number(offerPrice) >= Number(price))) {
+      Alert.alert('Error', 'El precio oferta debe ser menor al precio regular');
+      return;
+    }
     setSaving(true);
     try {
+      const hasOffer = !!offerPrice.trim();
       await updateDoc(doc(db, COLLECTIONS.PRODUCTS, id), {
-        name, description, price: Number(price), stock: Number(stock), category,
+        name, description, stock: Number(stock), category,
+        price: hasOffer ? Number(offerPrice) : Number(price),
+        originalPrice: hasOffer ? Number(price) : deleteField(),
       });
       Alert.alert('✅', 'Producto actualizado', [{ text: 'OK', onPress: () => router.back() }]);
     } catch (e: any) {
@@ -81,8 +93,12 @@ export default function EditProductScreen() {
               <TextInput className="border border-gray-200 rounded-xl px-4 py-3 bg-white text-base" value={description} onChangeText={setDescription} multiline numberOfLines={3} />
             </View>
             <View>
-              <Text className="text-sm font-medium text-gray-700 mb-1">Precio (CLP)</Text>
+              <Text className="text-sm font-medium text-gray-700 mb-1">Precio regular (CLP)</Text>
               <TextInput className="border border-gray-200 rounded-xl px-4 py-3 bg-white text-base" value={price} onChangeText={setPrice} keyboardType="number-pad" />
+            </View>
+            <View>
+              <Text className="text-sm font-medium text-gray-700 mb-1">Precio oferta (opcional, si el producto está en descuento)</Text>
+              <TextInput className="border border-gray-200 rounded-xl px-4 py-3 bg-white text-base" value={offerPrice} onChangeText={setOfferPrice} keyboardType="number-pad" placeholder="Vacío = sin oferta" />
             </View>
             <View>
               <Text className="text-sm font-medium text-gray-700 mb-1">Stock</Text>

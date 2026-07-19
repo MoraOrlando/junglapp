@@ -18,8 +18,9 @@ function resolvePackageDir(name) {
 
 const config = getDefaultConfig(projectRoot);
 
-// Monorepo support: watch all workspace packages
-config.watchFolders = [workspaceRoot];
+// Monorepo support: watch all workspace packages, in addition to (not instead
+// of) Expo's own default watchFolders.
+config.watchFolders = [...new Set([...(config.watchFolders || []), workspaceRoot])];
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
   path.resolve(workspaceRoot, 'node_modules'),

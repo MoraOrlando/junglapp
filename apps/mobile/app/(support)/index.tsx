@@ -12,18 +12,19 @@ const PURPLE = '#7C3AED';
 export default function SupportDashboard() {
   const { user, logOut } = useAuth();
   const router = useRouter();
-  const [stats, setStats] = useState({ users: 0, owners: 0, vets: 0, stores: 0, trainers: 0, walkers: 0, groomers: 0, pendingVets: 0, pendingStores: 0, pendingTrainers: 0, pendingWalkers: 0, pendingGroomers: 0, pendingReports: 0 });
+  const [stats, setStats] = useState({ users: 0, owners: 0, vets: 0, stores: 0, trainers: 0, walkers: 0, groomers: 0, places: 0, pendingVets: 0, pendingStores: 0, pendingTrainers: 0, pendingWalkers: 0, pendingGroomers: 0, pendingReports: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   async function loadStats() {
-    const [usersSnap, vetsSnap, storesSnap, trainersSnap, walkersSnap, groomersSnap, pendingReportsSnap] = await Promise.all([
+    const [usersSnap, vetsSnap, storesSnap, trainersSnap, walkersSnap, groomersSnap, placesSnap, pendingReportsSnap] = await Promise.all([
       getDocs(collection(db, COLLECTIONS.USERS)),
       getDocs(collection(db, COLLECTIONS.VETERINARIANS)),
       getDocs(collection(db, COLLECTIONS.STORES)),
       getDocs(collection(db, COLLECTIONS.TRAINERS)),
       getDocs(collection(db, COLLECTIONS.WALKERS)),
       getDocs(collection(db, COLLECTIONS.GROOMERS)),
+      getDocs(collection(db, COLLECTIONS.PLACES)),
       getDocs(query(collection(db, COLLECTIONS.REPORTS), where('status', '==', 'pending'))),
     ]);
     const users = usersSnap.docs.map((d) => d.data());
@@ -40,6 +41,7 @@ export default function SupportDashboard() {
       trainers: trainers.length,
       walkers: walkers.length,
       groomers: groomers.length,
+      places: placesSnap.size,
       pendingVets: vets.filter((v) => v.status === 'pending').length,
       pendingStores: stores.filter((s) => s.status === 'pending').length,
       pendingTrainers: trainers.filter((t) => t.status === 'pending').length,
@@ -66,6 +68,7 @@ export default function SupportDashboard() {
     { label: 'Adiestradores', value: stats.trainers, emoji: '🐕', color: '#F0FDF4' },
     { label: 'Paseadores', value: stats.walkers, emoji: '🦮', color: '#FFF7ED' },
     { label: 'Peluquerías', value: stats.groomers, emoji: '✂️', color: '#FAF5FF' },
+    { label: 'Lugares (Entretención)', value: stats.places, emoji: '🐾', color: '#ECFEFF' },
   ];
 
   return (

@@ -34,6 +34,7 @@ export default function SupportLayout() {
       <Tabs.Screen name="trainers" options={{ title: 'Adiestr.', tabBarIcon: ({ focused }) => <TabIcon emoji="🐕" focused={focused} /> }} />
       <Tabs.Screen name="walkers" options={{ title: 'Paseadores', tabBarIcon: ({ focused }) => <TabIcon emoji="🦮" focused={focused} /> }} />
       <Tabs.Screen name="groomers" options={{ title: 'Peluquería', tabBarIcon: ({ focused }) => <TabIcon emoji="✂️" focused={focused} /> }} />
+      <Tabs.Screen name="places" options={{ title: 'Lugares', tabBarIcon: ({ focused }) => <TabIcon emoji="🐾" focused={focused} /> }} />
     </Tabs>
   );
 }

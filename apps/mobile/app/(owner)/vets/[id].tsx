@@ -8,6 +8,8 @@ import {
 import { ref, set } from 'firebase/database';
 import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+import { addAppointmentToDeviceCalendar } from '../../../lib/calendar';
+import { logAppointmentBooked } from '../../../lib/analytics';
 import type { Veterinarian, Pet } from '@junglapp/types';
 
 const { db, rtdb } = initFirebase();
@@ -45,9 +47,19 @@ interface Review {
 }
 
 export default function VetDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, backTo } = useLocalSearchParams<{ id: string; backTo?: string }>();
   const router = useRouter();
   const { user } = useAuth();
+
+  // vets/store/walkers/groomers/trainers live in their own hidden tab
+  // stacks (see (owner)/_layout.tsx), separate from the "near" tab stack —
+  // router.back() from here has nothing to pop to and falls through to the
+  // Inicio tab. Use the explicit return path passed from near/*.tsx instead.
+  function goBack() {
+    if (backTo) router.push(backTo as any);
+    else if (router.canGoBack()) router.back();
+    else router.push('/(owner)/near' as any);
+  }
 
   const [vet, setVet] = useState<Veterinarian | null>(null);
   const [pets, setPets] = useState<Pet[]>([]);
@@ -110,6 +122,21 @@ export default function VetDetailScreen() {
     return vet?.availability?.[date] || [];
   }
 
+  function confirmBookAppointment() {
+    if (!selectedDate || !selectedTime || !selectedPet || !user || !vet) {
+      Alert.alert('Falta información', 'Selecciona fecha, hora y mascota');
+      return;
+    }
+    Alert.alert(
+      'Confirmar cita',
+      `La tarifa de $${vet.consultationFee ? vet.consultationFee.toLocaleString('es-CL') : '—'} CLP es referencial y puede variar según la complejidad del tratamiento. ¿Deseas agendar la cita?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Agendar', onPress: () => bookAppointment() },
+      ]
+    );
+  }
+
   async function bookAppointment() {
     if (!selectedDate || !selectedTime || !selectedPet || !user || !vet) {
       Alert.alert('Falta información', 'Selecciona fecha, hora y mascota');
@@ -129,14 +156,20 @@ export default function VetDetailScreen() {
         status: 'pending',
         createdAt: new Date().toISOString(),
       });
+      logAppointmentBooked('vet');
       // Grants the vet scoped read access to this owner's profile (see
       // firestore.rules `users/{uid}` read rule) — only for owners they've
-      // actually booked with, not every owner in the app.
-      await setDoc(doc(db, COLLECTIONS.CLIENT_LINKS, `${vet.id}_${user.uid}`), {
-        professionalId: vet.id,
+      // actually booked with, not every owner in the app. Must be keyed by
+      // the vet's auth UID (vet.userId), not the veterinarians doc ID
+      // (vet.id) — the read-side rule checks request.auth.uid.
+      await setDoc(doc(db, COLLECTIONS.CLIENT_LINKS, `${vet.userId}_${user.uid}`), {
+        professionalId: vet.userId,
         ownerId: user.uid,
         createdAt: new Date().toISOString(),
       });
+
+      // Add to the owner's device calendar — non-critical, failure must not block the booking
+      addAppointmentToDeviceCalendar(`Cita veterinaria — ${vet.name}`, selectedDate, selectedTime);
 
       // Notify vet via RTDB — non-critical, failure must not block the booking
       try {
@@ -155,7 +188,7 @@ export default function VetDetailScreen() {
       } catch {}
 
       Alert.alert('¡Listo!', 'Cita agendada correctamente', [
-        { text: 'OK', onPress: () => router.back() },
+        { text: 'OK', onPress: goBack },
       ]);
     } catch (e: any) {
       Alert.alert('Error al agendar', e.message);
@@ -232,7 +265,7 @@ export default function VetDetailScreen() {
 
         {/* Back button */}
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={goBack}
           style={{
             position: 'absolute',
             top: 16,
@@ -282,6 +315,9 @@ export default function VetDetailScreen() {
                 💰 ${vet.consultationFee ? vet.consultationFee.toLocaleString('es-CL') : '—'} CLP por consulta
               </Text>
             </View>
+            <Text style={{ fontSize: 11, color: '#94A3B8', marginTop: 4, maxWidth: 280 }}>
+              Tarifa referencial — puede variar según la complejidad del tratamiento.
+            </Text>
 
             {/* Rating */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 }}>
@@ -459,7 +495,7 @@ export default function VetDetailScreen() {
             )}
 
             <TouchableOpacity
-              onPress={bookAppointment}
+              onPress={confirmBookAppointment}
               disabled={!selectedDate || !selectedTime || !selectedPet || booking}
               style={{
                 backgroundColor: (!selectedDate || !selectedTime || !selectedPet || booking) ? '#93C5FD' : '#1D4ED8',

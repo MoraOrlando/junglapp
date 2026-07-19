@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl, Linking } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, Linking, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { collection, query, where, getDocs, doc, getDoc, addDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, addDoc, updateDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 
@@ -38,6 +38,7 @@ export default function OwnerOrdersScreen() {
   const router = useRouter();
   const [orders, setOrders] = useState<OrderWithStore[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   async function loadOrders() {
     if (!user) return;
@@ -112,6 +113,50 @@ export default function OwnerOrdersScreen() {
     router.push(`/(owner)/chat/${chatRef.id}` as any);
   }
 
+  async function cancelOrder(order: OrderWithStore) {
+    Alert.alert(
+      'Cancelar pedido',
+      '¿Estás seguro/a de que deseas cancelar este pedido?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Sí, cancelar',
+          style: 'destructive',
+          onPress: async () => {
+            setUpdatingId(order.id);
+            try {
+              await updateDoc(doc(db, COLLECTIONS.ORDERS, order.id), {
+                status: 'cancelled',
+                cancelledBy: 'buyer',
+                updatedAt: new Date().toISOString(),
+              });
+              setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, status: 'cancelled' } : o));
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            } finally {
+              setUpdatingId(null);
+            }
+          },
+        },
+      ]
+    );
+  }
+
+  async function acceptAlternative(order: OrderWithStore) {
+    setUpdatingId(order.id);
+    try {
+      await updateDoc(doc(db, COLLECTIONS.ORDERS, order.id), {
+        status: 'confirmed',
+        updatedAt: new Date().toISOString(),
+      });
+      setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, status: 'confirmed' } : o));
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
   const pending = orders.filter((o) => o.status === 'pending' || o.status === 'alternative_offered');
   const active = orders.filter((o) => o.status === 'confirmed' || o.status === 'shipped');
   const done = orders.filter((o) => o.status === 'delivered' || o.status === 'cancelled');
@@ -171,6 +216,39 @@ export default function OwnerOrdersScreen() {
             <Text style={{ color: '#374151', fontSize: 13 }}>{order.alternativeMessage}</Text>
           </View>
         ) : null}
+
+        {/* Buyer actions: respond to an alternative offer */}
+        {order.status === 'alternative_offered' && (
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+            <TouchableOpacity
+              onPress={() => acceptAlternative(order)}
+              disabled={updatingId === order.id}
+              style={{ flex: 1, backgroundColor: '#ECFDF5', borderRadius: 12, paddingVertical: 10, alignItems: 'center', opacity: updatingId === order.id ? 0.6 : 1 }}
+            >
+              <Text style={{ color: '#059669', fontWeight: '700', fontSize: 13 }}>✅ Aceptar alternativa</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => cancelOrder(order)}
+              disabled={updatingId === order.id}
+              style={{ flex: 1, backgroundColor: '#FEF2F2', borderRadius: 12, paddingVertical: 10, alignItems: 'center', opacity: updatingId === order.id ? 0.6 : 1 }}
+            >
+              <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 13 }}>❌ Rechazar y cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Buyer action: cancel a pending order */}
+        {order.status === 'pending' && (
+          <TouchableOpacity
+            onPress={() => cancelOrder(order)}
+            disabled={updatingId === order.id}
+            style={{ backgroundColor: '#FEF2F2', borderRadius: 12, paddingVertical: 10, alignItems: 'center', marginBottom: 8, opacity: updatingId === order.id ? 0.6 : 1 }}
+          >
+            <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 13 }}>
+              {updatingId === order.id ? 'Cancelando...' : '❌ Cancelar pedido'}
+            </Text>
+          </TouchableOpacity>
+        )}
 
         {/* Total */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, borderTopWidth: 1, borderTopColor: '#F3F4F6' }}>

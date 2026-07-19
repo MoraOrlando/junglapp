@@ -1,0 +1,18 @@
+diff --git a/node_modules/react-native-screens/android/build.gradle b/node_modules/react-native-screens/android/build.gradle
+index 114be81..78fb7b2 100644
+--- a/node_modules/react-native-screens/android/build.gradle
++++ b/node_modules/react-native-screens/android/build.gradle
+@@ -61,9 +61,12 @@ def resolveReactNativeDirectory() {
+     }
+ 
+     // We're in non standard setup, e.g. monorepo - try to use node resolver to locate the react-native package.
++    // Android Studio's Gradle daemon doesn't inherit the shell PATH on Mac (Homebrew's
++    // node isn't found via a bare "node" lookup, unlike a plain terminal/CLI Gradle run).
++    String resolvedNodeBinary = ['/opt/homebrew/bin/node', '/usr/local/bin/node'].find { new File(it).exists() } ?: 'node'
+     String maybeRnPackagePath = providers.exec {
+         workingDir(rootDir)
+-        commandLine("node", "--print", "require.resolve('react-native/package.json')")
++        commandLine(resolvedNodeBinary, "--print", "require.resolve('react-native/package.json')")
+     }.standardOutput.asText.get().trim()
+ 
+     File nodeResolverRnDirFile = null

@@ -15,6 +15,7 @@ import { useAuth } from '../../context/AuthContext';
 import { doc, setDoc } from 'firebase/firestore';
 import { initFirebase, uploadImage, handleEmailAlreadyInUse } from '@junglapp/firebase';
 import { validateRut, formatRut } from '../../lib/rut';
+import { locationKeys } from '../../lib/locationKey';
 
 const { db } = initFirebase();
 
@@ -133,6 +134,7 @@ export default function RegisterGroomingScreen() {
           address: serviceType === 'store' ? (data.address || '') : null,
           region,
           city: data.city,
+          ...locationKeys(data.city, region),
           services: selectedServices,
           photoUrl,
           status: 'pending',

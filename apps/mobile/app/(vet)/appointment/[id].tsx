@@ -6,10 +6,11 @@ import {
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy } from 'firebase/firestore';
 import { ref, set } from 'firebase/database';
 import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+import { logAppointmentCompleted, logAppointmentCancelled } from '../../../lib/analytics';
 import type { Appointment, Pet, Veterinarian } from '@junglapp/types';
 
 const { db, rtdb } = initFirebase();
@@ -98,10 +99,33 @@ export default function AppointmentDetailScreen() {
 
       setAppointment(appt);
 
-      // Load pet, owner, and medical history in parallel
-      const [petSnap, ownerSnap, visitsSnap] = await Promise.all([
+      // Self-heal: appointments booked before the clientLinks write existed
+      // (or if that write ever failed) won't have the link doc the
+      // `users/{uid}` read rule requires — re-create it here so the owner's
+      // profile below doesn't silently fail to load. Only write when missing:
+      // the rule allows *create* but not update, so re-writing an existing
+      // link would just be a denied no-op. Non-critical either way. Must be
+      // keyed by the vet's auth UID (user.uid), not the veterinarians doc ID
+      // (vet.id) — the read-side rule checks request.auth.uid.
+      try {
+        const linkRef = doc(db, COLLECTIONS.CLIENT_LINKS, `${user!.uid}_${appt.ownerId}`);
+        const linkSnap = await getDoc(linkRef);
+        if (!linkSnap.exists()) {
+          await setDoc(linkRef, {
+            professionalId: user!.uid,
+            ownerId: appt.ownerId,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      } catch {}
+
+      // Load pet and medical history — vets always have blanket read access
+      // to these (see firestore.rules), so they must render even if the
+      // owner-profile read below is denied (e.g. clientLinks not caught up
+      // yet). Kept out of the owner Promise.all so one denial can't blank
+      // out the pet's name and medical record.
+      const [petSnap, visitsSnap] = await Promise.all([
         getDoc(doc(db, COLLECTIONS.PETS, appt.petId)),
-        getDoc(doc(db, 'users', appt.ownerId)),
         getDocs(
           query(
             collection(db, COLLECTIONS.MEDICAL_VISITS),
@@ -114,11 +138,19 @@ export default function AppointmentDetailScreen() {
       ]);
 
       if (petSnap.exists()) setPet({ id: petSnap.id, ...petSnap.data() } as Pet);
-      if (ownerSnap.exists()) setOwnerProfile({ id: ownerSnap.id, ...ownerSnap.data() });
       const visits = visitsSnap.docs
         .map((d) => ({ id: d.id, ...d.data() } as MedicalVisit))
         .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
       setMedicalVisits(visits);
+
+      // Owner profile is scoped by clientLinks and can legitimately be
+      // denied right after the self-heal write above (client cache may not
+      // have caught up yet) — load it separately so a denial here doesn't
+      // block pet/medical data that just rendered above.
+      try {
+        const ownerSnap = await getDoc(doc(db, 'users', appt.ownerId));
+        if (ownerSnap.exists()) setOwnerProfile({ id: ownerSnap.id, ...ownerSnap.data() });
+      } catch {}
     } catch (e: any) {
       Alert.alert('Error cargando cita', e.message);
     } finally {
@@ -135,6 +167,8 @@ export default function AppointmentDetailScreen() {
         updatedAt: new Date().toISOString(),
         ...extra,
       });
+      if (newStatus === 'completed') logAppointmentCompleted('vet');
+      if (newStatus === 'cancelled') logAppointmentCancelled('vet');
       setAppointment((p) => p ? { ...p, status: newStatus as any, ...extra } : null);
     } catch (e: any) {
       Alert.alert('Error', e.message);

@@ -20,6 +20,8 @@ export const COLLECTIONS = {
   REPORTS: 'reports',
   BLOCKS: 'blocks',
   CLIENT_LINKS: 'clientLinks',
+  PLACES: 'places',
+  PLACE_REVIEWS: 'placeReviews',
 } as const;
 
 export const RTDB_PATHS = {

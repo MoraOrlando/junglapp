@@ -272,41 +272,36 @@ export default function OwnerHomeScreen() {
         </View>
       )}
 
-      {/* Lost pets access */}
-      <TouchableOpacity
-        onPress={() => router.push('/(owner)/lost' as any)}
-        activeOpacity={0.85}
-        style={{
-          marginHorizontal: 24, marginBottom: 10, backgroundColor: '#FEF2F2',
-          borderWidth: 1, borderColor: '#FECACA', borderRadius: 16,
-          padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
-        }}
-      >
-        <Text style={{ fontSize: 28 }}>🔍</Text>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontWeight: '700', color: '#DC2626', fontSize: 15 }}>Mascotas extraviadas</Text>
-          <Text style={{ color: '#F87171', fontSize: 12, marginTop: 1 }}>Mira el mapa y ayuda a encontrarlas cerca de ti</Text>
-        </View>
-        <Text style={{ color: '#FCA5A5', fontSize: 20 }}>›</Text>
-      </TouchableOpacity>
+      {/* Lost pets + Haz crecer tu familia, side by side */}
+      <View style={{ flexDirection: 'row', gap: 10, marginHorizontal: 24, marginBottom: 14 }}>
+        <TouchableOpacity
+          onPress={() => router.push('/(owner)/lost' as any)}
+          activeOpacity={0.85}
+          style={{
+            flex: 1, backgroundColor: '#FEF2F2',
+            borderWidth: 1, borderColor: '#FECACA', borderRadius: 16,
+            padding: 14, alignItems: 'center',
+          }}
+        >
+          <Text style={{ fontSize: 26, marginBottom: 6 }}>🔍</Text>
+          <Text style={{ fontWeight: '700', color: '#DC2626', fontSize: 13, textAlign: 'center' }}>Mascotas extraviadas</Text>
+          <Text style={{ color: '#F87171', fontSize: 11, marginTop: 2, textAlign: 'center' }}>Ayuda a encontrarlas cerca de ti</Text>
+        </TouchableOpacity>
 
-      {/* Haz crecer tu familia */}
-      <TouchableOpacity
-        onPress={() => router.push('/(owner)/litter' as any)}
-        activeOpacity={0.85}
-        style={{
-          marginHorizontal: 24, marginBottom: 14, backgroundColor: '#F0FDF4',
-          borderWidth: 1, borderColor: '#BBF7D0', borderRadius: 16,
-          padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
-        }}
-      >
-        <Text style={{ fontSize: 28 }}>🌱</Text>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontWeight: '700', color: '#065F46', fontSize: 15 }}>Haz crecer tu familia</Text>
-          <Text style={{ color: '#34D399', fontSize: 12, marginTop: 1 }}>Adopta o compra mascotas de la comunidad</Text>
-        </View>
-        <Text style={{ color: '#6EE7B7', fontSize: 20 }}>›</Text>
-      </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => router.push('/(owner)/litter' as any)}
+          activeOpacity={0.85}
+          style={{
+            flex: 1, backgroundColor: '#F0FDF4',
+            borderWidth: 1, borderColor: '#BBF7D0', borderRadius: 16,
+            padding: 14, alignItems: 'center',
+          }}
+        >
+          <Text style={{ fontSize: 26, marginBottom: 6 }}>🌱</Text>
+          <Text style={{ fontWeight: '700', color: '#065F46', fontSize: 13, textAlign: 'center' }}>Haz crecer tu familia</Text>
+          <Text style={{ color: '#34D399', fontSize: 11, marginTop: 2, textAlign: 'center' }}>Adopta o compra mascotas</Text>
+        </TouchableOpacity>
+      </View>
 
       <Text className="px-6 text-gray-700 font-semibold text-base mb-2">Mis Mascotas</Text>
 

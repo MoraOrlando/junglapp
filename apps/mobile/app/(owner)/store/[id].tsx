@@ -9,16 +9,26 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { doc, getDoc, getDocs, collection, query, where, addDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+import { logOrderPlaced } from '../../../lib/analytics';
 import type { Store, Product, StoreService } from '@junglapp/types';
 
 const { db } = initFirebase();
 const AMBER = '#D97706';
 const GREEN = '#2D6A4F';
+const RED = '#DC2626';
 
 export default function StoreDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, backTo } = useLocalSearchParams<{ id: string; backTo?: string }>();
   const router = useRouter();
   const { user } = useAuth();
+
+  // See vets/[id].tsx — this screen lives in its own hidden tab stack,
+  // so router.back() has nothing to pop to without an explicit return path.
+  function goBack() {
+    if (backTo) router.push(backTo as any);
+    else if (router.canGoBack()) router.back();
+    else router.push('/(owner)/near' as any);
+  }
   const [store, setStore] = useState<Store | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [activeTab, setActiveTab] = useState<'products' | 'services'>('products');
@@ -68,6 +78,7 @@ export default function StoreDetailScreen() {
         shippingAddress: user.address,
         createdAt: new Date().toISOString(),
       });
+      logOrderPlaced();
       setOrderProduct(null);
       Alert.alert('¡Pedido realizado! 🎉', `Tu pedido de ${orderProduct.name} fue enviado a la tienda.`);
     } catch (e: any) {
@@ -99,6 +110,7 @@ export default function StoreDetailScreen() {
         shippingAddress: user.address,
         createdAt: new Date().toISOString(),
       });
+      logOrderPlaced();
       setBookService(null);
       setBookNote('');
       Alert.alert('¡Reserva enviada! 🎉', `Tu solicitud de "${bookService.name}" fue enviada a la tienda.`);
@@ -132,7 +144,7 @@ export default function StoreDetailScreen() {
         )}
 
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={goBack}
           style={{ position: 'absolute', top: 16, left: 16, backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 20, padding: 8 }}
         >
           <Text style={{ color: '#374151', fontSize: 16, paddingHorizontal: 4 }}>←</Text>
@@ -235,7 +247,16 @@ export default function StoreDetailScreen() {
                         <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 14 }} numberOfLines={2}>{product.name}</Text>
                         <Text style={{ color: '#9CA3AF', fontSize: 11, marginTop: 2 }}>{product.category}</Text>
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-                          <Text style={{ color: GREEN, fontWeight: '800', fontSize: 15 }}>${product.price.toLocaleString()}</Text>
+                          {product.originalPrice != null && product.originalPrice > product.price ? (
+                            <View>
+                              <Text style={{ color: '#9CA3AF', fontSize: 11, textDecorationLine: 'line-through' }}>
+                                ${product.originalPrice.toLocaleString()}
+                              </Text>
+                              <Text style={{ color: RED, fontWeight: '800', fontSize: 15 }}>${product.price.toLocaleString()}</Text>
+                            </View>
+                          ) : (
+                            <Text style={{ color: GREEN, fontWeight: '800', fontSize: 15 }}>${product.price.toLocaleString()}</Text>
+                          )}
                           <View style={{ backgroundColor: product.stock > 0 ? '#ECFDF5' : '#FEF2F2', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}>
                             <Text style={{ fontSize: 10, color: product.stock > 0 ? '#059669' : '#EF4444', fontWeight: '600' }}>
                               {product.stock > 0 ? `${product.stock} uds` : 'Agotado'}
@@ -314,7 +335,16 @@ export default function StoreDetailScreen() {
                     <View style={{ flex: 1, justifyContent: 'center' }}>
                       <Text style={{ fontSize: 17, fontWeight: '700', color: '#1F2937' }}>{orderProduct.name}</Text>
                       <Text style={{ color: '#9CA3AF', fontSize: 13 }}>{orderProduct.category}</Text>
-                      <Text style={{ color: GREEN, fontWeight: '800', fontSize: 16, marginTop: 4 }}>${orderProduct.price.toLocaleString()}</Text>
+                      {orderProduct.originalPrice != null && orderProduct.originalPrice > orderProduct.price ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
+                          <Text style={{ color: RED, fontWeight: '800', fontSize: 16 }}>${orderProduct.price.toLocaleString()}</Text>
+                          <Text style={{ color: '#9CA3AF', fontSize: 12, textDecorationLine: 'line-through' }}>
+                            ${orderProduct.originalPrice.toLocaleString()}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text style={{ color: GREEN, fontWeight: '800', fontSize: 16, marginTop: 4 }}>${orderProduct.price.toLocaleString()}</Text>
+                      )}
                     </View>
                   </View>
 

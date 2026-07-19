@@ -9,6 +9,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { doc, getDoc, getDocs, collection, query, where, addDoc, setDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+import { addAppointmentToDeviceCalendar } from '../../../lib/calendar';
+import { logAppointmentBooked } from '../../../lib/analytics';
 import type { Trainer } from '@junglapp/types';
 
 const { db } = initFirebase();
@@ -26,9 +28,17 @@ function Stars({ rating, size = 16 }: { rating: number; size?: number }) {
 }
 
 export default function TrainerDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, backTo } = useLocalSearchParams<{ id: string; backTo?: string }>();
   const router = useRouter();
   const { user } = useAuth();
+
+  // See vets/[id].tsx — this screen lives in its own hidden tab stack,
+  // so router.back() has nothing to pop to without an explicit return path.
+  function goBack() {
+    if (backTo) router.push(backTo as any);
+    else if (router.canGoBack()) router.back();
+    else router.push('/(owner)/near' as any);
+  }
   const [trainer, setTrainer] = useState<Trainer | null>(null);
   const [reviews, setReviews] = useState<any[]>([]);
   const [selectedDate, setSelectedDate] = useState('');
@@ -86,14 +96,21 @@ export default function TrainerDetailScreen() {
         type: 'training',
         createdAt: new Date().toISOString(),
       });
+      logAppointmentBooked('trainer');
       // Grants the trainer scoped read access to this owner's profile (see
       // firestore.rules `users/{uid}` read rule) — only for owners they've
-      // actually booked with, not every owner in the app.
-      await setDoc(doc(db, COLLECTIONS.CLIENT_LINKS, `${trainer.id}_${user.uid}`), {
-        professionalId: trainer.id,
+      // actually booked with, not every owner in the app. Must be keyed by
+      // the trainer's auth UID (trainer.userId), not the trainers doc ID
+      // (trainer.id) — the read-side rule checks request.auth.uid.
+      await setDoc(doc(db, COLLECTIONS.CLIENT_LINKS, `${trainer.userId}_${user.uid}`), {
+        professionalId: trainer.userId,
         ownerId: user.uid,
         createdAt: new Date().toISOString(),
       });
+
+      // Add to the owner's device calendar — non-critical, failure must not block the booking
+      addAppointmentToDeviceCalendar(`Adiestramiento — ${trainer.name}`, selectedDate, selectedTime);
+
       setBookModal(false);
       Alert.alert(
         '¡Sesión agendada! 🐕',
@@ -152,7 +169,7 @@ export default function TrainerDetailScreen() {
             <Text style={{ fontSize: 64 }}>🐕</Text>
           )}
         </View>
-        <TouchableOpacity onPress={() => router.back()} style={{ position: 'absolute', top: 16, left: 16, backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 20, padding: 8 }}>
+        <TouchableOpacity onPress={goBack} style={{ position: 'absolute', top: 16, left: 16, backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 20, padding: 8 }}>
           <Text style={{ color: '#374151', fontSize: 16, paddingHorizontal: 4 }}>←</Text>
         </TouchableOpacity>
 
