@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ref, push, onValue, off, query, limitToLast, serverTimestamp } from 'firebase/database';
+import { ref, push, onValue, off, query, limitToLast, serverTimestamp, set } from 'firebase/database';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import { initFirebase, COLLECTIONS, RTDB_PATHS, uploadImage } from '@junglapp/firebase';
@@ -85,8 +85,16 @@ export default function ChatRoomScreen() {
   useEffect(() => {
     if (!id || !user) return;
 
-    getDoc(doc(db, COLLECTIONS.CHATS, id)).then((snap) => {
-      if (snap.exists()) setChat({ id: snap.id, ...snap.data() } as Chat);
+    getDoc(doc(db, COLLECTIONS.CHATS, id)).then(async (snap) => {
+      if (!snap.exists()) return;
+      const chatData = { id: snap.id, ...snap.data() } as Chat;
+      setChat(chatData);
+      // Required by the Realtime Database rules before this user can read/write
+      // messages/{id} — the store side already does this (apps/mobile/app/(store)/chat/[id].tsx),
+      // it was missing here, which silently blocked owners from sending the first message.
+      await Promise.all(
+        chatData.participants.map((uid) => set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${id}/${uid}`), true))
+      ).catch(() => {});
     }).catch(() => {});
 
     // Mark as read when opening the chat
