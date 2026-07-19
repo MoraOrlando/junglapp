@@ -4,13 +4,15 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   collection, query, where, getDocs, doc, updateDoc, addDoc,
-  runTransaction, deleteField,
+  runTransaction, deleteField, onSnapshot,
 } from 'firebase/firestore';
+import { ref, onValue, push, set as rtdbSet } from 'firebase/database';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { ProductRow, PRODUCT_CATEGORIES, parseProductWorkbook, downloadProductTemplate } from '../../lib/productImport';
+import { generateReceiptPdf } from '../../lib/receipt';
 
-const { db } = initFirebase();
+const { db, rtdb } = initFirebase();
 
 interface Product {
   id: string;
@@ -18,6 +20,7 @@ interface Product {
   description?: string;
   price: number;
   purchasePrice?: number;
+  originalPrice?: number;
   stock?: number;
   category?: string;
   photos?: string[];
@@ -31,6 +34,7 @@ interface Order {
   createdAt: string;
   total: number;
   status: string;
+  buyerId?: string;
   buyerName?: string;
   buyerPhone?: string;
   shippingAddress?: string;
@@ -44,7 +48,21 @@ interface PosSale {
   id: string;
   createdAt: string;
   total: number;
+  neto?: number;
+  iva?: number;
+  paymentMethod?: string;
   items: OrderItem[];
+}
+
+interface ChatMessage { id: string; senderId: string; senderName: string; text: string; createdAt: string; }
+interface ChatSummary {
+  id: string;
+  buyerId: string;
+  buyerName: string;
+  orderId?: string;
+  lastMessage?: string;
+  lastMessageAt?: string;
+  lastReadAt?: Record<string, string>;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -70,6 +88,7 @@ const TABS = [
   { key: 'inventario', label: 'Inventario', icon: '📦' },
   { key: 'pedidos', label: 'Pedidos', icon: '🧾' },
   { key: 'carrito', label: 'Carrito', icon: '🛒' },
+  { key: 'chat', label: 'Chat', icon: '💬' },
 ] as const;
 type Tab = (typeof TABS)[number]['key'];
 
@@ -103,16 +122,17 @@ function ProductFormModal({
   title, initial, saving, onCancel, onSubmit,
 }: {
   title: string;
-  initial: { name: string; description: string; category: string; price: string; purchasePrice: string; stock: string; photoUrl?: string };
+  initial: { name: string; description: string; category: string; price: string; purchasePrice: string; originalPrice: string; stock: string; photoUrl?: string };
   saving: boolean;
   onCancel: () => void;
-  onSubmit: (values: { name: string; description: string; category: string; price: string; purchasePrice: string; stock: string; photoFile: File | null }) => void;
+  onSubmit: (values: { name: string; description: string; category: string; price: string; purchasePrice: string; originalPrice: string; stock: string; photoFile: File | null }) => void;
 }) {
   const [name, setName] = useState(initial.name);
   const [description, setDescription] = useState(initial.description);
   const [category, setCategory] = useState(initial.category || PRODUCT_CATEGORIES[0]);
   const [price, setPrice] = useState(initial.price);
   const [purchasePrice, setPurchasePrice] = useState(initial.purchasePrice);
+  const [originalPrice, setOriginalPrice] = useState(initial.originalPrice);
   const [stock, setStock] = useState(initial.stock);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | undefined>(initial.photoUrl);
@@ -173,6 +193,11 @@ function ProductFormModal({
             <label className="text-xs font-medium text-gray-500">Stock</label>
             <input type="number" value={stock} onChange={(e) => setStock(e.target.value)} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-primary-400" />
           </div>
+          <div>
+            <label className="text-xs font-medium text-gray-500">Precio original (antes del descuento)</label>
+            <input type="number" value={originalPrice} onChange={(e) => setOriginalPrice(e.target.value)} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-primary-400" />
+            <p className="text-xs text-gray-400 mt-1">Solo si el producto está en oferta — se mostrará tachado en la app.</p>
+          </div>
         </div>
 
         <div className="flex gap-2 mt-6">
@@ -180,7 +205,7 @@ function ProductFormModal({
             Cancelar
           </button>
           <button
-            onClick={() => onSubmit({ name, description, category, price, purchasePrice, stock, photoFile })}
+            onClick={() => onSubmit({ name, description, category, price, purchasePrice, originalPrice, stock, photoFile })}
             disabled={saving || !name || !price}
             className="flex-1 bg-primary-500 text-white font-semibold py-2.5 rounded-xl hover:bg-primary-600 transition active:scale-[0.97] text-sm disabled:opacity-40"
           >
@@ -201,6 +226,9 @@ export default function StorePortalPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [posSales, setPosSales] = useState<PosSale[]>([]);
   const [storeId, setStoreId] = useState<string | null>(null);
+  const [storeName, setStoreName] = useState<string>('JunglApp');
+  const [storeLogoUrl, setStoreLogoUrl] = useState<string | undefined>(undefined);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
@@ -223,11 +251,65 @@ export default function StorePortalPage() {
 
   const [cart, setCart] = useState<Record<string, number>>({});
   const [cartSaving, setCartSaving] = useState(false);
+  const [cartSearch, setCartSearch] = useState('');
+  const [cartCategory, setCartCategory] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'efectivo' | 'tarjeta' | 'transferencia'>('efectivo');
+
+  const [chats, setChats] = useState<ChatSummary[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messageText, setMessageText] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace('/acceso');
     if (!loading && user && user.role !== 'store') router.replace('/acceso');
   }, [user, loading, router]);
+
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, COLLECTIONS.CHATS), where('participants', 'array-contains', user.uid));
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs
+        .map((d) => {
+          const data = d.data() as any;
+          if (data.chatType !== 'store') return null;
+          const buyerId = (data.participants || []).find((p: string) => p !== user.uid);
+          if (!buyerId) return null;
+          return {
+            id: d.id,
+            buyerId,
+            buyerName: data.participantNames?.[buyerId] || 'Cliente',
+            orderId: data.orderId,
+            lastMessage: data.lastMessage,
+            lastMessageAt: data.lastMessageAt,
+            lastReadAt: data.lastReadAt,
+          } as ChatSummary;
+        })
+        .filter((c): c is ChatSummary => !!c)
+        .sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''));
+      setChats(list);
+    });
+    return () => unsub();
+  }, [user]);
+
+  useEffect(() => {
+    if (!activeChatId || !rtdb) { setMessages([]); return; }
+    const chatId = activeChatId;
+    const messagesRef = ref(rtdb, `messages/${chatId}`);
+    const unsub = onValue(messagesRef, (snap) => {
+      const val = snap.val() || {};
+      const list: ChatMessage[] = Object.entries(val).map(([id, m]) => ({ id, ...(m as any) }));
+      list.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      setMessages(list);
+      // Keep lastReadAt current while this chat stays open, so new incoming
+      // messages don't show as unread again after navigating away and back.
+      if (list.length > 0 && user) {
+        updateDoc(doc(db, COLLECTIONS.CHATS, chatId), { [`lastReadAt.${user.uid}`]: new Date().toISOString() }).catch(() => {});
+      }
+    });
+    return () => unsub();
+  }, [activeChatId]);
 
   async function loadStoreData(sid: string) {
     const [productsSnap, ordersSnap, posSalesSnap] = await Promise.all([
@@ -255,7 +337,10 @@ export default function StorePortalPage() {
         const storeSnap = await getDocs(query(collection(db, COLLECTIONS.STORES), where('userId', '==', user!.uid)));
         if (!storeSnap.empty) {
           const sid = storeSnap.docs[0].id;
+          const storeData = storeSnap.docs[0].data() as any;
           setStoreId(sid);
+          setStoreLogoUrl(storeData.photoUrl);
+          if (storeData.name) setStoreName(storeData.name);
           await loadStoreData(sid);
         }
       } catch {}
@@ -324,7 +409,7 @@ export default function StorePortalPage() {
     await loadStoreData(storeId);
   }
 
-  async function submitAddProduct(values: { name: string; description: string; category: string; price: string; purchasePrice: string; stock: string; photoFile: File | null }) {
+  async function submitAddProduct(values: { name: string; description: string; category: string; price: string; purchasePrice: string; originalPrice: string; stock: string; photoFile: File | null }) {
     if (!storeId || !user) return;
     setAddSaving(true);
     try {
@@ -332,14 +417,17 @@ export default function StorePortalPage() {
       if (values.photoFile) {
         photoUrl = await uploadImage(URL.createObjectURL(values.photoFile));
       }
+      const price = Number(values.price) || 0;
+      const originalPrice = Number(values.originalPrice) || 0;
       await addDoc(collection(db, COLLECTIONS.PRODUCTS), {
         storeId,
         userId: user.uid,
         name: values.name,
         description: values.description,
         category: values.category,
-        price: Number(values.price) || 0,
+        price,
         ...(values.purchasePrice ? { purchasePrice: Number(values.purchasePrice) } : {}),
+        ...(originalPrice > price ? { originalPrice } : {}),
         stock: Number(values.stock) || 0,
         photos: photoUrl ? [photoUrl] : [],
         isActive: true,
@@ -352,7 +440,7 @@ export default function StorePortalPage() {
     }
   }
 
-  async function submitEditProduct(values: { name: string; description: string; category: string; price: string; purchasePrice: string; stock: string; photoFile: File | null }) {
+  async function submitEditProduct(values: { name: string; description: string; category: string; price: string; purchasePrice: string; originalPrice: string; stock: string; photoFile: File | null }) {
     if (!storeId || !editingProduct) return;
     setEditSaving(true);
     try {
@@ -361,9 +449,12 @@ export default function StorePortalPage() {
         const url = await uploadImage(URL.createObjectURL(values.photoFile));
         photos = [url];
       }
+      const price = Number(values.price) || 0;
+      const originalPrice = Number(values.originalPrice) || 0;
       await updateDoc(doc(db, COLLECTIONS.PRODUCTS, editingProduct.id), {
-        price: Number(values.price) || 0,
+        price,
         purchasePrice: values.purchasePrice ? Number(values.purchasePrice) : deleteField(),
+        originalPrice: originalPrice > price ? originalPrice : deleteField(),
         stock: Number(values.stock) || 0,
         ...(photos ? { photos } : {}),
       });
@@ -394,6 +485,8 @@ export default function StorePortalPage() {
     setCartSaving(true);
     try {
       const now = new Date().toISOString();
+      let committedItems: OrderItem[] = [];
+      let committedTotal = 0;
 
       await runTransaction(db, async (tx) => {
         const saleItems: OrderItem[] = [];
@@ -411,16 +504,102 @@ export default function StorePortalPage() {
         });
 
         const total = saleItems.reduce((sum, it) => sum + it.price * it.quantity, 0);
+        const neto = total / 1.19;
+        const iva = total - neto;
         const saleRef = doc(collection(db, COLLECTIONS.POS_SALES));
-        tx.set(saleRef, { storeId, items: saleItems, total, createdAt: now });
+        tx.set(saleRef, { storeId, items: saleItems, total, neto, iva, paymentMethod, createdAt: now });
+        committedItems = saleItems;
+        committedTotal = total;
       });
 
       setCart({});
       await loadStoreData(storeId);
+
+      try {
+        await generateReceiptPdf({
+          storeName,
+          storeLogoUrl,
+          items: committedItems,
+          neto: committedTotal / 1.19,
+          iva: committedTotal - committedTotal / 1.19,
+          total: committedTotal,
+          paymentMethod,
+          createdAt: now,
+        });
+      } catch {
+        // The sale is already committed at this point — a PDF failure
+        // (e.g. logo fetch blocked by CORS) must not look like a failed sale.
+      }
     } catch (err: any) {
       alert(err?.message || 'No se pudo confirmar la venta.');
     } finally {
       setCartSaving(false);
+    }
+  }
+
+  async function openChat(chatId: string) {
+    setActiveChatId(chatId);
+    if (!user || !rtdb) return;
+    await rtdbSet(ref(rtdb, `chatMembers/${chatId}/${user.uid}`), true).catch(() => {});
+    await updateDoc(doc(db, COLLECTIONS.CHATS, chatId), { [`lastReadAt.${user.uid}`]: new Date().toISOString() }).catch(() => {});
+  }
+
+  async function sendMessage() {
+    if (!activeChatId || !user || !rtdb || !messageText.trim()) return;
+    setSendingMessage(true);
+    try {
+      const now = new Date().toISOString();
+      const text = messageText.trim();
+      await push(ref(rtdb, `messages/${activeChatId}`), {
+        senderId: user.uid,
+        senderName: user.name || 'Tienda',
+        text,
+        createdAt: now,
+      });
+      await updateDoc(doc(db, COLLECTIONS.CHATS, activeChatId), {
+        lastMessage: text,
+        lastMessageAt: now,
+        updatedAt: now,
+        [`lastReadAt.${user.uid}`]: now,
+      });
+      setMessageText('');
+    } finally {
+      setSendingMessage(false);
+    }
+  }
+
+  async function openChatWithOrder(order: Order) {
+    if (!user || !order.buyerId) return;
+    const existing = chats.find((c) => c.buyerId === order.buyerId);
+    if (existing) {
+      setTab('chat');
+      openChat(existing.id);
+      return;
+    }
+    const now = new Date().toISOString();
+    const newChatRef = await addDoc(collection(db, COLLECTIONS.CHATS), {
+      participants: [user.uid, order.buyerId],
+      participantNames: { [user.uid]: user.name || 'Tienda', [order.buyerId]: order.buyerName || 'Cliente' },
+      chatType: 'store',
+      orderId: order.id,
+      createdAt: now,
+      updatedAt: now,
+    });
+    setTab('chat');
+    openChat(newChatRef.id);
+  }
+
+  async function uploadLogo(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !storeId) return;
+    setUploadingLogo(true);
+    try {
+      const url = await uploadImage(URL.createObjectURL(file));
+      await updateDoc(doc(db, COLLECTIONS.STORES, storeId), { photoUrl: url });
+      setStoreLogoUrl(url);
+    } finally {
+      setUploadingLogo(false);
     }
   }
 
@@ -444,14 +623,30 @@ export default function StorePortalPage() {
     return { productId, qty, product };
   }).filter((l) => l.product);
   const cartTotal = cartLines.reduce((sum, l) => sum + (l.product!.price * l.qty), 0);
-  const availableForCart = products.filter((p) => p.isActive && (p.stock ?? 0) > 0);
+  const cartQtyTotal = cartLines.reduce((sum, l) => sum + l.qty, 0);
+  const cartNeto = cartTotal / 1.19;
+  const cartIva = cartTotal - cartNeto;
+  const availableForCart = products
+    .filter((p) => p.isActive && (p.stock ?? 0) > 0)
+    .filter((p) => !cartCategory || p.category === cartCategory)
+    .filter((p) => !cartSearch.trim() || p.name.toLowerCase().includes(cartSearch.trim().toLowerCase()));
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Navbar */}
       <header className="bg-primary-700 text-white px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-xl">🛒</span>
+          <label className="w-8 h-8 rounded-full bg-white/10 overflow-hidden flex items-center justify-center shrink-0 cursor-pointer hover:bg-white/20 transition" title="Cambiar logo de la tienda">
+            {uploadingLogo ? (
+              <span className="text-xs animate-pulse">...</span>
+            ) : storeLogoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={storeLogoUrl} alt="Logo" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-xl">🛒</span>
+            )}
+            <input type="file" accept="image/*" onChange={uploadLogo} className="hidden" />
+          </label>
           <span className="font-bold">JunglApp — Tienda</span>
         </div>
         <div className="flex items-center gap-4">
@@ -664,6 +859,15 @@ export default function StorePortalPage() {
                             </div>
                           )}
 
+                          {o.buyerId && (
+                            <button
+                              onClick={() => openChatWithOrder(o)}
+                              className="w-full bg-primary-50 text-primary-700 font-semibold text-sm py-2.5 rounded-xl hover:bg-primary-100 transition active:scale-[0.97]"
+                            >
+                              💬 Chatear con el cliente
+                            </button>
+                          )}
+
                           <div className="text-sm">
                             <p className="font-semibold text-gray-700 mb-1">
                               {o.type === 'service' ? '🔧 Servicio' : '📦 Productos'}
@@ -724,10 +928,28 @@ export default function StorePortalPage() {
           <div className="grid md:grid-cols-3 gap-6">
             <div className="md:col-span-2">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Venta en tienda física</h2>
+              <div className="flex gap-2 mb-4">
+                <input
+                  value={cartSearch}
+                  onChange={(e) => setCartSearch(e.target.value)}
+                  placeholder="🔍 Buscar producto por nombre..."
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+                />
+                <select
+                  value={cartCategory}
+                  onChange={(e) => setCartCategory(e.target.value)}
+                  className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+                >
+                  <option value="">Todas las categorías</option>
+                  {PRODUCT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
               {availableForCart.length === 0 ? (
                 <div className="bg-white rounded-2xl p-8 text-center shadow-sm">
                   <span className="text-4xl">📦</span>
-                  <p className="text-gray-500 mt-3">No hay productos activos con stock disponible.</p>
+                  <p className="text-gray-500 mt-3">
+                    {cartSearch || cartCategory ? 'Ningún producto coincide con el filtro.' : 'No hay productos activos con stock disponible.'}
+                  </p>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
@@ -774,20 +996,143 @@ export default function StorePortalPage() {
                         </div>
                       </div>
                     ))}
-                    <div className="border-t border-gray-100 pt-3 flex items-center justify-between font-bold text-gray-900">
-                      <span>Total</span>
-                      <span>${cartTotal.toLocaleString('es-CL')}</span>
+                    <div className="border-t border-gray-100 pt-3">
+                      <p className="text-xs font-medium text-gray-500 mb-2">Medio de pago</p>
+                      <div className="grid grid-cols-3 gap-2 mb-3">
+                        {([
+                          { key: 'efectivo', label: '💵 Efectivo' },
+                          { key: 'tarjeta', label: '💳 Tarjeta' },
+                          { key: 'transferencia', label: '🏦 Transferencia' },
+                        ] as const).map((m) => (
+                          <button
+                            key={m.key}
+                            onClick={() => setPaymentMethod(m.key)}
+                            className={`text-xs font-semibold py-2 rounded-xl transition active:scale-[0.97] ${
+                              paymentMethod === m.key ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            }`}
+                          >
+                            {m.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <label className="text-xs font-medium text-gray-500">Correo del cliente (opcional)</label>
+                      <input
+                        type="email"
+                        disabled
+                        placeholder="correo@ejemplo.com"
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mt-1 bg-gray-50 text-gray-400 cursor-not-allowed"
+                      />
+                      <p className="text-[11px] text-gray-400 mt-1 mb-3">Enviar copia de la venta por correo — próximamente.</p>
+
+                      <div className="space-y-1 text-sm">
+                        <div className="flex items-center justify-between text-gray-500">
+                          <span>Productos</span>
+                          <span>{cartQtyTotal}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-gray-500">
+                          <span>Valor neto</span>
+                          <span>${Math.round(cartNeto).toLocaleString('es-CL')}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-gray-500">
+                          <span>IVA (19%)</span>
+                          <span>${Math.round(cartIva).toLocaleString('es-CL')}</span>
+                        </div>
+                        <div className="flex items-center justify-between font-bold text-gray-900 text-base pt-1 border-t border-gray-100 mt-1">
+                          <span>Total</span>
+                          <span>${cartTotal.toLocaleString('es-CL')}</span>
+                        </div>
+                      </div>
                     </div>
                     <button
                       onClick={confirmSale}
                       disabled={cartSaving}
-                      className="w-full bg-green-700 text-white font-bold py-2.5 rounded-xl hover:bg-green-800 transition active:scale-[0.97] disabled:opacity-40 text-sm"
+                      className="w-full bg-green-700 text-white font-bold py-2.5 rounded-xl hover:bg-green-800 transition active:scale-[0.97] disabled:opacity-40 text-sm mt-3"
                     >
-                      {cartSaving ? 'Confirmando...' : '✅ Confirmar venta'}
+                      {cartSaving ? 'Generando boleta...' : '🖨️ Confirmar venta'}
                     </button>
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {tab === 'chat' && (
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="bg-white rounded-2xl shadow-sm overflow-hidden md:col-span-1">
+              <div className="p-4 border-b border-gray-50">
+                <h2 className="font-bold text-gray-900">Conversaciones</h2>
+              </div>
+              {chats.length === 0 ? (
+                <p className="text-gray-400 text-sm text-center py-8 px-4">
+                  Todavía no tienes conversaciones. Aparecen acá cuando un cliente te escribe sobre un pedido, o podés iniciar una desde la pestaña Pedidos.
+                </p>
+              ) : (
+                <div className="divide-y divide-gray-50 max-h-[500px] overflow-y-auto">
+                  {chats.map((c) => {
+                    const unread = !!c.lastMessageAt && (!c.lastReadAt?.[user.uid] || c.lastReadAt[user.uid] < c.lastMessageAt);
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => openChat(c.id)}
+                        className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition ${activeChatId === c.id ? 'bg-gray-50' : ''}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-semibold text-gray-900 text-sm truncate">{c.buyerName}</p>
+                          {unread && <span className="w-2 h-2 rounded-full bg-primary-500 shrink-0" />}
+                        </div>
+                        <p className="text-gray-400 text-xs truncate mt-0.5">{c.lastMessage || 'Sin mensajes todavía'}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm md:col-span-2 flex flex-col" style={{ minHeight: 500 }}>
+              {!activeChatId ? (
+                <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+                  Selecciona una conversación
+                </div>
+              ) : (
+                <>
+                  <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                    {messages.length === 0 && (
+                      <p className="text-gray-400 text-sm text-center py-8">Sin mensajes todavía. Escribe el primero.</p>
+                    )}
+                    {messages.map((m) => {
+                      const mine = m.senderId === user.uid;
+                      return (
+                        <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-primary-500 text-white rounded-br-sm' : 'bg-gray-100 text-gray-800 rounded-bl-sm'}`}>
+                            <p>{m.text}</p>
+                            <p className={`text-[10px] mt-0.5 ${mine ? 'text-white/70' : 'text-gray-400'}`}>
+                              {new Date(m.createdAt).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="border-t border-gray-50 p-3 flex gap-2">
+                    <input
+                      value={messageText}
+                      onChange={(e) => setMessageText(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                      placeholder="Escribe un mensaje..."
+                      className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+                    />
+                    <button
+                      onClick={sendMessage}
+                      disabled={sendingMessage || !messageText.trim()}
+                      className="bg-primary-500 text-white px-4 rounded-xl font-semibold text-sm hover:bg-primary-600 transition active:scale-[0.97] disabled:opacity-40"
+                    >
+                      Enviar
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -796,7 +1141,7 @@ export default function StorePortalPage() {
       {showAddProduct && (
         <ProductFormModal
           title="Agregar producto"
-          initial={{ name: '', description: '', category: PRODUCT_CATEGORIES[0], price: '', purchasePrice: '', stock: '' }}
+          initial={{ name: '', description: '', category: PRODUCT_CATEGORIES[0], price: '', purchasePrice: '', originalPrice: '', stock: '' }}
           saving={addSaving}
           onCancel={() => setShowAddProduct(false)}
           onSubmit={submitAddProduct}
@@ -812,6 +1157,7 @@ export default function StorePortalPage() {
             category: editingProduct.category || PRODUCT_CATEGORIES[0],
             price: String(editingProduct.price ?? ''),
             purchasePrice: editingProduct.purchasePrice != null ? String(editingProduct.purchasePrice) : '',
+            originalPrice: editingProduct.originalPrice != null ? String(editingProduct.originalPrice) : '',
             stock: String(editingProduct.stock ?? ''),
             photoUrl: editingProduct.photos?.[0],
           }}
