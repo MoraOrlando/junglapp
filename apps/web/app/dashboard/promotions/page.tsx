@@ -15,22 +15,30 @@ export default function PromotionsPage() {
   const [products, setProducts] = useState<PromoProduct[]>([]);
   const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    const snap = await getDocs(
-      query(collection(db, COLLECTIONS.PRODUCTS), where('promotionStatus', 'in', ['pending', 'approved', 'rejected']))
-    );
-    const raw = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Product));
-    const storeIds = [...new Set(raw.map((p) => p.storeId))];
-    const storeNameById = new Map<string, string>();
-    await Promise.all(
-      storeIds.map(async (sid) => {
-        const sDoc = await getDoc(doc(db, COLLECTIONS.STORES, sid));
-        if (sDoc.exists()) storeNameById.set(sid, (sDoc.data() as any).name ?? 'Tienda');
-      })
-    );
-    setProducts(raw.map((p) => ({ ...p, storeName: storeNameById.get(p.storeId) ?? 'Tienda' })));
-    setLoading(false);
+    setError(null);
+    try {
+      const snap = await getDocs(
+        query(collection(db, COLLECTIONS.PRODUCTS), where('promotionStatus', 'in', ['pending', 'approved', 'rejected']))
+      );
+      const raw = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Product));
+      const storeIds = [...new Set(raw.map((p) => p.storeId))];
+      const storeNameById = new Map<string, string>();
+      await Promise.all(
+        storeIds.map(async (sid) => {
+          const sDoc = await getDoc(doc(db, COLLECTIONS.STORES, sid));
+          if (sDoc.exists()) storeNameById.set(sid, (sDoc.data() as any).name ?? 'Tienda');
+        })
+      );
+      setProducts(raw.map((p) => ({ ...p, storeName: storeNameById.get(p.storeId) ?? 'Tienda' })));
+    } catch (e: any) {
+      console.error('Error cargando promociones:', e);
+      setError(e?.message ?? 'Error al cargar promociones');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -61,7 +69,9 @@ export default function PromotionsPage() {
         ))}
       </div>
 
-      {loading ? (
+      {error ? (
+        <p className="text-red-500">Error al cargar: {error}</p>
+      ) : loading ? (
         <p className="text-gray-400">Cargando...</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
