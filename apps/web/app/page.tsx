@@ -48,6 +48,12 @@ export default function LandingPage() {
               >
                 🍎 Descargar en App Store
               </Link>
+              <span
+                className="bg-white/10 text-white/70 font-bold px-8 py-4 rounded-2xl text-base flex items-center gap-2 cursor-not-allowed select-none"
+                title="Disponible pronto en Google Play"
+              >
+                🤖 Google Play — Próximamente
+              </span>
               <Link
                 href="/acceso"
                 className="border-2 border-white text-white font-semibold px-8 py-4 rounded-2xl text-base hover:bg-white/10 transition active:scale-[0.97]"
@@ -112,7 +118,7 @@ export default function LandingPage() {
           </div>
           <StaggerReveal className="grid md:grid-cols-3 gap-8">
             {[
-              { step: '01', title: 'Descarga la app', desc: 'Disponible gratis en App Store para iPhone.' },
+              { step: '01', title: 'Descarga la app', desc: 'Disponible gratis en App Store para iPhone. Próximamente en Google Play.' },
               { step: '02', title: 'Crea tu perfil', desc: 'Registra tu cuenta y agrega a tus mascotas.' },
               { step: '03', title: 'Conéctate', desc: 'Agenda veterinarios, compra y explora la comunidad.' },
             ].map((s) => (
