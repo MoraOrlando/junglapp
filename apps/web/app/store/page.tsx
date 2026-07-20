@@ -39,6 +39,7 @@ interface Order {
   buyerName?: string;
   buyerPhone?: string;
   shippingAddress?: string;
+  deliveryMethod?: 'delivery' | 'pickup';
   products?: OrderItem[];
   type?: string;
   service?: { serviceName: string; note?: string };
@@ -915,10 +916,15 @@ export default function StorePortalPage() {
 
                       {isExpanded && (
                         <div className="px-5 pb-5 border-t border-gray-50 pt-4 space-y-3">
-                          {(o.buyerPhone || o.shippingAddress) && (
+                          {(o.buyerPhone || o.shippingAddress || (o.type !== 'service' && o.deliveryMethod)) && (
                             <div className="bg-gray-50 rounded-xl p-3 text-sm">
                               <p className="font-semibold text-gray-700 mb-1">👤 Cliente</p>
                               {o.buyerPhone && <p className="text-gray-600">📞 {o.buyerPhone}</p>}
+                              {o.type !== 'service' && (
+                                <p className="text-gray-700 font-medium">
+                                  {o.deliveryMethod === 'pickup' ? '🏪 Retiro en tienda' : '📦 Despacho a domicilio'}
+                                </p>
+                              )}
                               {o.shippingAddress && <p className="text-gray-600">📍 {o.shippingAddress}</p>}
                             </div>
                           )}
