@@ -126,7 +126,7 @@ export default function NearScreen() {
       ));
       const onSale = productsSnap.docs
         .map((d) => ({ id: d.id, ...d.data() } as Product))
-        .filter((p) => p.originalPrice != null && p.originalPrice > p.price)
+        .filter((p) => p.originalPrice != null && p.originalPrice > p.price && p.promotionStatus === 'approved')
         .map((p) => ({ ...p, storeName: storeNameById.get(p.storeId) ?? '' } as PromoItem))
         .sort((a, b) => {
           const discountA = 1 - a.price / (a.originalPrice as number);
