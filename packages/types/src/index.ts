@@ -263,6 +263,10 @@ export interface Product {
   stock: number;
   category: string;
   isActive: boolean;
+  // Gates whether a discounted product (originalPrice > price) shows in the
+  // "Cerca de ti" promo banner. The store can request ('pending') or clear
+  // it; only support can set 'approved' (see the products Firestore rule).
+  promotionStatus?: 'pending' | 'approved' | 'rejected';
   createdAt: string;
 }
 

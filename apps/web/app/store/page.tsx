@@ -26,6 +26,7 @@ interface Product {
   photos?: string[];
   isActive?: boolean;
   lastSoldAt?: string;
+  promotionStatus?: 'pending' | 'approved' | 'rejected';
 }
 
 interface OrderItem { productId: string; productName: string; quantity: number; price: number; }
@@ -513,6 +514,11 @@ export default function StorePortalPage() {
     }
   }
 
+  async function requestPromotion(productId: string) {
+    await updateDoc(doc(db, COLLECTIONS.PRODUCTS, productId), { promotionStatus: 'pending' });
+    setProducts((prev) => prev.map((p) => (p.id === productId ? { ...p, promotionStatus: 'pending' } : p)));
+  }
+
   function addToCart(productId: string) {
     setCart((prev) => ({ ...prev, [productId]: (prev[productId] || 0) + 1 }));
   }
@@ -847,32 +853,62 @@ export default function StorePortalPage() {
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {products.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => setEditingProduct(p)}
-                    className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden text-left hover:shadow-md transition active:scale-[0.97]"
-                  >
-                    <div className="w-full aspect-square bg-gray-100 flex items-center justify-center overflow-hidden">
-                      {p.photos?.[0] ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={p.photos[0]} alt={p.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="text-4xl">📦</span>
+                {products.map((p) => {
+                  const hasDiscount = (p.originalPrice ?? 0) > p.price;
+                  return (
+                    <div key={p.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                      <button
+                        onClick={() => setEditingProduct(p)}
+                        className="w-full text-left hover:shadow-md transition active:scale-[0.97]"
+                      >
+                        <div className="w-full aspect-square bg-gray-100 flex items-center justify-center overflow-hidden">
+                          {p.photos?.[0] ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={p.photos[0]} alt={p.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-4xl">📦</span>
+                          )}
+                        </div>
+                        <div className="p-3">
+                          <p className="font-semibold text-gray-900 text-sm truncate">{p.name}</p>
+                          <p className="text-gray-500 text-xs">{p.category || '—'}</p>
+                          <div className="flex items-center justify-between mt-2">
+                            <span className="font-bold text-primary-700 text-sm">${p.price?.toLocaleString('es-CL')}</span>
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${(p.stock ?? 0) > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                              {p.stock ?? 0} stock
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                      {hasDiscount && (
+                        <div className="px-3 pb-3">
+                          {!p.promotionStatus && (
+                            <button
+                              onClick={() => requestPromotion(p.id)}
+                              className="w-full text-xs font-semibold bg-primary-50 text-primary-700 py-1.5 rounded-full hover:bg-primary-100 transition active:scale-[0.97]"
+                            >
+                              🎉 Solicitar promoción
+                            </button>
+                          )}
+                          {p.promotionStatus === 'pending' && (
+                            <span className="block text-center text-xs font-medium bg-yellow-50 text-yellow-700 py-1.5 rounded-full">⏳ Pendiente de aprobación</span>
+                          )}
+                          {p.promotionStatus === 'approved' && (
+                            <span className="block text-center text-xs font-medium bg-green-50 text-green-700 py-1.5 rounded-full">✅ En promoción</span>
+                          )}
+                          {p.promotionStatus === 'rejected' && (
+                            <button
+                              onClick={() => requestPromotion(p.id)}
+                              className="w-full text-xs font-semibold bg-red-50 text-red-600 py-1.5 rounded-full hover:bg-red-100 transition active:scale-[0.97]"
+                            >
+                              ❌ Rechazada — volver a solicitar
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
-                    <div className="p-3">
-                      <p className="font-semibold text-gray-900 text-sm truncate">{p.name}</p>
-                      <p className="text-gray-500 text-xs">{p.category || '—'}</p>
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="font-bold text-primary-700 text-sm">${p.price?.toLocaleString('es-CL')}</span>
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${(p.stock ?? 0) > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
-                          {p.stock ?? 0} stock
-                        </span>
-                      </div>
-                    </div>
-                  </button>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

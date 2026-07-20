@@ -228,7 +228,15 @@ service cloud.firestore {
         request.resource.data.userId == request.auth.uid
         || isSupport()
       );
-      allow update, delete: if isAuth() && (
+      // The owning store can change anything except it may never set
+      // promotionStatus to 'approved' itself — only support can approve (or
+      // later revoke by setting it back to 'rejected') a promo banner slot.
+      allow update: if isAuth() && (
+        (resource.data.userId == request.auth.uid
+          && request.resource.data.get('promotionStatus', null) != 'approved')
+        || isSupport()
+      );
+      allow delete: if isAuth() && (
         resource.data.userId == request.auth.uid
         || isSupport()
       );
