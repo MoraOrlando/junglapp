@@ -37,9 +37,12 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if isSelf(uid) || isSupport()
         || (isAuth() && getRole() in ['vet', 'walker', 'grooming', 'trainer'] && isLinkedClient(uid));
-      allow create: if isSelf(uid)
-        && request.resource.data.uid == uid
-        && request.resource.data.role in ['owner', 'vet', 'store', 'trainer', 'walker', 'grooming'];
+      allow create: if (isSelf(uid)
+          && request.resource.data.uid == uid
+          && request.resource.data.role in ['owner', 'vet', 'store', 'trainer', 'walker', 'grooming'])
+        || (isSupport()
+          && request.resource.data.uid == uid
+          && request.resource.data.role == 'support');
       allow update: if (isSelf(uid) && fieldUnchanged('role') && fieldUnchanged('uid') && fieldUnchanged('accountStatus'))
         || isSupport();
       // Hard-deny role escalation even for support via update

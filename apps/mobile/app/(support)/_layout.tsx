@@ -27,14 +27,17 @@ export default function SupportLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Panel', tabBarIcon: ({ focused }) => <TabIcon emoji="🛡️" focused={focused} /> }} />
-      <Tabs.Screen name="reports" options={{ title: 'Reportes', tabBarIcon: ({ focused }) => <TabIcon emoji="🚩" focused={focused} /> }} />
-      <Tabs.Screen name="users" options={{ title: 'Usuarios', tabBarIcon: ({ focused }) => <TabIcon emoji="👥" focused={focused} /> }} />
-      <Tabs.Screen name="vets" options={{ title: 'Veterinarios', tabBarIcon: ({ focused }) => <TabIcon emoji="🩺" focused={focused} /> }} />
-      <Tabs.Screen name="stores" options={{ title: 'Tiendas', tabBarIcon: ({ focused }) => <TabIcon emoji="🛒" focused={focused} /> }} />
-      <Tabs.Screen name="trainers" options={{ title: 'Adiestr.', tabBarIcon: ({ focused }) => <TabIcon emoji="🐕" focused={focused} /> }} />
-      <Tabs.Screen name="walkers" options={{ title: 'Paseadores', tabBarIcon: ({ focused }) => <TabIcon emoji="🦮" focused={focused} /> }} />
-      <Tabs.Screen name="groomers" options={{ title: 'Peluquería', tabBarIcon: ({ focused }) => <TabIcon emoji="✂️" focused={focused} /> }} />
-      <Tabs.Screen name="places" options={{ title: 'Lugares', tabBarIcon: ({ focused }) => <TabIcon emoji="🐾" focused={focused} /> }} />
+      <Tabs.Screen name="profile" options={{ title: 'Perfil', tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} /> }} />
+      {/* Hidden routes — reachable from the Panel buttons, not shown as tabs */}
+      <Tabs.Screen name="reports" options={{ href: null }} />
+      <Tabs.Screen name="users" options={{ href: null }} />
+      <Tabs.Screen name="vets" options={{ href: null }} />
+      <Tabs.Screen name="stores" options={{ href: null }} />
+      <Tabs.Screen name="trainers" options={{ href: null }} />
+      <Tabs.Screen name="walkers" options={{ href: null }} />
+      <Tabs.Screen name="groomers" options={{ href: null }} />
+      <Tabs.Screen name="places" options={{ href: null }} />
+      <Tabs.Screen name="promotions" options={{ href: null }} />
     </Tabs>
   );
 }

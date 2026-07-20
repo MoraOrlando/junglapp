@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import type { Walker } from '@junglapp/types';
@@ -48,6 +49,7 @@ function RejectModal({ visible, onConfirm, onCancel }: { visible: boolean; onCon
 }
 
 export default function WalkersAdminScreen() {
+  const router = useRouter();
   const [walkers, setWalkers] = useState<Walker[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -107,7 +109,7 @@ export default function WalkersAdminScreen() {
           const sc = STATUS_COLORS[w.status] || STATUS_COLORS.pending;
           const trialDate = (w as any).trialExpiresAt ? new Date((w as any).trialExpiresAt).toLocaleDateString('es-CL') : null;
           return (
-            <View key={w.id} style={{ backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F3F4F6' }}>
+            <TouchableOpacity key={w.id} onPress={() => router.push(`/(support)/walkers/${w.id}` as any)} style={{ backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F3F4F6' }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
                 <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15, flex: 1 }}>{w.name}</Text>
                 <View style={{ backgroundColor: sc.bg, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
@@ -139,7 +141,7 @@ export default function WalkersAdminScreen() {
                   <Text style={{ color: '#374151', fontSize: 13 }}>{w.status === 'approved' ? '❌ Revocar aprobación' : '✅ Reactivar'}</Text>
                 </TouchableOpacity>
               )}
-            </View>
+            </TouchableOpacity>
           );
         })}
         <View style={{ height: 40 }} />

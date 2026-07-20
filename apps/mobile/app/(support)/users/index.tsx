@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, RefreshControl, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import type { User } from '@junglapp/types';
@@ -19,6 +20,7 @@ type TabType = 'users' | 'providers';
 interface Provider { id: string; name: string; email: string; type: string; status: string; address?: string; }
 
 export default function UsersScreen() {
+  const router = useRouter();
   const [tab, setTab] = useState<TabType>('providers');
   const [users, setUsers] = useState<User[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -115,7 +117,12 @@ export default function UsersScreen() {
               const statusColor = p.status === 'approved' ? '#059669' : p.status === 'pending' ? '#D97706' : p.status === 'inactive' ? '#9CA3AF' : '#EF4444';
               const statusLabel = p.status === 'approved' ? 'Aprobado' : p.status === 'pending' ? 'Pendiente' : p.status === 'inactive' ? 'Inactivo' : 'Rechazado';
               return (
-                <View key={p.id} style={{ backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#F3F4F6', opacity: isActive ? 1 : 0.65 }}>
+                <TouchableOpacity
+                  key={p.id}
+                  activeOpacity={p.type === 'vet' ? 0.7 : 1}
+                  onPress={() => { if (p.type === 'vet') router.push(`/(support)/vets/${p.id}` as any); }}
+                  style={{ backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#F3F4F6', opacity: isActive ? 1 : 0.65 }}
+                >
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15 }}>{p.name}</Text>
@@ -139,7 +146,7 @@ export default function UsersScreen() {
                       {isActive ? '🔴 Desactivar cuenta' : '🟢 Reactivar cuenta'}
                     </Text>
                   </TouchableOpacity>
-                </View>
+                </TouchableOpacity>
               );
             })}
           </>
@@ -151,7 +158,11 @@ export default function UsersScreen() {
               const isBlocked = accountStatus === 'blocked';
               const sc = ACCOUNT_STATUS_COLORS[accountStatus] || ACCOUNT_STATUS_COLORS.active;
               return (
-                <View key={u.uid} style={{ backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#F3F4F6', opacity: isBlocked ? 0.65 : 1 }}>
+                <TouchableOpacity
+                  key={u.uid}
+                  onPress={() => router.push(`/(support)/users/${u.uid}` as any)}
+                  style={{ backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#F3F4F6', opacity: isBlocked ? 0.65 : 1 }}
+                >
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15 }}>{u.name}</Text>
@@ -172,7 +183,7 @@ export default function UsersScreen() {
                       {isBlocked ? '🟢 Reactivar cuenta' : '🔴 Bloquear cuenta'}
                     </Text>
                   </TouchableOpacity>
-                </View>
+                </TouchableOpacity>
               );
             })}
           </>

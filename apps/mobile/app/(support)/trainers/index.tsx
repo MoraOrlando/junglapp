@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
-import type { Veterinarian } from '@junglapp/types';
+import type { Trainer } from '@junglapp/types';
 
 const { db } = initFirebase();
 const PURPLE = '#7C3AED';
@@ -20,11 +21,11 @@ function RejectModal({ visible, onConfirm, onCancel }: { visible: boolean; onCon
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', paddingHorizontal: 24 }}>
         <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 24 }}>
-          <Text style={{ fontWeight: '700', fontSize: 16, color: '#1F2937', marginBottom: 8 }}>❌ Rechazar veterinario</Text>
-          <Text style={{ color: '#6B7280', fontSize: 13, marginBottom: 16 }}>Indica el motivo del rechazo. El veterinario recibirá esta información.</Text>
+          <Text style={{ fontWeight: '700', fontSize: 16, color: '#1F2937', marginBottom: 8 }}>❌ Rechazar adiestrador</Text>
+          <Text style={{ color: '#6B7280', fontSize: 13, marginBottom: 16 }}>Indica el motivo del rechazo. El adiestrador recibirá esta información.</Text>
           <TextInput
             style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, minHeight: 80, textAlignVertical: 'top', marginBottom: 16 }}
-            placeholder="Ej: Credencial no válida, datos incompletos..."
+            placeholder="Ej: Cédula no coincide, datos incompletos..."
             placeholderTextColor="#9CA3AF"
             multiline
             value={reason}
@@ -47,40 +48,41 @@ function RejectModal({ visible, onConfirm, onCancel }: { visible: boolean; onCon
   );
 }
 
-export default function VetsAdminScreen() {
-  const [vets, setVets] = useState<Veterinarian[]>([]);
+export default function TrainersAdminScreen() {
+  const router = useRouter();
+  const [trainers, setTrainers] = useState<Trainer[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [rejectTarget, setRejectTarget] = useState<string | null>(null);
 
-  async function loadVets() {
-    const snap = await getDocs(collection(db, COLLECTIONS.VETERINARIANS));
-    const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Veterinarian));
-    all.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
-    setVets(all);
+  async function loadTrainers() {
+    const snap = await getDocs(collection(db, COLLECTIONS.TRAINERS));
+    const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Trainer));
+    all.sort((a, b) => ((a as any).createdAt || '').localeCompare((b as any).createdAt || ''));
+    setTrainers(all);
   }
 
-  useEffect(() => { loadVets().finally(() => setLoading(false)); }, []);
-  async function onRefresh() { setRefreshing(true); await loadVets(); setRefreshing(false); }
+  useEffect(() => { loadTrainers().finally(() => setLoading(false)); }, []);
+  async function onRefresh() { setRefreshing(true); await loadTrainers(); setRefreshing(false); }
 
   async function approve(id: string) {
-    Alert.alert('Confirmar', '¿Aprobar este veterinario?', [
+    Alert.alert('Confirmar', '¿Aprobar este adiestrador?', [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Aprobar', onPress: async () => {
-        await updateDoc(doc(db, COLLECTIONS.VETERINARIANS, id), { status: 'approved', rejectionReason: null });
-        setVets((prev) => prev.map((v) => v.id === id ? { ...v, status: 'approved' } : v));
+        await updateDoc(doc(db, COLLECTIONS.TRAINERS, id), { status: 'approved', rejectionReason: null });
+        setTrainers((prev) => prev.map((t) => t.id === id ? { ...t, status: 'approved' } : t));
       }},
     ]);
   }
 
   async function rejectWithReason(id: string, reason: string) {
-    await updateDoc(doc(db, COLLECTIONS.VETERINARIANS, id), { status: 'rejected', rejectionReason: reason });
-    setVets((prev) => prev.map((v) => v.id === id ? { ...v, status: 'rejected' } : v));
+    await updateDoc(doc(db, COLLECTIONS.TRAINERS, id), { status: 'rejected', rejectionReason: reason });
+    setTrainers((prev) => prev.map((t) => t.id === id ? { ...t, status: 'rejected' } : t));
     setRejectTarget(null);
   }
 
-  const filtered = filter === 'all' ? vets : vets.filter((v) => v.status === filter);
+  const filtered = filter === 'all' ? trainers : trainers.filter((t) => t.status === filter);
 
   if (loading) return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F5F3FF', alignItems: 'center', justifyContent: 'center' }}>
@@ -91,7 +93,7 @@ export default function VetsAdminScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F5F3FF' }}>
       <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 }}>
-        <Text style={{ fontSize: 20, fontWeight: '800', color: PURPLE, marginBottom: 12 }}>🩺 Veterinarios ({vets.length})</Text>
+        <Text style={{ fontSize: 20, fontWeight: '800', color: PURPLE, marginBottom: 12 }}>🐕 Adiestradores ({trainers.length})</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {(['all', 'pending', 'approved', 'rejected'] as const).map((f) => (
@@ -103,41 +105,44 @@ export default function VetsAdminScreen() {
         </ScrollView>
       </View>
       <ScrollView style={{ flex: 1, paddingHorizontal: 20 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PURPLE} />}>
-        {filtered.map((v) => {
-          const sc = STATUS_COLORS[v.status] || STATUS_COLORS.pending;
+        {filtered.map((t) => {
+          const sc = STATUS_COLORS[t.status] || STATUS_COLORS.pending;
           return (
-            <View key={v.id} style={{ backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F3F4F6' }}>
+            <TouchableOpacity key={t.id} onPress={() => router.push(`/(support)/trainers/${t.id}` as any)} style={{ backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F3F4F6' }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15, flex: 1 }}>{v.name}</Text>
+                <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15, flex: 1 }}>{t.name}</Text>
                 <View style={{ backgroundColor: sc.bg, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
                   <Text style={{ color: sc.text, fontSize: 11, fontWeight: '600' }}>{sc.label}</Text>
                 </View>
               </View>
-              <Text style={{ color: '#9CA3AF', fontSize: 12 }}>🪪 {v.rut} · 📋 {v.licenseNumber}</Text>
-              <Text style={{ color: '#9CA3AF', fontSize: 12, marginTop: 2 }}>📍 {v.address}</Text>
-              <Text style={{ color: '#9CA3AF', fontSize: 12, marginTop: 2 }}>📧 {v.email}</Text>
-              {v.credentialUrl && (
-                <Text style={{ color: PURPLE, fontSize: 12, marginTop: 4 }}>🔗 Credencial cargada</Text>
+              <Text style={{ color: '#9CA3AF', fontSize: 12 }}>🪪 {t.rut} · 📞 {t.phone}</Text>
+              <Text style={{ color: '#9CA3AF', fontSize: 12, marginTop: 2 }}>📍 {t.address} · {t.serviceArea}</Text>
+              <Text style={{ color: '#9CA3AF', fontSize: 12, marginTop: 2 }}>📧 {t.email}</Text>
+              {t.specialties?.length > 0 && (
+                <Text style={{ color: '#9CA3AF', fontSize: 12, marginTop: 2 }}>🎯 {t.specialties.join(', ')}</Text>
               )}
-              {(v as any).rejectionReason && (
-                <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>Motivo: {(v as any).rejectionReason}</Text>
+              {t.idImageUrl && (
+                <Text style={{ color: PURPLE, fontSize: 12, marginTop: 4 }}>🔗 Cédula de identidad cargada</Text>
               )}
-              {v.status === 'pending' && (
+              {(t as any).rejectionReason && (
+                <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>Motivo: {(t as any).rejectionReason}</Text>
+              )}
+              {t.status === 'pending' && (
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-                  <TouchableOpacity onPress={() => approve(v.id)} style={{ flex: 1, backgroundColor: '#ECFDF5', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
+                  <TouchableOpacity onPress={() => approve(t.id)} style={{ flex: 1, backgroundColor: '#ECFDF5', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
                     <Text style={{ color: '#059669', fontWeight: '700' }}>✅ Aprobar</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setRejectTarget(v.id)} style={{ flex: 1, backgroundColor: '#FEF2F2', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
+                  <TouchableOpacity onPress={() => setRejectTarget(t.id)} style={{ flex: 1, backgroundColor: '#FEF2F2', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
                     <Text style={{ color: '#EF4444', fontWeight: '700' }}>❌ Rechazar</Text>
                   </TouchableOpacity>
                 </View>
               )}
-              {v.status !== 'pending' && (
-                <TouchableOpacity onPress={() => v.status === 'approved' ? setRejectTarget(v.id) : approve(v.id)} style={{ marginTop: 10, backgroundColor: '#F3F4F6', borderRadius: 10, paddingVertical: 8, alignItems: 'center' }}>
-                  <Text style={{ color: '#374151', fontSize: 13 }}>{v.status === 'approved' ? '❌ Revocar aprobación' : '✅ Reactivar'}</Text>
+              {t.status !== 'pending' && (
+                <TouchableOpacity onPress={() => t.status === 'approved' ? setRejectTarget(t.id) : approve(t.id)} style={{ marginTop: 10, backgroundColor: '#F3F4F6', borderRadius: 10, paddingVertical: 8, alignItems: 'center' }}>
+                  <Text style={{ color: '#374151', fontSize: 13 }}>{t.status === 'approved' ? '❌ Revocar aprobación' : '✅ Reactivar'}</Text>
                 </TouchableOpacity>
               )}
-            </View>
+            </TouchableOpacity>
           );
         })}
         <View style={{ height: 40 }} />
