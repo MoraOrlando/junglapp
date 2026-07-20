@@ -32,6 +32,7 @@ interface OrderItem { productId: string; productName: string; quantity: number; 
 interface Order {
   id: string;
   createdAt: string;
+  updatedAt?: string;
   total: number;
   status: string;
   buyerId?: string;
@@ -267,6 +268,7 @@ export default function StorePortalPage() {
   const monthStart = toDateInputValue(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [startDate, setStartDate] = useState(monthStart);
   const [endDate, setEndDate] = useState(today);
+  const [orderStatusFilter, setOrderStatusFilter] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importRows, setImportRows] = useState<ProductRow[]>([]);
@@ -396,8 +398,9 @@ export default function StorePortalPage() {
   async function setOrderStatus(order: Order, status: string) {
     setUpdatingOrderId(order.id);
     try {
-      await updateDoc(doc(db, COLLECTIONS.ORDERS, order.id), { status });
-      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status } : o)));
+      const updatedAt = new Date().toISOString();
+      await updateDoc(doc(db, COLLECTIONS.ORDERS, order.id), { status, updatedAt });
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status, updatedAt } : o)));
     } finally {
       setUpdatingOrderId(null);
     }
@@ -656,8 +659,9 @@ export default function StorePortalPage() {
   const posSalesInRange = posSales.filter((s) => inDateRange(s.createdAt, startDate, endDate));
   const cancelledInRange = ordersInRange.filter((o) => o.status === 'cancelled');
   const amountInRange =
-    ordersInRange.filter((o) => o.status !== 'cancelled').reduce((sum, o) => sum + (o.total || 0), 0) +
+    ordersInRange.filter((o) => o.status === 'confirmed' || o.status === 'delivered').reduce((sum, o) => sum + (o.total || 0), 0) +
     posSalesInRange.reduce((sum, s) => sum + (s.total || 0), 0);
+  const ordersInRangeFiltered = ordersInRange.filter((o) => !orderStatusFilter || o.status === orderStatusFilter);
 
   const validImportCount = importRows.filter((r) => !r.error).length;
   const errorImportCount = importRows.filter((r) => !!r.error).length;
@@ -726,6 +730,20 @@ export default function StorePortalPage() {
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-gray-200 rounded-xl px-3 py-1.5 text-sm" />
             <span className="text-gray-400 text-sm">a</span>
             <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-gray-200 rounded-xl px-3 py-1.5 text-sm" />
+            {tab === 'pedidos' && (
+              <>
+                <span className="text-gray-300">|</span>
+                <span className="text-sm font-medium text-gray-500">Estado:</span>
+                <select value={orderStatusFilter} onChange={(e) => setOrderStatusFilter(e.target.value)} className="border border-gray-200 rounded-xl px-3 py-1.5 text-sm">
+                  <option value="">Todos</option>
+                  <option value="pending">Pendiente</option>
+                  <option value="confirmed">Confirmado</option>
+                  <option value="shipped">Enviado</option>
+                  <option value="delivered">Entregado</option>
+                  <option value="cancelled">Cancelado</option>
+                </select>
+              </>
+            )}
           </div>
         )}
 
@@ -864,14 +882,16 @@ export default function StorePortalPage() {
             <h2 className="text-xl font-bold text-gray-900 mb-4">Pedidos</h2>
             {dataLoading ? (
               <p className="text-gray-400">Cargando...</p>
-            ) : ordersInRange.length === 0 ? (
+            ) : ordersInRangeFiltered.length === 0 ? (
               <div className="bg-white rounded-2xl p-8 text-center shadow-sm">
                 <span className="text-4xl">🧾</span>
-                <p className="text-gray-500 mt-3">No hay pedidos en este rango de fechas.</p>
+                <p className="text-gray-500 mt-3">
+                  {orderStatusFilter ? 'No hay pedidos con ese estado en este rango de fechas.' : 'No hay pedidos en este rango de fechas.'}
+                </p>
               </div>
             ) : (
               <div className="space-y-3">
-                {ordersInRange.map((o) => {
+                {ordersInRangeFiltered.map((o) => {
                   const isExpanded = expandedOrderId === o.id;
                   const isUpdating = updatingOrderId === o.id;
                   return (
