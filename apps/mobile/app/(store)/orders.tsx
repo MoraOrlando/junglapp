@@ -157,6 +157,9 @@ export default function StoreOrdersScreen() {
                 <Text style={{ color: '#2563EB', fontSize: 13 }}>📞 {buyerPhone}</Text>
               </TouchableOpacity>
             ) : null}
+            <Text style={{ color: '#374151', fontSize: 13, fontWeight: '600', marginTop: 2 }}>
+              {order.deliveryMethod === 'pickup' ? '🏪 Retiro en tienda' : '📦 Despacho a domicilio'}
+            </Text>
             {order.shippingAddress ? <Text style={{ color: '#6B7280', fontSize: 13 }}>📍 {order.shippingAddress}</Text> : null}
           </View>
         )}

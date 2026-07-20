@@ -243,6 +243,10 @@ export interface Store {
   status: 'pending' | 'approved' | 'rejected';
   categories: string[];
   services: StoreService[];
+  // Undefined means the store hasn't configured this yet — treat as
+  // offersDelivery: true, offersPickup: false (today's implicit behavior).
+  offersDelivery?: boolean;
+  offersPickup?: boolean;
   createdAt: string;
 }
 
@@ -408,6 +412,8 @@ export interface Order {
   total: number;
   status: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled';
   shippingAddress: string;
+  // Undefined on orders placed before this field existed — treat as 'delivery'.
+  deliveryMethod?: 'delivery' | 'pickup';
   createdAt: string;
 }
 

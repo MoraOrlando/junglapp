@@ -25,6 +25,7 @@ interface OrderWithStore {
   products?: Array<{ productName: string; quantity: number; price: number }>;
   service?: { serviceName: string };
   type?: string;
+  deliveryMethod?: 'delivery' | 'pickup';
   storeId: string;
   storeName?: string;
 }
@@ -129,6 +130,11 @@ export default function OwnerHistorialScreen() {
                   <Text style={{ color: '#6B7280', fontSize: 13 }}>
                     {isService && order.service ? order.service.serviceName : `${(order.products ?? []).length} producto(s)`}
                   </Text>
+                  {!isService && (
+                    <Text style={{ color: '#9CA3AF', fontSize: 12, marginTop: 2 }}>
+                      {order.deliveryMethod === 'pickup' ? '🏪 Retiro en tienda' : '📦 Despacho a domicilio'}
+                    </Text>
+                  )}
                   <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 14, marginTop: 6 }}>
                     Total: ${order.total.toLocaleString('es-CL')}
                   </Text>

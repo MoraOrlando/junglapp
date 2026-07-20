@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  Alert, ActivityIndicator, ActionSheetIOS
+  Alert, ActivityIndicator, ActionSheetIOS, Switch
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -34,6 +34,8 @@ export default function StoreProfileScreen() {
   const [region, setRegion] = useState('Metropolitana');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [offersDelivery, setOffersDelivery] = useState(true);
+  const [offersPickup, setOffersPickup] = useState(false);
   const [saving, setSaving] = useState(false);
   const [gettingLocation, setGettingLocation] = useState(false);
 
@@ -52,6 +54,8 @@ export default function StoreProfileScreen() {
         setRegion(s.region || 'Metropolitana');
         if (s.location) setLocation(s.location);
         if ((s as any).photoUrl) setPhotoUrl((s as any).photoUrl);
+        setOffersDelivery(s.offersDelivery ?? true);
+        setOffersPickup(s.offersPickup ?? false);
       }
     });
   }, [user]);
@@ -98,9 +102,13 @@ export default function StoreProfileScreen() {
 
   async function save() {
     if (!storeDocId) return;
+    if (!offersDelivery && !offersPickup) {
+      Alert.alert('Elige al menos un método', 'Debes ofrecer despacho a domicilio, retiro en tienda, o ambos.');
+      return;
+    }
     setSaving(true);
     try {
-      const updates: any = { name, description, phone, address, city, region, ...locationKeys(city, region), plan: 'free' };
+      const updates: any = { name, description, phone, address, city, region, ...locationKeys(city, region), plan: 'free', offersDelivery, offersPickup };
       if (location) updates.location = location;
       await updateDoc(doc(db, COLLECTIONS.STORES, storeDocId), updates);
       Alert.alert('✅', 'Tienda actualizada correctamente');
@@ -216,6 +224,38 @@ export default function StoreProfileScreen() {
           <Text style={{ color: '#9CA3AF', fontSize: 11, marginTop: 6 }}>
             Se usan para mostrarte solo a dueños de mascota cerca de tu ciudad en "Cerca de ti".
           </Text>
+        </View>
+
+        {/* Métodos de entrega */}
+        <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#F3F4F6' }}>
+          <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15, marginBottom: 4 }}>🚚 Métodos de entrega</Text>
+          <Text style={{ color: '#9CA3AF', fontSize: 12, marginBottom: 14 }}>
+            El cliente elige entre estos al hacer su pedido.
+          </Text>
+
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={{ fontWeight: '600', color: '#1F2937', fontSize: 14 }}>📦 Despacho a domicilio</Text>
+            </View>
+            <Switch
+              value={offersDelivery}
+              onValueChange={setOffersDelivery}
+              trackColor={{ false: '#D1D5DB', true: '#95D5B2' }}
+              thumbColor={offersDelivery ? '#2D6A4F' : '#F3F4F6'}
+            />
+          </View>
+
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={{ fontWeight: '600', color: '#1F2937', fontSize: 14 }}>🏪 Retiro en tienda</Text>
+            </View>
+            <Switch
+              value={offersPickup}
+              onValueChange={setOffersPickup}
+              trackColor={{ false: '#D1D5DB', true: '#95D5B2' }}
+              thumbColor={offersPickup ? '#2D6A4F' : '#F3F4F6'}
+            />
+          </View>
         </View>
 
         {/* Geolocalización */}

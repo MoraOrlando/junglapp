@@ -33,6 +33,7 @@ interface OrderWithStore {
   updatedAt?: string;
   total: number;
   shippingAddress: string;
+  deliveryMethod?: 'delivery' | 'pickup';
   products?: Array<{ productName: string; quantity: number; price: number; photoUrl?: string }>;
   service?: { serviceName: string; price: number; note?: string };
   type?: string;
@@ -213,7 +214,12 @@ export default function OwnerOrdersScreen() {
           ))
         )}
 
-        {/* Address */}
+        {/* Delivery method / address */}
+        {!isService && (
+          <Text style={{ color: '#374151', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
+            {order.deliveryMethod === 'pickup' ? '🏪 Retiro en tienda' : '📦 Despacho a domicilio'}
+          </Text>
+        )}
         {order.shippingAddress ? (
           <Text style={{ color: '#6B7280', fontSize: 12, marginBottom: 8 }}>📍 {order.shippingAddress}</Text>
         ) : null}

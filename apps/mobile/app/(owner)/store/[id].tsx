@@ -37,16 +37,30 @@ export default function StoreDetailScreen() {
   const [orderProduct, setOrderProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [ordering, setOrdering] = useState(false);
+  const [deliveryMethod, setDeliveryMethod] = useState<'delivery' | 'pickup'>('delivery');
 
   // Service booking modal
   const [bookService, setBookService] = useState<StoreService | null>(null);
   const [bookNote, setBookNote] = useState('');
   const [booking, setBooking] = useState(false);
 
+  const offersDelivery = store?.offersDelivery ?? true;
+  const offersPickup = store?.offersPickup ?? false;
+  const showDeliveryChoice = offersDelivery && offersPickup;
+  // Whichever the store actually offers — the buyer's toggle only matters
+  // when both are available; otherwise this is the silent, single option.
+  const effectiveDeliveryMethod: 'delivery' | 'pickup' = showDeliveryChoice
+    ? deliveryMethod
+    : offersPickup ? 'pickup' : 'delivery';
+
   useEffect(() => {
     if (!id) return;
     getDoc(doc(db, COLLECTIONS.STORES, id)).then((snap) => {
-      if (snap.exists()) setStore({ id: snap.id, ...snap.data() } as Store);
+      if (snap.exists()) {
+        const s = { id: snap.id, ...snap.data() } as Store;
+        setStore(s);
+        if (!(s.offersDelivery ?? true) && s.offersPickup) setDeliveryMethod('pickup');
+      }
     }).catch(() => {});
     getDocs(query(collection(db, COLLECTIONS.PRODUCTS), where('storeId', '==', id), where('isActive', '==', true))).then((snap) => {
       setProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Product)));
@@ -75,7 +89,8 @@ export default function StoreDetailScreen() {
         }],
         total: orderProduct.price * quantity,
         status: 'pending',
-        shippingAddress: user.address,
+        deliveryMethod: effectiveDeliveryMethod,
+        shippingAddress: effectiveDeliveryMethod === 'pickup' ? '' : user.address,
         createdAt: new Date().toISOString(),
       });
       logOrderPlaced();
@@ -179,6 +194,22 @@ export default function StoreDetailScreen() {
                   <Text style={{ color: '#6B7280', fontSize: 13 }}>{store.email}</Text>
                 </View>
               ) : null}
+            </View>
+
+            {/* Delivery methods */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+              {(store.offersDelivery ?? true) && (
+                <View style={{ backgroundColor: '#EFF6FF', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={{ fontSize: 12 }}>📦</Text>
+                  <Text style={{ color: '#2563EB', fontSize: 12, fontWeight: '600' }}>Despacho a domicilio</Text>
+                </View>
+              )}
+              {store.offersPickup && (
+                <View style={{ backgroundColor: '#ECFDF5', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={{ fontSize: 12 }}>🏪</Text>
+                  <Text style={{ color: '#059669', fontSize: 12, fontWeight: '600' }}>Retiro en tienda</Text>
+                </View>
+              )}
             </View>
 
             {/* Category tags */}
@@ -369,6 +400,26 @@ export default function StoreDetailScreen() {
                           Total: <Text style={{ fontWeight: '700', color: GREEN }}>${(orderProduct.price * quantity).toLocaleString()}</Text>
                         </Text>
                       </View>
+
+                      {showDeliveryChoice && (
+                        <View style={{ marginBottom: 16 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 10 }}>¿Cómo quieres recibirlo?</Text>
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                            <TouchableOpacity
+                              onPress={() => setDeliveryMethod('delivery')}
+                              style={{ flex: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center', backgroundColor: deliveryMethod === 'delivery' ? GREEN : '#F3F4F6' }}
+                            >
+                              <Text style={{ fontWeight: '700', fontSize: 13, color: deliveryMethod === 'delivery' ? '#fff' : '#374151' }}>📦 Despacho</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => setDeliveryMethod('pickup')}
+                              style={{ flex: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center', backgroundColor: deliveryMethod === 'pickup' ? GREEN : '#F3F4F6' }}
+                            >
+                              <Text style={{ fontWeight: '700', fontSize: 13, color: deliveryMethod === 'pickup' ? '#fff' : '#374151' }}>🏪 Retiro en tienda</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      )}
 
                       <TouchableOpacity
                         onPress={placeOrder}
