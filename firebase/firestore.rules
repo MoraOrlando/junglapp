@@ -360,7 +360,9 @@ service cloud.firestore {
       // Store owner can only update status + updatedAt. The buyer may only
       // cancel their own order (while it's still pending or while an
       // alternative is being negotiated) or accept an offered alternative —
-      // never touch products/total/shippingAddress after the store has seen it.
+      // never touch products/total/shippingAddress once the store has acted
+      // on it. While still pending (store hasn't confirmed yet), the buyer
+      // may instead edit products/total to add/remove items.
       allow update: if isAuth() && (
         (get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.userId == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
@@ -370,6 +372,10 @@ service cloud.firestore {
             (resource.data.status == 'pending' && request.resource.data.status == 'cancelled') ||
             (resource.data.status == 'alternative_offered' && request.resource.data.status in ['cancelled', 'confirmed'])
           ))
+        || (resource.data.buyerId == request.auth.uid
+          && resource.data.status == 'pending'
+          && request.resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['products', 'total', 'updatedAt']))
         || isSupport()
       );
       allow delete: if isSupport();

@@ -55,7 +55,7 @@ export default function StoreOrdersScreen() {
   async function onRefresh() { setRefreshing(true); await loadOrders(); setRefreshing(false); }
 
   async function setStatus(order: Order, status: string) {
-    await updateDoc(doc(db, COLLECTIONS.ORDERS, order.id), { status });
+    await updateDoc(doc(db, COLLECTIONS.ORDERS, order.id), { status, updatedAt: new Date().toISOString() });
     setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, status: status as any } : o));
   }
 

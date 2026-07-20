@@ -18,10 +18,19 @@ const STATUS_INFO: Record<string, { label: string; color: string; bg: string; em
   alternative_offered:{ label: 'Oferta alternativa',color: '#D97706', bg: '#FFFBEB', emoji: '🔄' },
 };
 
+const FOUR_DAYS_MS = 4 * 24 * 60 * 60 * 1000;
+
+function isRecentlyDelivered(order: { status: string; updatedAt?: string }): boolean {
+  if (order.status !== 'delivered') return false;
+  if (!order.updatedAt) return false; // no timestamp captured before this feature shipped — treat as stale
+  return Date.now() - new Date(order.updatedAt).getTime() <= FOUR_DAYS_MS;
+}
+
 interface OrderWithStore {
   id: string;
   status: string;
   createdAt: string;
+  updatedAt?: string;
   total: number;
   shippingAddress: string;
   products?: Array<{ productName: string; quantity: number; price: number; photoUrl?: string }>;
@@ -159,7 +168,7 @@ export default function OwnerOrdersScreen() {
 
   const pending = orders.filter((o) => o.status === 'pending' || o.status === 'alternative_offered');
   const active = orders.filter((o) => o.status === 'confirmed' || o.status === 'shipped');
-  const done = orders.filter((o) => o.status === 'delivered' || o.status === 'cancelled');
+  const done = orders.filter((o) => isRecentlyDelivered(o));
 
   function OrderCard({ order }: { order: OrderWithStore }) {
     const info = STATUS_INFO[order.status] ?? STATUS_INFO.pending;
@@ -237,17 +246,27 @@ export default function OwnerOrdersScreen() {
           </View>
         )}
 
-        {/* Buyer action: cancel a pending order */}
+        {/* Buyer actions: edit or cancel a pending order */}
         {order.status === 'pending' && (
-          <TouchableOpacity
-            onPress={() => cancelOrder(order)}
-            disabled={updatingId === order.id}
-            style={{ backgroundColor: '#FEF2F2', borderRadius: 12, paddingVertical: 10, alignItems: 'center', marginBottom: 8, opacity: updatingId === order.id ? 0.6 : 1 }}
-          >
-            <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 13 }}>
-              {updatingId === order.id ? 'Cancelando...' : '❌ Cancelar pedido'}
-            </Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+            {!isService && (
+              <TouchableOpacity
+                onPress={() => router.push(`/(owner)/order-edit/${order.id}` as any)}
+                style={{ flex: 1, backgroundColor: '#EFF6FF', borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}
+              >
+                <Text style={{ color: '#2563EB', fontWeight: '700', fontSize: 13 }}>✏️ Editar pedido</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              onPress={() => cancelOrder(order)}
+              disabled={updatingId === order.id}
+              style={{ flex: 1, backgroundColor: '#FEF2F2', borderRadius: 12, paddingVertical: 10, alignItems: 'center', opacity: updatingId === order.id ? 0.6 : 1 }}
+            >
+              <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 13 }}>
+                {updatingId === order.id ? 'Cancelando...' : '❌ Cancelar pedido'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         {/* Total */}
@@ -286,9 +305,18 @@ export default function OwnerOrdersScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
-      <View style={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 12 }}>
-        <Text style={{ fontSize: 24, fontWeight: '800', color: '#1F2937' }}>Mis Pedidos 🛍️</Text>
-        <Text style={{ color: '#9CA3AF', fontSize: 13, marginTop: 4 }}>Seguimiento de tus compras</Text>
+      <View style={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 12, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <View>
+          <Text style={{ fontSize: 24, fontWeight: '800', color: '#1F2937' }}>Mis Pedidos 🛍️</Text>
+          <Text style={{ color: '#9CA3AF', fontSize: 13, marginTop: 4 }}>Seguimiento de tus compras</Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => router.push('/(owner)/historial' as any)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F3F4F6', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8 }}
+        >
+          <Text style={{ fontSize: 14 }}>📜</Text>
+          <Text style={{ color: '#374151', fontWeight: '600', fontSize: 12 }}>Histórico</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -308,7 +336,7 @@ export default function OwnerOrdersScreen() {
           <>
             <Section title="⏳ En proceso" data={pending} />
             <Section title="🚚 Activos" data={active} />
-            <Section title="📦 Historial" data={done} />
+            <Section title="🎉 Entregados recientemente" data={done} />
           </>
         )}
         <View style={{ height: 24 }} />

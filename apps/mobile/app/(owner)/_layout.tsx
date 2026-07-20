@@ -155,6 +155,8 @@ export default function OwnerLayout() {
       <Tabs.Screen name="addresses"  options={{ href: null }} />
       <Tabs.Screen name="groomers"   options={{ href: null }} />
       <Tabs.Screen name="walkers"    options={{ href: null }} />
+      <Tabs.Screen name="historial"  options={{ href: null }} />
+      <Tabs.Screen name="order-edit" options={{ href: null }} />
     </Tabs>
   );
 }
