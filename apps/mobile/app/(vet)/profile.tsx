@@ -67,10 +67,10 @@ export default function VetProfileScreen() {
         setLicenseNumber(v.licenseNumber || '');
         setFee(String(v.consultationFee ?? ''));
         setSpecialtyInput((v.specialties || []).join(', '));
-        // Legacy fallback for vets who registered before this toggle existed:
-        // infer from clinicServices only (NOT is24_7 — a solo vet offering
-        // 24/7 urgent care isn't necessarily a multi-vet clinic).
-        setIsClinic(v.isClinic ?? ((v.clinicServices?.length ?? 0) > 0));
+        // Legacy docs without this field default to solo practitioner —
+        // clinicServices isn't a valid signal since solo vets can also pick
+        // "servicios ofrecidos".
+        setIsClinic(v.isClinic ?? false);
         setIs24_7(!!v.is24_7);
         setOpeningHours(v.openingHours || '');
         setClinicServices(v.clinicServices || []);

@@ -126,19 +126,19 @@ export default function NearCategoryScreen() {
         .filter((v) => {
           const statusOk = (v as any).status === 'approved' || isRecent(v);
           if (!statusOk || !matchesLocation((v as any).city ?? '', (v as any).region, city, region)) return false;
-          // isClinic must be an explicit choice, not inferred from is24_7 — a
-          // solo vet offering 24/7 urgent care isn't necessarily a clinic.
-          // Legacy docs without the field set fall back to clinicServices only.
-          const isClinic = v.isClinic ?? ((v.clinicServices?.length ?? 0) > 0);
+          // isClinic must be an explicit choice — solo vets can also pick
+          // "servicios ofrecidos", so clinicServices is not a valid signal.
+          // Legacy docs without the field set default to solo practitioner.
+          const isClinic = v.isClinic ?? false;
           if (cat === 'vet') return !isClinic;
           if (cat === 'veterinaria') return isClinic;
           return v.is24_7 === true; // urgencias
         })
         .map((v) => {
-          // isClinic must be an explicit choice, not inferred from is24_7 — a
-          // solo vet offering 24/7 urgent care isn't necessarily a clinic.
-          // Legacy docs without the field set fall back to clinicServices only.
-          const isClinic = v.isClinic ?? ((v.clinicServices?.length ?? 0) > 0);
+          // isClinic must be an explicit choice — solo vets can also pick
+          // "servicios ofrecidos", so clinicServices is not a valid signal.
+          // Legacy docs without the field set default to solo practitioner.
+          const isClinic = v.isClinic ?? false;
           return {
             id: v.id,
             kind: (isClinic ? 'veterinaria' : 'vet') as 'vet' | 'veterinaria',

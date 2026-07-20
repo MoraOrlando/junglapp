@@ -155,7 +155,9 @@ export default function NearScreen() {
       const results: SearchResult[] = [
         ...vetSnap.docs.map((d) => {
           const v = d.data() as any;
-          const isClinic = v.isClinic ?? ((v.clinicServices?.length ?? 0) > 0);
+          // isClinic must be an explicit choice — solo vets can also pick
+          // "servicios ofrecidos", so clinicServices is not a valid signal.
+          const isClinic = v.isClinic ?? false;
           return {
             id: d.id, kind: 'vet' as const,
             name: isClinic ? (v.name ?? '') : `Dr. ${v.name ?? ''}`,

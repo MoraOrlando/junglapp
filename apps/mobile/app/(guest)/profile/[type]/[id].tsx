@@ -58,7 +58,7 @@ export default function GuestBusinessProfileScreen() {
     );
   }
 
-  const isClinic = businessType === 'vet' && (!!data.is24_7 || (data.clinicServices?.length ?? 0) > 0);
+  const isClinic = businessType === 'vet' && (data.isClinic ?? false);
   const displayName = businessType === 'vet' && !isClinic ? `Dr. ${data.name}` : (data.businessName || data.name);
 
   return (

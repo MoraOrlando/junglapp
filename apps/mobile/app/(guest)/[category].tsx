@@ -73,19 +73,19 @@ export default function GuestCategoryScreen() {
         .map((d) => ({ id: d.id, ...d.data() } as Veterinarian))
         .filter((v) => {
           if (!((v as any).status === 'approved' || isRecent(v))) return false;
-          // isClinic must be an explicit choice, not inferred from is24_7 — a
-          // solo vet offering 24/7 urgent care isn't necessarily a clinic.
-          // Legacy docs without the field set fall back to clinicServices only.
-          const isClinic = v.isClinic ?? ((v.clinicServices?.length ?? 0) > 0);
+          // isClinic must be an explicit choice — solo vets can also pick
+          // "servicios ofrecidos", so clinicServices is not a valid signal.
+          // Legacy docs without the field set default to solo practitioner.
+          const isClinic = v.isClinic ?? false;
           if (cat === 'vet') return !isClinic;
           if (cat === 'veterinaria') return isClinic;
           return v.is24_7 === true;
         })
         .map((v) => {
-          // isClinic must be an explicit choice, not inferred from is24_7 — a
-          // solo vet offering 24/7 urgent care isn't necessarily a clinic.
-          // Legacy docs without the field set fall back to clinicServices only.
-          const isClinic = v.isClinic ?? ((v.clinicServices?.length ?? 0) > 0);
+          // isClinic must be an explicit choice — solo vets can also pick
+          // "servicios ofrecidos", so clinicServices is not a valid signal.
+          // Legacy docs without the field set default to solo practitioner.
+          const isClinic = v.isClinic ?? false;
           return {
             id: v.id,
             type: 'vet' as const,
