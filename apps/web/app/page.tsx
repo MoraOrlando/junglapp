@@ -135,7 +135,7 @@ export default function LandingPage() {
             <Image src="/logo.svg" alt="JunglApp" width={100} height={34} className="h-8 w-auto brightness-0 invert" />
           </div>
           <div className="flex gap-6 text-sm text-white/70">
-            <Link href="https://mora-orlando.github.io/junglapp-privacy-policy/" target="_blank" className="hover:text-white transition">
+            <Link href="https://moraorlando.github.io/junglapp/privacy-policy.html" target="_blank" className="hover:text-white transition">
               Política de Privacidad
             </Link>
             <Link href="/acceso" className="hover:text-white transition">
