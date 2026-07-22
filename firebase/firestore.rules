@@ -178,6 +178,22 @@ service cloud.firestore {
       allow update, delete: if isAuth() && resource.data.ownerId == request.auth.uid;
     }
 
+    // ── Events (community events in "Entretención", e.g. a dog run) ────────
+    match /events/{eventId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.eventDate is string
+        && request.resource.data.expiresAt is string;
+      allow update: if isAuth() && (
+        (resource.data.createdBy == request.auth.uid && fieldUnchanged('createdBy'))
+        || isSupport()
+      );
+      allow delete: if isSupport() || resource.data.createdBy == request.auth.uid;
+    }
+
     // ── Medical Visits ─────────────────────────────────────────────────────
     match /medicalVisits/{visitId} {
       // Vets need full read access to patient history for any pet in their care.
@@ -419,7 +435,7 @@ service cloud.firestore {
       allow create: if isAuth()
         && request.resource.data.reporterId == request.auth.uid
         && request.resource.data.reportedUserId is string
-        && (request.resource.data.chatId is string || request.resource.data.placeId is string)
+        && (request.resource.data.chatId is string || request.resource.data.placeId is string || request.resource.data.eventId is string)
         && request.resource.data.reason is string
         && request.resource.data.reason.size() > 0
         && request.resource.data.status == 'pending';
