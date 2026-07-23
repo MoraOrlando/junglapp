@@ -124,13 +124,15 @@ export default function NearScreen() {
         where('storeId', 'in', storeIds),
         where('isActive', '==', true),
       ));
+      // A promoted product doesn't need a discount — originalPrice is only
+      // used to rank discounted items first and to render the "-X%" badge.
       const onSale = productsSnap.docs
         .map((d) => ({ id: d.id, ...d.data() } as Product))
-        .filter((p) => p.originalPrice != null && p.originalPrice > p.price && p.promotionStatus === 'approved')
+        .filter((p) => p.promotionStatus === 'approved')
         .map((p) => ({ ...p, storeName: storeNameById.get(p.storeId) ?? '' } as PromoItem))
         .sort((a, b) => {
-          const discountA = 1 - a.price / (a.originalPrice as number);
-          const discountB = 1 - b.price / (b.originalPrice as number);
+          const discountA = a.originalPrice != null && a.originalPrice > a.price ? 1 - a.price / a.originalPrice : 0;
+          const discountB = b.originalPrice != null && b.originalPrice > b.price ? 1 - b.price / b.originalPrice : 0;
           return discountB - discountA;
         })
         .slice(0, 15);
@@ -356,11 +358,12 @@ export default function NearScreen() {
         {!loadingPromos && promos.length > 0 && (
           <View style={{ marginHorizontal: 16, marginBottom: 20, backgroundColor: '#FEF2F2', borderRadius: 22, paddingTop: 16, paddingBottom: 4, borderWidth: 1, borderColor: '#FEE2E2' }}>
             <Text style={{ fontSize: 17, fontWeight: '800', color: '#DC2626', paddingHorizontal: 16, marginBottom: 10 }}>
-              🔥 Ofertas cerca de ti
+              🔥 Ofertas y promociones cerca de ti
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16, gap: 12 }}>
               {promos.map((p) => {
-                const discountPct = Math.round((1 - p.price / (p.originalPrice as number)) * 100);
+                const hasDiscount = p.originalPrice != null && p.originalPrice > p.price;
+                const discountPct = hasDiscount ? Math.round((1 - p.price / (p.originalPrice as number)) * 100) : 0;
                 return (
                   <TouchableOpacity
                     key={p.id}
@@ -379,8 +382,8 @@ export default function NearScreen() {
                           <Text style={{ fontSize: 30 }}>🛒</Text>
                         </View>
                       )}
-                      <View style={{ position: 'absolute', top: 6, left: 6, backgroundColor: '#DC2626', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}>
-                        <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>-{discountPct}%</Text>
+                      <View style={{ position: 'absolute', top: 6, left: 6, backgroundColor: hasDiscount ? '#DC2626' : '#7C3AED', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}>
+                        <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>{hasDiscount ? `-${discountPct}%` : '🎉 Promo'}</Text>
                       </View>
                     </View>
                     <View style={{ padding: 10 }}>
@@ -390,9 +393,11 @@ export default function NearScreen() {
                         <Text style={{ fontSize: 13, fontWeight: '800', color: '#16A34A' }}>
                           ${p.price.toLocaleString('es-CL')}
                         </Text>
-                        <Text style={{ fontSize: 11, color: '#94A3B8', textDecorationLine: 'line-through' }}>
-                          ${(p.originalPrice as number).toLocaleString('es-CL')}
-                        </Text>
+                        {hasDiscount && (
+                          <Text style={{ fontSize: 11, color: '#94A3B8', textDecorationLine: 'line-through' }}>
+                            ${(p.originalPrice as number).toLocaleString('es-CL')}
+                          </Text>
+                        )}
                       </View>
                     </View>
                   </TouchableOpacity>
