@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Tabs } from 'expo-router';
 import { Text, Alert, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ref, onValue, remove } from 'firebase/database';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { initFirebase, RTDB_PATHS, COLLECTIONS } from '@junglapp/firebase';
@@ -23,6 +24,7 @@ function TabIcon({ emoji, focused, badge, dim }: { emoji: string; focused: boole
 
 export default function OwnerLayout() {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const listenedRef = useRef<string | null>(null);
   const [unreadChats, setUnreadChats] = useState(0);
   const [matchCount, setMatchCount] = useState(0);
@@ -94,9 +96,9 @@ export default function OwnerLayout() {
           backgroundColor: '#fff',
           borderTopWidth: 1,
           borderTopColor: '#E5E7EB',
-          paddingBottom: 8,
+          paddingBottom: Math.max(8, insets.bottom),
           paddingTop: 4,
-          height: 65,
+          height: 55 + Math.max(8, insets.bottom),
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
       }}

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Tabs, useRouter } from 'expo-router';
 import { Text } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 
 function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
@@ -10,6 +11,7 @@ function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
 export default function VetLayout() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   useEffect(() => {
     if (!loading && (!user || user.role !== 'vet')) router.replace('/(auth)');
   }, [user, loading]);
@@ -24,9 +26,9 @@ export default function VetLayout() {
           backgroundColor: '#fff',
           borderTopWidth: 1,
           borderTopColor: '#E5E7EB',
-          paddingBottom: 8,
+          paddingBottom: Math.max(8, insets.bottom),
           paddingTop: 4,
-          height: 65,
+          height: 55 + Math.max(8, insets.bottom),
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
       }}
