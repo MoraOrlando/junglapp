@@ -46,7 +46,11 @@ function initFirebase() {
     const databaseURL = process.env.EXPO_PUBLIC_FIREBASE_DATABASE_URL || process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || '';
     if (databaseURL) rtdb = getDatabase(app, databaseURL);
   }
-  return { app, auth, db, storage, rtdb, functions: functionsInstance };
+  // rtdb is only unset if EXPO_PUBLIC_FIREBASE_DATABASE_URL is missing from
+  // the environment, which this app always sets — every call site already
+  // assumes it's defined (passes it straight to ref()), so this asserts
+  // that existing assumption instead of leaving it silently unchecked.
+  return { app, auth, db, storage, rtdb: rtdb as Database, functions: functionsInstance };
 }
 
 export { initFirebase, firebaseConfig };
