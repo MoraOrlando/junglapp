@@ -468,7 +468,7 @@ export default function StorePortalPage() {
       }
       const price = Number(values.price) || 0;
       const originalPrice = Number(values.originalPrice) || 0;
-      await addDoc(collection(db, COLLECTIONS.PRODUCTS), {
+      const newProduct = {
         storeId,
         userId: user.uid,
         name: values.name,
@@ -481,9 +481,10 @@ export default function StorePortalPage() {
         photos: photoUrl ? [photoUrl] : [],
         isActive: true,
         createdAt: new Date().toISOString(),
-      });
+      };
+      const ref = await addDoc(collection(db, COLLECTIONS.PRODUCTS), newProduct);
+      setProducts((prev) => [{ id: ref.id, ...newProduct }, ...prev]);
       setShowAddProduct(false);
-      await loadStoreData(storeId);
     } finally {
       setAddSaving(false);
     }
@@ -500,15 +501,24 @@ export default function StorePortalPage() {
       }
       const price = Number(values.price) || 0;
       const originalPrice = Number(values.originalPrice) || 0;
+      const hasOriginalPrice = originalPrice > price;
       await updateDoc(doc(db, COLLECTIONS.PRODUCTS, editingProduct.id), {
         price,
         purchasePrice: values.purchasePrice ? Number(values.purchasePrice) : deleteField(),
-        originalPrice: originalPrice > price ? originalPrice : deleteField(),
+        originalPrice: hasOriginalPrice ? originalPrice : deleteField(),
         stock: Number(values.stock) || 0,
         ...(photos ? { photos } : {}),
       });
+      const productId = editingProduct.id;
+      setProducts((prev) => prev.map((p) => (p.id !== productId ? p : {
+        ...p,
+        price,
+        purchasePrice: values.purchasePrice ? Number(values.purchasePrice) : undefined,
+        originalPrice: hasOriginalPrice ? originalPrice : undefined,
+        stock: Number(values.stock) || 0,
+        ...(photos ? { photos } : {}),
+      })));
       setEditingProduct(null);
-      await loadStoreData(storeId);
     } finally {
       setEditSaving(false);
     }
@@ -853,9 +863,7 @@ export default function StorePortalPage() {
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {products.map((p) => {
-                  const hasDiscount = (p.originalPrice ?? 0) > p.price;
-                  return (
+                {products.map((p) => (
                     <div key={p.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                       <button
                         onClick={() => setEditingProduct(p)}
@@ -880,8 +888,7 @@ export default function StorePortalPage() {
                           </div>
                         </div>
                       </button>
-                      {hasDiscount && (
-                        <div className="px-3 pb-3">
+                      <div className="px-3 pb-3">
                           {!p.promotionStatus && (
                             <button
                               onClick={() => requestPromotion(p.id)}
@@ -905,10 +912,8 @@ export default function StorePortalPage() {
                             </button>
                           )}
                         </div>
-                      )}
                     </div>
-                  );
-                })}
+                  ))}
               </div>
             )}
           </div>
