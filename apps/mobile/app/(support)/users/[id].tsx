@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { collection, doc, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import type { Pet, User } from '@junglapp/types';
 
-const { db } = initFirebase();
+const { db, app } = initFirebase();
+const fns = getFunctions(app, 'us-central1');
 const PURPLE = '#7C3AED';
 
 const ACCOUNT_STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
@@ -33,6 +35,8 @@ export default function UserDetailScreen() {
   const [user, setUser] = useState<User | null>(null);
   const [pets, setPets] = useState<Pet[]>([]);
   const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
+  const [tempPassword, setTempPassword] = useState<string | null>(null);
 
   async function load() {
     if (!id) return;
@@ -63,6 +67,32 @@ export default function UserDetailScreen() {
         },
       },
     ]);
+  }
+
+  function confirmResetPassword() {
+    if (!user) return;
+    Alert.alert(
+      'Restablecer contraseña',
+      `Se generará una nueva contraseña temporal para "${user.name}" y su contraseña actual dejará de funcionar. ¿Continuar?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Generar', onPress: resetPassword },
+      ]
+    );
+  }
+
+  async function resetPassword() {
+    if (!user) return;
+    setResetting(true);
+    try {
+      const adminResetUserPassword = httpsCallable(fns, 'adminResetUserPassword');
+      const result = await adminResetUserPassword({ targetUid: user.uid });
+      setTempPassword((result.data as { tempPassword: string }).tempPassword);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'No se pudo restablecer la contraseña.');
+    } finally {
+      setResetting(false);
+    }
   }
 
   if (loading) return (
@@ -162,6 +192,18 @@ export default function UserDetailScreen() {
         </View>
 
         <TouchableOpacity
+          onPress={confirmResetPassword}
+          disabled={resetting}
+          style={{ borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginBottom: 12, backgroundColor: '#F5F3FF', opacity: resetting ? 0.7 : 1 }}
+        >
+          {resetting ? (
+            <ActivityIndicator color={PURPLE} />
+          ) : (
+            <Text style={{ fontWeight: '700', fontSize: 14, color: PURPLE }}>🔑 Restablecer contraseña</Text>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
           onPress={toggleBlocked}
           style={{ borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginBottom: 40, backgroundColor: isBlocked ? '#ECFDF5' : '#FEF2F2' }}
         >
@@ -170,6 +212,30 @@ export default function UserDetailScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <Modal visible={!!tempPassword} transparent animationType="fade" onRequestClose={() => setTempPassword(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%' }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: '#1F2937', marginBottom: 8, textAlign: 'center' }}>
+              🔑 Contraseña temporal
+            </Text>
+            <Text style={{ color: '#6B7280', fontSize: 13, textAlign: 'center', marginBottom: 16 }}>
+              Compártesela a {user.name} por WhatsApp o SMS. Deberá cambiarla al iniciar sesión.
+            </Text>
+            <View style={{ backgroundColor: '#F5F3FF', borderRadius: 12, paddingVertical: 16, paddingHorizontal: 12, borderWidth: 2, borderColor: PURPLE, borderStyle: 'dashed', marginBottom: 20 }}>
+              <Text selectable style={{ fontSize: 22, fontWeight: '800', color: PURPLE, textAlign: 'center', letterSpacing: 2 }}>
+                {tempPassword}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setTempPassword(null)}
+              style={{ backgroundColor: PURPLE, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Listo</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

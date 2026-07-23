@@ -107,6 +107,43 @@ export const sendTempPassword = functions.https.onCall(async (data, context) => 
   return { success: true };
 });
 
+// Lets a support/admin account reset a user's password directly, for cases
+// where the self-service email in sendTempPassword above doesn't arrive
+// (spam filtering, typo'd address, etc). Unlike sendTempPassword, this
+// returns the temp password to the caller instead of emailing it — the
+// admin is expected to relay it to the user through another channel
+// (WhatsApp, SMS, in person).
+export const adminResetUserPassword = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  const callerDoc = await admin.firestore().collection('users').doc(context.auth.uid).get();
+  if (callerDoc.data()?.role !== 'support') {
+    throw new functions.https.HttpsError('permission-denied', 'Solo soporte puede restablecer contraseñas.');
+  }
+
+  const { targetUid } = data;
+  if (!targetUid || typeof targetUid !== 'string') {
+    throw new functions.https.HttpsError('invalid-argument', 'Falta el usuario objetivo.');
+  }
+
+  const targetDoc = await admin.firestore().collection('users').doc(targetUid).get();
+  if (!targetDoc.exists) {
+    throw new functions.https.HttpsError('not-found', 'Usuario no encontrado.');
+  }
+
+  const tempPassword = generateTempPassword();
+  await admin.auth().updateUser(targetUid, { password: tempPassword });
+  await targetDoc.ref.update({
+    mustChangePassword: true,
+    tempPasswordSentAt: admin.firestore.FieldValue.serverTimestamp(),
+    tempPasswordExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+  });
+
+  return { tempPassword };
+});
+
 const ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
 const IMAGE_MIME_TYPES: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf',
