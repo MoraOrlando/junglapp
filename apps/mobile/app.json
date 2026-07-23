@@ -36,7 +36,12 @@
       },
       "package": "com.junglapp.app",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 5,
+      "versionCode": 6,
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAZa8-UtT_g8jw8E92rLb27tre-9mGnlSs"
+        }
+      },
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_MEDIA_IMAGES",
