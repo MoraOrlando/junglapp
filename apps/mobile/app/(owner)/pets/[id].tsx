@@ -623,8 +623,13 @@ export default function PetDetailScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity className="absolute top-10 left-4 bg-white/80 rounded-full p-2" onPress={() => from === 'home' ? router.navigate('/(owner)' as any) : router.back()}>
-          <Text className="text-primary-700 text-base px-1">←</Text>
+        <TouchableOpacity
+          className="absolute top-10 left-4 bg-white/90 rounded-full p-3"
+          style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 }}
+          onPress={() => from === 'home' ? router.navigate('/(owner)' as any) : router.back()}
+          hitSlop={12}
+        >
+          <Text className="text-primary-700 text-2xl leading-none px-1">←</Text>
         </TouchableOpacity>
 
         <View className="px-6 -mt-6">
