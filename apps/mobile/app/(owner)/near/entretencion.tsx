@@ -10,7 +10,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { distanceKm } from '../../../lib/distance';
 import { ownerFilterRegionKey } from '../../../lib/locationKey';
 import { logNearCategoryViewed } from '../../../lib/analytics';
-import type { Place } from '@junglapp/types';
+import type { Place, CommunityEvent } from '@junglapp/types';
 
 const { db } = initFirebase();
 
@@ -45,13 +45,37 @@ export default function EntretencionScreen() {
   const { user } = useAuth();
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [places, setPlaces] = useState<PlaceWithDistance[]>([]);
+  const [events, setEvents] = useState<CommunityEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [locationDenied, setLocationDenied] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
+  async function loadEvents() {
+    setEventsLoading(true);
+    try {
+      const filterRegionKey = ownerFilterRegionKey(user);
+      const constraints = filterRegionKey ? [where('regionKey', '==', filterRegionKey)] : [];
+      const snap = await getDocs(query(
+        collection(db, COLLECTIONS.EVENTS),
+        ...constraints,
+        where('expiresAt', '>=', new Date().toISOString()),
+        limit(100),
+      ));
+      const results = snap.docs.map((d) => ({ id: d.id, ...d.data() } as CommunityEvent));
+      results.sort((a, b) => a.eventDate.localeCompare(b.eventDate));
+      setEvents(results);
+    } catch {
+      // Events are a secondary section — a failure here shouldn't block places from loading.
+    } finally {
+      setEventsLoading(false);
+    }
+  }
+
   async function load() {
     setLoading(true);
     setLoadError(false);
+    loadEvents();
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') { setLocationDenied(true); setLoading(false); return; }
@@ -94,19 +118,79 @@ export default function EntretencionScreen() {
         </TouchableOpacity>
       </View>
 
-      {loading ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color={GREEN} />
-        </View>
-      ) : locationDenied ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-          <Text style={{ fontSize: 40, marginBottom: 12 }}>📍</Text>
-          <Text style={{ color: '#64748B', fontSize: 15, textAlign: 'center' }}>
-            Activa el permiso de ubicación para ver los lugares cercanos a ti.
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }}>
+        {/* Events don't need GPS, so this section renders regardless of the
+            location-permission state that gates the places section below. */}
+        <View style={{ paddingHorizontal: 24, marginTop: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: '#1E293B' }}>📅 Eventos cerca de ti</Text>
+            <TouchableOpacity
+              onPress={() => router.push('/(owner)/near/event/add' as any)}
+              style={{ backgroundColor: GREEN, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6 }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>+ Crear evento</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={{ color: '#94A3B8', fontSize: 13, marginBottom: 14 }}>
+            Vigentes hasta el día del evento · creados por la comunidad
           </Text>
+
+          {eventsLoading ? (
+            <ActivityIndicator color={GREEN} style={{ marginVertical: 16 }} />
+          ) : events.length === 0 ? (
+            <View style={{ alignItems: 'center', paddingVertical: 24, backgroundColor: '#fff', borderRadius: 18, borderWidth: 1, borderColor: '#F1F5F9' }}>
+              <Text style={{ fontSize: 30, marginBottom: 6 }}>📅</Text>
+              <Text style={{ color: '#94A3B8', fontSize: 13, textAlign: 'center' }}>
+                Aún no hay eventos vigentes cerca de ti.
+              </Text>
+            </View>
+          ) : (
+            <View style={{ gap: 12 }}>
+              {events.map((ev) => (
+                <TouchableOpacity
+                  key={ev.id}
+                  onPress={() => router.push(`/(owner)/near/event/${ev.id}` as any)}
+                  style={{
+                    backgroundColor: '#fff', borderRadius: 18, padding: 14,
+                    flexDirection: 'row', alignItems: 'center', gap: 12,
+                    borderWidth: 1, borderColor: '#F1F5F9',
+                    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+                  }}
+                >
+                  <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: '#ECFEFF', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    {ev.photoUrl ? (
+                      <Image source={{ uri: ev.photoUrl }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+                    ) : (
+                      <Text style={{ fontSize: 24 }}>📅</Text>
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontWeight: '700', color: '#1E293B', fontSize: 15 }} numberOfLines={1}>{ev.name}</Text>
+                    <Text style={{ color: '#64748B', fontSize: 12, marginTop: 1 }} numberOfLines={1}>{ev.place}</Text>
+                    <Text style={{ fontSize: 12, color: GREEN, fontWeight: '600', marginTop: 2 }}>
+                      {new Date(ev.eventDate + 'T00:00:00').toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })} · {ev.region}
+                    </Text>
+                  </View>
+                  <Text style={{ color: '#CBD5E1', fontSize: 20 }}>›</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
-      ) : (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }}>
+
+        {loading ? (
+          <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 60 }}>
+            <ActivityIndicator color={GREEN} />
+          </View>
+        ) : locationDenied ? (
+          <View style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, paddingVertical: 40 }}>
+            <Text style={{ fontSize: 40, marginBottom: 12 }}>📍</Text>
+            <Text style={{ color: '#64748B', fontSize: 15, textAlign: 'center' }}>
+              Activa el permiso de ubicación para ver los lugares cercanos a ti.
+            </Text>
+          </View>
+        ) : (
+          <>
           {MapView && coords && (
             <View style={{ marginHorizontal: 16, marginTop: 8, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: '#F1F5F9', height: 240 }}>
               <MapView
@@ -191,8 +275,9 @@ export default function EntretencionScreen() {
               </View>
             )}
           </View>
-        </ScrollView>
-      )}
+          </>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }

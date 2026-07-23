@@ -22,6 +22,7 @@ export const COLLECTIONS = {
   CLIENT_LINKS: 'clientLinks',
   PLACES: 'places',
   PLACE_REVIEWS: 'placeReviews',
+  EVENTS: 'events',
   POS_SALES: 'posSales',
 } as const;
 

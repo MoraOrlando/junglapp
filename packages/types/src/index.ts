@@ -32,6 +32,10 @@ export interface User {
   // automatically when a content report is filed against this user, and to
   // 'blocked' by support after reviewing it (blocks login).
   accountStatus?: 'active' | 'under_review' | 'blocked';
+  // false right after signup until the owner completes address/RUT/phone in
+  // (auth)/complete-profile — absent (not false) means the field predates
+  // this flow, so treat missing the same as true.
+  profileComplete?: boolean;
   createdAt: string;
 }
 
@@ -342,6 +346,25 @@ export interface Place {
   createdAt: string;
 }
 
+// Community events shown in "Cerca de ti > Entretención" (e.g. a dog run).
+// Stays visible until the end of the calendar day of eventDate — expiresAt
+// is precomputed at creation so clients can filter with a plain range query.
+export interface CommunityEvent {
+  id: string;
+  name: string;
+  place: string;
+  address: string;
+  region: string;
+  regionKey?: string;
+  photoUrl?: string;
+  eventDate: string;
+  expiresAt: string;
+  description?: string;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+}
+
 export interface PlaceReview {
   id: string;
   placeId: string;
@@ -358,11 +381,14 @@ export interface ContentReport {
   reportedUserId: string;
   reportedUserName: string;
   // Exactly one context is present: a chat report (chatId, optional
-  // messageText) or a place/review report (placeId, placeName).
+  // messageText), a place/review report (placeId, placeName), or an
+  // event report (eventId, eventName).
   chatId?: string;
   messageText?: string;
   placeId?: string;
   placeName?: string;
+  eventId?: string;
+  eventName?: string;
   reason: string;
   status: 'pending' | 'reviewed';
   resolution?: 'blocked' | 'dismissed';

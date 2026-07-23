@@ -65,6 +65,14 @@
         { "fieldPath": "lookingForPartner", "order": "ASCENDING" },
         { "fieldPath": "regionKey", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "regionKey", "order": "ASCENDING" },
+        { "fieldPath": "expiresAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
