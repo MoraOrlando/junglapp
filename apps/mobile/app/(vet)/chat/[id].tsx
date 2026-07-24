@@ -177,7 +177,11 @@ export default function VetChatScreen() {
         )}
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      {/* AndroidManifest.xml already sets windowSoftInputMode="adjustResize" —
+          applying 'height' here too double-shrinks the layout on Android and
+          pushes the input bar out of view; undefined lets the native resize
+          do the whole job. */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         {/* Messages */}
         <ScrollView
           ref={scrollRef}
