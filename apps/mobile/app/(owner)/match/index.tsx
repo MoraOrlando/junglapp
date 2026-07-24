@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Dimensions,
-  Animated, Modal,
+  Animated, Modal, Alert,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -127,52 +127,61 @@ export default function MatchScreen() {
 
     if (liked) {
       logMatchLiked();
-      const mutualSnap = await getDocs(
-        query(
-          collection(db, COLLECTIONS.MATCHES),
-          where('pet1Id', '==', candidate.id),
-          where('pet2Id', '==', selectedMyPet.id),
-          where('owner2Id', '==', user.uid),
-          where('status', '==', 'pending'),
-          limit(1),
-        )
-      );
+      try {
+        const mutualSnap = await getDocs(
+          query(
+            collection(db, COLLECTIONS.MATCHES),
+            where('pet1Id', '==', candidate.id),
+            where('pet2Id', '==', selectedMyPet.id),
+            where('owner2Id', '==', user.uid),
+            where('status', '==', 'pending'),
+            limit(1),
+          )
+        );
 
-      if (!mutualSnap.empty) {
-        const existingMatch = mutualSnap.docs[0];
-        await updateDoc(existingMatch.ref, {
-          status: 'matched',
-          matchedAt: new Date().toISOString(),
-        });
-        const ownerDoc = await getDoc(doc(db, COLLECTIONS.USERS, candidate.ownerId));
-        const ownerData = ownerDoc.exists() ? ownerDoc.data() : null;
-        const chatRef = await addDoc(collection(db, COLLECTIONS.CHATS), {
-          participants: [user.uid, candidate.ownerId],
-          participantNames: {
-            [user.uid]: user.name,
-            [candidate.ownerId]: ownerData?.name || 'Usuario',
-          },
-          matchId: existingMatch.id,
-          chatType: 'match',
-          lastMessage: `🔥 ¡${selectedMyPet.name} y ${candidate.name} hicieron match!`,
-          lastMessageAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-        try {
-          await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatRef.id}/${user.uid}`), true);
-          await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatRef.id}/${candidate.ownerId}`), true);
-        } catch {}
-        logMatchMutual();
-        setMutualMatch({ chatId: chatRef.id, candidateName: candidate.name, myPetName: selectedMyPet.name });
-      } else {
-        await addDoc(collection(db, COLLECTIONS.MATCHES), {
-          pet1Id: selectedMyPet.id,
-          pet2Id: candidate.id,
-          owner1Id: user.uid,
-          owner2Id: candidate.ownerId,
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-        });
+        if (!mutualSnap.empty) {
+          const existingMatch = mutualSnap.docs[0];
+          // Firestore rules only allow updating ['status', 'updatedAt'] on
+          // this collection — any other field name makes the whole update
+          // rejected as permission-denied, which silently aborted the vote
+          // before it could advance to the next candidate or show the modal.
+          await updateDoc(existingMatch.ref, {
+            status: 'matched',
+            updatedAt: new Date().toISOString(),
+          });
+          const ownerDoc = await getDoc(doc(db, COLLECTIONS.USERS, candidate.ownerId));
+          const ownerData = ownerDoc.exists() ? ownerDoc.data() : null;
+          const chatRef = await addDoc(collection(db, COLLECTIONS.CHATS), {
+            participants: [user.uid, candidate.ownerId],
+            participantNames: {
+              [user.uid]: user.name,
+              [candidate.ownerId]: ownerData?.name || 'Usuario',
+            },
+            matchId: existingMatch.id,
+            chatType: 'match',
+            lastMessage: `🔥 ¡${selectedMyPet.name} y ${candidate.name} hicieron match!`,
+            lastMessageAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+          try {
+            await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatRef.id}/${user.uid}`), true);
+            await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatRef.id}/${candidate.ownerId}`), true);
+          } catch {}
+          logMatchMutual();
+          setMutualMatch({ chatId: chatRef.id, candidateName: candidate.name, myPetName: selectedMyPet.name });
+        } else {
+          await addDoc(collection(db, COLLECTIONS.MATCHES), {
+            pet1Id: selectedMyPet.id,
+            pet2Id: candidate.id,
+            owner1Id: user.uid,
+            owner2Id: candidate.ownerId,
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+          });
+        }
+      } catch (e: any) {
+        Alert.alert('Error', e.message || 'No se pudo registrar el match.');
+        return;
       }
     }
 
