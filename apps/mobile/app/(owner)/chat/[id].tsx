@@ -9,6 +9,8 @@ import {
   Platform,
   Image,
   Alert,
+  Modal,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -59,6 +61,7 @@ export default function ChatRoomScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
   function getOtherId(): string | null {
@@ -174,6 +177,7 @@ export default function ChatRoomScreen() {
   const groups = groupByDate(messages);
   const otherName = getOtherName();
   const otherId = getOtherId();
+  const otherPhone = otherId ? chat?.participantPhones?.[otherId] : undefined;
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
@@ -189,18 +193,24 @@ export default function ChatRoomScreen() {
         >
           <Text className="text-3xl text-gray-600">←</Text>
         </TouchableOpacity>
-        <View
-          className="w-11 h-11 rounded-full items-center justify-center"
-          style={{ backgroundColor: '#D8F3DC' }}
+        <TouchableOpacity
+          className="flex-row items-center gap-3 flex-1"
+          onPress={() => setShowProfile(true)}
+          disabled={!otherId}
         >
-          <Text className="text-2xl">{headerEmoji}</Text>
-        </View>
-        <View className="flex-1">
-          <Text className="font-bold text-gray-900 text-base leading-tight">{otherName}</Text>
-          <Text className="text-gray-400 text-xs">
-            {chatType === 'found_pet' ? 'Mascota encontrada' : `with ${otherName}`}
-          </Text>
-        </View>
+          <View
+            className="w-11 h-11 rounded-full items-center justify-center"
+            style={{ backgroundColor: '#D8F3DC' }}
+          >
+            <Text className="text-2xl">{headerEmoji}</Text>
+          </View>
+          <View className="flex-1">
+            <Text className="font-bold text-gray-900 text-base leading-tight">{otherName}</Text>
+            <Text className="text-gray-400 text-xs">
+              {chatType === 'found_pet' ? 'Mascota encontrada' : 'Toca para ver información'}
+            </Text>
+          </View>
+        </TouchableOpacity>
         {otherId && (
           <ReportBlockButton
             chatId={id}
@@ -320,6 +330,39 @@ export default function ChatRoomScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      <Modal visible={showProfile} transparent animationType="fade" onRequestClose={() => setShowProfile(false)}>
+        <TouchableOpacity
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}
+          activeOpacity={1}
+          onPress={() => setShowProfile(false)}
+        >
+          <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%' }}>
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
+              <View className="w-16 h-16 rounded-full items-center justify-center" style={{ backgroundColor: '#D8F3DC' }}>
+                <Text style={{ fontSize: 30 }}>{headerEmoji}</Text>
+              </View>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: '#1F2937', marginTop: 10 }}>{otherName}</Text>
+            </View>
+            {otherPhone ? (
+              <TouchableOpacity
+                onPress={() => Linking.openURL(`tel:${otherPhone}`)}
+                style={{ backgroundColor: '#F0FDF4', borderRadius: 14, paddingVertical: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+              >
+                <Text style={{ fontSize: 16 }}>📞</Text>
+                <Text style={{ color: '#2D6A4F', fontWeight: '700', fontSize: 15 }}>{otherPhone}</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={{ color: '#9CA3AF', fontSize: 13, textAlign: 'center' }}>
+                No hay un teléfono de contacto disponible para este usuario.
+              </Text>
+            )}
+            <TouchableOpacity onPress={() => setShowProfile(false)} style={{ marginTop: 16, alignItems: 'center' }}>
+              <Text style={{ color: '#6B7280', fontWeight: '600' }}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }

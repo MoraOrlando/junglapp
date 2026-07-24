@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { Text, Alert, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ref, onValue, remove } from 'firebase/database';
@@ -24,6 +24,7 @@ function TabIcon({ emoji, focused, badge, dim }: { emoji: string; focused: boole
 
 export default function OwnerLayout() {
   const { user } = useAuth();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const listenedRef = useRef<string | null>(null);
   const [unreadChats, setUnreadChats] = useState(0);
@@ -79,6 +80,13 @@ export default function OwnerLayout() {
             '🩺 Tu veterinario llegó',
             `${notif.vetName} ha llegado a la consulta.\n\nPor favor verifica su identidad antes de comenzar.`,
             [{ text: 'Entendido', style: 'default' }]
+          );
+        } else if (notif.type === 'new_match') {
+          remove(ref(rtdb, `${RTDB_PATHS.NOTIFICATIONS}/${user.uid}/${apptId}`));
+          Alert.alert(
+            '🔥 ¡Nuevo match!',
+            `${notif.petName} y ${notif.matchedWithPetName} hicieron match. ¡Escríbanse!`,
+            [{ text: 'Ver chat', onPress: () => router.push(`/(owner)/chat/${notif.chatId}` as any) }]
           );
         }
       });

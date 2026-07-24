@@ -264,6 +264,39 @@ export const onAppointmentUpdated = functions.firestore
     }
   });
 
+// Notifica a ambos dueños cuando dos mascotas hacen match mutuo. La app solo
+// muestra el modal "¡Es un match!" al dueño que está mirando la pantalla en
+// ese momento — el otro dueño (quien dio like primero, y ya salió de la app)
+// no tenía ninguna señal de que el match ocurrió hasta que abriera el chat
+// por su cuenta.
+export const onMatchCompleted = functions.firestore
+  .document('matches/{matchId}')
+  .onUpdate(async (change) => {
+    const before = change.before.data();
+    const after = change.after.data();
+    if (before.status === after.status || after.status !== 'matched') return;
+
+    const { owner1Id, owner2Id, pet1Id, pet2Id } = after;
+    if (!owner1Id || !owner2Id) return;
+
+    const [pet1Snap, pet2Snap] = await Promise.all([
+      admin.firestore().collection('pets').doc(pet1Id).get(),
+      admin.firestore().collection('pets').doc(pet2Id).get(),
+    ]);
+    const pet1Name = pet1Snap.data()?.name || 'Tu mascota';
+    const pet2Name = pet2Snap.data()?.name || 'Tu mascota';
+
+    const [token1, token2] = await Promise.all([
+      getUserPushToken(owner1Id),
+      getUserPushToken(owner2Id),
+    ]);
+
+    await Promise.all([
+      token1 ? sendPush(token1, '🔥 ¡Nuevo match!', `${pet1Name} y ${pet2Name} hicieron match`) : Promise.resolve(),
+      token2 ? sendPush(token2, '🔥 ¡Nuevo match!', `${pet1Name} y ${pet2Name} hicieron match`) : Promise.resolve(),
+    ]);
+  });
+
 // Descuenta stock cuando la tienda confirma un pedido — no al crearlo, para
 // no tocar inventario por pedidos que terminan siendo rechazados.
 export const onOrderConfirmed = functions.firestore

@@ -234,11 +234,13 @@ export default function AddPetScreen() {
         chipNumber: data.chipNumber || '',
         instagram: data.instagram || '',
         lookingForPartner,
-        // Denormalize the owner's location/regionKey onto the pet so Match
-        // candidates can show a distance badge and be filtered by region
-        // without exposing the owner's full profile.
+        // Denormalize the owner's location/regionKey/phone onto the pet so
+        // Match candidates can show a distance badge, be filtered by region,
+        // and let a matched owner see a contact number — without exposing
+        // the owner's full profile.
         ...(lookingForPartner && (user as any).location ? { location: (user as any).location } : {}),
         ...(lookingForPartner && (user as any).regionKey ? { regionKey: (user as any).regionKey } : {}),
+        ...(lookingForPartner && user.phone ? { ownerPhone: user.phone } : {}),
         sex: sex || null,
         weight: weight ? parseFloat(weight) : null,
         allergic,

@@ -86,6 +86,10 @@ export interface Pet {
   // queries filter by where('regionKey', '==', ...) without exposing the
   // owner's full profile to other owners.
   regionKey?: string;
+  // Same denormalization rationale as location/regionKey — lets a matched
+  // owner see a contact number for the other pet's owner from the chat,
+  // since reading another owner's users/{uid} doc directly isn't allowed.
+  ownerPhone?: string;
   medicalRecord: MedicalRecord;
   createdAt: string;
 }
@@ -315,6 +319,10 @@ export interface Chat {
   id: string;
   participants: string[];
   participantNames: Record<string, string>;
+  // Set for match chats so a matched owner can see a contact number without
+  // needing to read the other owner's users/{uid} doc (not permitted
+  // owner-to-owner — see firestore.rules).
+  participantPhones?: Record<string, string>;
   matchId?: string;
   lastMessage?: string;
   lastMessageAt?: string;

@@ -166,6 +166,13 @@ export default function MatchScreen() {
               [user.uid]: user.name,
               [candidate.ownerId]: ownerData?.name || 'Usuario',
             },
+            // candidate.ownerPhone comes from the Pet doc (denormalized when
+            // its owner turned lookingForPartner on) — ownerData?.phone would
+            // always be undefined since that users/{uid} read is denied.
+            participantPhones: {
+              ...(user.phone ? { [user.uid]: user.phone } : {}),
+              ...(candidate.ownerPhone ? { [candidate.ownerId]: candidate.ownerPhone } : {}),
+            },
             matchId: existingMatch.id,
             chatType: 'match',
             lastMessage: `🔥 ¡${selectedMyPet.name} y ${candidate.name} hicieron match!`,
@@ -175,6 +182,21 @@ export default function MatchScreen() {
           try {
             await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatRef.id}/${user.uid}`), true);
             await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatRef.id}/${candidate.ownerId}`), true);
+          } catch {}
+          // In-app notification for the other owner (the one who liked
+          // first and isn't looking at this screen) — the push above can
+          // be delayed/missing if they don't have a token, this shows up
+          // immediately the next time they open the app.
+          try {
+            await set(ref(rtdb, `${RTDB_PATHS.NOTIFICATIONS}/${candidate.ownerId}/match_${existingMatch.id}`), {
+              type: 'new_match',
+              matchId: existingMatch.id,
+              chatId: chatRef.id,
+              petName: candidate.name,
+              matchedWithPetName: selectedMyPet.name,
+              createdAt: new Date().toISOString(),
+              read: false,
+            });
           } catch {}
           logMatchMutual();
           setMutualMatch({ chatId: chatRef.id, candidateName: candidate.name, myPetName: selectedMyPet.name });

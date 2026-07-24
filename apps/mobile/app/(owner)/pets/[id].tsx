@@ -215,11 +215,14 @@ export default function PetDetailScreen() {
       );
     } else {
       const updates: any = { lookingForPartner: true };
-      // Denormalize the owner's location/regionKey onto the pet so Match
-      // candidates (readable by any owner) can show a distance badge and be
-      // filtered by region without exposing the owner's full profile.
+      // Denormalize the owner's location/regionKey/phone onto the pet so Match
+      // candidates (readable by any owner) can show a distance badge, be
+      // filtered by region, and let a matched owner see a contact number —
+      // all without exposing the owner's full profile (users/{uid} isn't
+      // readable owner-to-owner, see firestore.rules).
       if ((user as any)?.location) updates.location = (user as any).location;
       if ((user as any)?.regionKey) updates.regionKey = (user as any).regionKey;
+      if (user?.phone) updates.ownerPhone = user.phone;
       await updateDoc(doc(db, COLLECTIONS.PETS, id), updates);
       setPet({ ...pet, ...updates });
       triggerFlameAndNavigate();
