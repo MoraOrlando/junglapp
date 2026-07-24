@@ -23,7 +23,10 @@ export default function PetsScreen() {
       const snap = await getDocs(
         query(collection(db, COLLECTIONS.PETS), where('ownerId', '==', user.uid))
       );
-      setPets(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)));
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet));
+      // Deceased pets sink to the end of the list, greyed out below.
+      list.sort((a, b) => Number(!!a.deceasedAt) - Number(!!b.deceasedAt));
+      setPets(list);
     } catch {}
   }
 
@@ -67,32 +70,41 @@ export default function PetsScreen() {
           </View>
         ) : (
           <View className="gap-4 pb-6">
-            {pets.map((pet) => (
-              <TouchableOpacity
-                key={pet.id}
-                className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex-row items-center gap-4"
-                onPress={() => router.push(`/(owner)/pets/${pet.id}` as any)}
-              >
-                {pet.photos && pet.photos.length > 0 ? (
-                  <Image source={{ uri: pet.photos[0] }} style={{ width: 64, height: 64, borderRadius: 16 }} contentFit="cover" />
-                ) : (
-                  <View className="bg-primary-100 rounded-2xl w-16 h-16 items-center justify-center">
-                    <Text className="text-3xl">{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
+            {pets.map((pet) => {
+              const deceased = !!pet.deceasedAt;
+              return (
+                <TouchableOpacity
+                  key={pet.id}
+                  className={`rounded-2xl p-4 shadow-sm border flex-row items-center gap-4 ${deceased ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-100'}`}
+                  style={deceased ? { opacity: 0.6 } : undefined}
+                  onPress={() => router.push(`/(owner)/pets/${pet.id}` as any)}
+                >
+                  {pet.photos && pet.photos.length > 0 ? (
+                    <Image
+                      source={{ uri: pet.photos[0] }}
+                      style={{ width: 64, height: 64, borderRadius: 16 }}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <View className={`rounded-2xl w-16 h-16 items-center justify-center ${deceased ? 'bg-gray-200' : 'bg-primary-100'}`}>
+                      <Text className="text-3xl">{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
+                    </View>
+                  )}
+                  <View className="flex-1">
+                    <View className="flex-row items-center gap-2">
+                      <Text className={`font-bold text-lg ${deceased ? 'text-gray-500' : 'text-gray-800'}`}>{pet.name}</Text>
+                      {pet.lookingForPartner && !deceased && <Text>💕</Text>}
+                      {deceased && <Text className="text-gray-400 text-xs">🕊️ En memoria</Text>}
+                    </View>
+                    <Text className="text-gray-500 text-sm">{pet.breed} · {pet.color}</Text>
+                    <Text className="text-gray-400 text-xs mt-0.5">
+                      {pet.chipNumber ? `Chip: ${pet.chipNumber}` : 'Sin chip registrado'}
+                    </Text>
                   </View>
-                )}
-                <View className="flex-1">
-                  <View className="flex-row items-center gap-2">
-                    <Text className="font-bold text-gray-800 text-lg">{pet.name}</Text>
-                    {pet.lookingForPartner && <Text>💕</Text>}
-                  </View>
-                  <Text className="text-gray-500 text-sm">{pet.breed} · {pet.color}</Text>
-                  <Text className="text-gray-400 text-xs mt-0.5">
-                    {pet.chipNumber ? `Chip: ${pet.chipNumber}` : 'Sin chip registrado'}
-                  </Text>
-                </View>
-                <Text className="text-gray-300 text-xl">›</Text>
-              </TouchableOpacity>
-            ))}
+                  <Text className="text-gray-300 text-xl">›</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
       </ScrollView>

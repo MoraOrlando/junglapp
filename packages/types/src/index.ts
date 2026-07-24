@@ -72,6 +72,10 @@ export interface Pet {
   allergic?: boolean;
   allergyNotes?: string;
   lookingForPartner: boolean;
+  // Set from the pet's ficha when the owner records a date of death. Once
+  // set, the pet is excluded from vet/groomer/trainer/walker booking pickers
+  // and sorted to the end of the owner's pet list (shown greyed out).
+  deceasedAt?: string;
   // Copied from the owner's own location (if captured) when they turn
   // lookingForPartner on — Match candidates from other owners are readable
   // by anyone (see firestore.rules), but another owner's full user profile
@@ -437,10 +441,18 @@ export type ChatType = 'match' | 'found_pet';
 export interface Order {
   id: string;
   buyerId: string;
+  buyerName?: string;
+  buyerPhone?: string;
   storeId: string;
   products: OrderItem[];
   total: number;
-  status: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled';
+  status: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled' | 'alternative_offered';
+  // Store's counter-offer text, set when status is 'alternative_offered'.
+  alternativeMessage?: string;
+  // Service-type orders (e.g. grooming booked through the store portal)
+  // carry a service payload instead of products.
+  type?: 'product' | 'service';
+  service?: { serviceName: string; note?: string };
   shippingAddress: string;
   // Undefined on orders placed before this field existed — treat as 'delivery'.
   deliveryMethod?: 'delivery' | 'pickup';

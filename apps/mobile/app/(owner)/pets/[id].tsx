@@ -7,12 +7,19 @@ import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import {
-  doc, getDoc, updateDoc, collection, query, where, getDocs
+  doc, getDoc, updateDoc, deleteField, collection, query, where, getDocs, onSnapshot
 } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+import YearCalendar from '../../../components/YearCalendar';
 import type { Pet } from '@junglapp/types';
+
+// deceasedAt is stored as YYYY-MM-DD, shown to the user as DD-MM-YYYY.
+function toDisplayDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-');
+  return `${day}-${month}-${year}`;
+}
 
 const { db } = initFirebase();
 
@@ -68,6 +75,7 @@ export default function PetDetailScreen() {
   const [visits, setVisits] = useState<VisitEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [isLost, setIsLost] = useState(false);
+  const [showDeceasedCalendar, setShowDeceasedCalendar] = useState(false);
   const [showFlame, setShowFlame] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [selectedVisit, setSelectedVisit] = useState<VisitEntry | null>(null);
@@ -97,12 +105,15 @@ export default function PetDetailScreen() {
       if (snap.exists()) setPet({ id: snap.id, ...snap.data() } as Pet);
       setLoading(false);
     }).catch(() => setLoading(false));
-    getDocs(query(
-      collection(db, COLLECTIONS.LOST_PETS),
-      where('petId', '==', id)
-    )).then((snap) => {
-      setIsLost(snap.docs.some((d) => d.data().isFound === false));
-    }).catch(() => {});
+    // Live listener, not a one-shot read — the "extraviada" badge must stay
+    // in sync if the report is cancelled/found from another screen or a
+    // stale mount, otherwise it can keep showing (or hiding) the wrong state.
+    const unsubLost = onSnapshot(
+      query(collection(db, COLLECTIONS.LOST_PETS), where('petId', '==', id)),
+      (snap) => setIsLost(snap.docs.some((d) => d.data().isFound === false)),
+      () => {}
+    );
+    return unsubLost;
   }, [id]);
 
   // Reload visit history every time this screen comes into focus (e.g. after adding a visit).
@@ -273,6 +284,43 @@ export default function PetDetailScreen() {
       ]);
     } else {
       router.push(`/(owner)/lost/report?petId=${id}` as any);
+    }
+  }
+
+  function handleDeceasedPress() {
+    if (pet?.deceasedAt) {
+      Alert.alert(
+        '🕊️ Fallecimiento registrado',
+        `Falleció el ${toDisplayDate(pet.deceasedAt)}. Mientras esté registrado, no aparecerá disponible para agendar citas médicas.`,
+        [
+          { text: 'Cerrar', style: 'cancel' },
+          { text: 'Editar fecha', onPress: () => setShowDeceasedCalendar(true) },
+          { text: 'Quitar registro', style: 'destructive', onPress: clearDeceased },
+        ]
+      );
+    } else {
+      setShowDeceasedCalendar((v) => !v);
+    }
+  }
+
+  async function saveDeceasedDate(dateString: string) {
+    if (!id || !pet) return;
+    setShowDeceasedCalendar(false);
+    try {
+      await updateDoc(doc(db, COLLECTIONS.PETS, id), { deceasedAt: dateString });
+      setPet({ ...pet, deceasedAt: dateString });
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  }
+
+  async function clearDeceased() {
+    if (!id || !pet) return;
+    try {
+      await updateDoc(doc(db, COLLECTIONS.PETS, id), { deceasedAt: deleteField() });
+      setPet({ ...pet, deceasedAt: undefined });
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
     }
   }
 
@@ -693,6 +741,35 @@ export default function PetDetailScreen() {
             </View>
             <Text className={isLost ? 'text-red-400' : 'text-orange-400'}>›</Text>
           </TouchableOpacity>
+
+          {/* Deceased pet registration */}
+          <TouchableOpacity
+            className={`rounded-2xl py-4 px-5 mb-2 flex-row items-center gap-3 ${pet.deceasedAt ? 'bg-gray-100 border-2 border-gray-300' : 'bg-gray-50 border-2 border-gray-200'}`}
+            onPress={handleDeceasedPress}
+          >
+            <Text className="text-3xl">🕊️</Text>
+            <View className="flex-1">
+              <Text className={`font-bold text-base ${pet.deceasedAt ? 'text-gray-600' : 'text-gray-500'}`}>
+                {pet.deceasedAt ? `Falleció el ${toDisplayDate(pet.deceasedAt)}` : 'Registrar fallecimiento'}
+              </Text>
+              <Text className="text-xs mt-0.5 text-gray-400">
+                {pet.deceasedAt ? 'Toca para editar o quitar el registro' : 'Deja de estar disponible para agendar citas médicas'}
+              </Text>
+            </View>
+            <Text className="text-gray-400">›</Text>
+          </TouchableOpacity>
+
+          {showDeceasedCalendar && (
+            <View className="mb-4 rounded-2xl overflow-hidden border border-gray-200">
+              <YearCalendar
+                onDayPress={(day) => saveDeceasedDate(day.dateString)}
+                maxDate={new Date().toISOString().slice(0, 10)}
+                initialDate={pet.deceasedAt || undefined}
+                markedDates={pet.deceasedAt ? { [pet.deceasedAt]: { selected: true, selectedColor: '#6B7280' } } : {}}
+                color="#6B7280"
+              />
+            </View>
+          )}
 
           {/* Info grid */}
           <View className="flex-row gap-3 mb-3">
