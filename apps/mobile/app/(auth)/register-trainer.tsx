@@ -171,6 +171,10 @@ export default function RegisterTrainerScreen() {
                     : (f.key === 'email' || f.secure) ? v.replace(/\s/g, '')
                     : v
                   )}
+                  // Android autofill likes to "help" this field with an
+                  // unrelated saved value, which formatRut then mangles
+                  // into something RUT-shaped but invalid.
+                  {...(f.key === 'rut' ? { autoComplete: 'off', textContentType: 'none', importantForAutofill: 'no' } : {})}
                 />
               </View>
             ))}

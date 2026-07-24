@@ -234,6 +234,10 @@ export default function RegisterGroomingScreen() {
                         : t
                       )}
                       value={value || ''}
+                      // Android autofill likes to "help" this field with an
+                      // unrelated saved value, which formatRut then mangles
+                      // into something RUT-shaped but invalid.
+                      {...(f.name === 'rut' ? { autoComplete: 'off', textContentType: 'none', importantForAutofill: 'no' } : {})}
                     />
                   )}
                 />

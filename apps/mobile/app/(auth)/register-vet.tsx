@@ -254,6 +254,12 @@ export default function RegisterVetScreen() {
               onChangeText={handleRutChange}
               keyboardType="default"
               autoCapitalize="characters"
+              // Android autofill likes to "help" this field with an
+              // unrelated saved value, which formatRut then mangles into
+              // something RUT-shaped but invalid.
+              autoComplete="off"
+              textContentType="none"
+              importantForAutofill="no"
             />
             {rutError ? <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>{rutError}</Text> : null}
             {rut.length >= 9 && !rutError ? <Text style={{ color: '#059669', fontSize: 12, marginTop: 4 }}>✅ RUT válido</Text> : null}
