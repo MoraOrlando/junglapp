@@ -32,6 +32,8 @@ export default function StoreOrdersScreen() {
   const [altOrder, setAltOrder] = useState<Order | null>(null);
   const [altMessage, setAltMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [tab, setTab] = useState<'active' | 'history'>('active');
+  const [historySearch, setHistorySearch] = useState('');
 
   async function loadOrders() {
     if (!user) return;
@@ -122,6 +124,25 @@ export default function StoreOrdersScreen() {
   const active = orders.filter((o) => ['confirmed', 'shipped', 'alternative_offered'].includes(o.status));
   const done = orders.filter((o) => ['delivered', 'cancelled'].includes(o.status));
 
+  // Correlative order number per store, oldest first — stable as long as
+  // orders aren't deleted (they never are in this flow). Cheaper than a
+  // backend counter and avoids a migration for existing orders, which only
+  // have a Firestore doc ID to fall back on.
+  const orderNumberById = new Map(
+    [...orders]
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map((o, i) => [o.id, i + 1])
+  );
+
+  const historyFiltered = done.filter((o) => {
+    if (!historySearch.trim()) return true;
+    const q = historySearch.trim().toLowerCase();
+    const buyerName = (o.buyerName || '').toLowerCase();
+    const productNames = (o.products ?? []).map((p) => p.productName.toLowerCase()).join(' ');
+    const serviceName = (o.service?.serviceName || '').toLowerCase();
+    return buyerName.includes(q) || productNames.includes(q) || serviceName.includes(q);
+  });
+
   function OrderCard({ order }: { order: Order }) {
     const info = STATUS_INFO[order.status] ?? STATUS_INFO.pending;
     const buyerName = (order as any).buyerName;
@@ -135,7 +156,7 @@ export default function StoreOrdersScreen() {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
           <View style={{ flex: 1 }}>
             <Text style={{ fontWeight: '700', color: '#1F2937', fontSize: 15 }}>
-              Pedido #{order.id.slice(0, 6).toUpperCase()}
+              Pedido #{String(orderNumberById.get(order.id) ?? '—').padStart(4, '0')}
             </Text>
             <Text style={{ color: '#9CA3AF', fontSize: 12 }}>
               {new Date(order.createdAt).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -280,6 +301,28 @@ export default function StoreOrdersScreen() {
         </View>
       </View>
 
+      {/* Tabs: vigentes vs históricos */}
+      {orders.length > 0 && (
+        <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 24, marginBottom: 12 }}>
+          <TouchableOpacity
+            onPress={() => setTab('active')}
+            style={{ flex: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center', backgroundColor: tab === 'active' ? '#D97706' : '#FFFBEB' }}
+          >
+            <Text style={{ fontWeight: '700', fontSize: 13, color: tab === 'active' ? '#fff' : '#D97706' }}>
+              Vigentes {pending.length + active.length > 0 ? `(${pending.length + active.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setTab('history')}
+            style={{ flex: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center', backgroundColor: tab === 'history' ? '#D97706' : '#FFFBEB' }}
+          >
+            <Text style={{ fontWeight: '700', fontSize: 13, color: tab === 'history' ? '#fff' : '#D97706' }}>
+              Históricos {done.length > 0 ? `(${done.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <ScrollView
         style={{ flex: 1, paddingHorizontal: 24 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D97706" />}
@@ -290,11 +333,45 @@ export default function StoreOrdersScreen() {
             <Text style={{ fontSize: 48, marginBottom: 12 }}>🛍️</Text>
             <Text style={{ color: '#9CA3AF', fontSize: 15 }}>Sin pedidos aún</Text>
           </View>
+        ) : tab === 'active' ? (
+          pending.length === 0 && active.length === 0 ? (
+            <View style={{ alignItems: 'center', paddingVertical: 64 }}>
+              <Text style={{ fontSize: 48, marginBottom: 12 }}>✅</Text>
+              <Text style={{ color: '#9CA3AF', fontSize: 15 }}>No tienes pedidos vigentes</Text>
+            </View>
+          ) : (
+            <>
+              <Section title="⏳ Nuevos pedidos" data={pending} />
+              <Section title="🚚 En proceso" data={active} />
+            </>
+          )
         ) : (
           <>
-            <Section title="⏳ Nuevos pedidos" data={pending} />
-            <Section title="🚚 En proceso" data={active} />
-            <Section title="📦 Historial" data={done} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: '#E5E7EB', paddingHorizontal: 14, marginBottom: 14 }}>
+              <Text style={{ color: '#9CA3AF', marginRight: 8 }}>🔍</Text>
+              <TextInput
+                style={{ flex: 1, paddingVertical: 12, fontSize: 14, color: '#1F2937' }}
+                placeholder="Buscar por cliente o producto..."
+                placeholderTextColor="#9CA3AF"
+                value={historySearch}
+                onChangeText={setHistorySearch}
+              />
+              {historySearch.length > 0 && (
+                <TouchableOpacity onPress={() => setHistorySearch('')}>
+                  <Text style={{ color: '#9CA3AF', fontSize: 13 }}>✕</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {historyFiltered.length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 64 }}>
+                <Text style={{ fontSize: 48, marginBottom: 12 }}>📦</Text>
+                <Text style={{ color: '#9CA3AF', fontSize: 15 }}>
+                  {done.length === 0 ? 'Aún no tienes pedidos históricos' : 'Sin resultados para tu búsqueda'}
+                </Text>
+              </View>
+            ) : (
+              <Section title="📦 Historial" data={historyFiltered} />
+            )}
           </>
         )}
         <View style={{ height: 24 }} />
