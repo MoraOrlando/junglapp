@@ -36,7 +36,7 @@
       },
       "package": "com.junglapp.app",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 6,
+      "versionCode": 7,
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyAZa8-UtT_g8jw8E92rLb27tre-9mGnlSs"
