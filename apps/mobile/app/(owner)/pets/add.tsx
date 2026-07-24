@@ -222,8 +222,6 @@ export default function AddPetScreen() {
       const photoUrls = await uploadImages(photos);
       await addDoc(collection(db, COLLECTIONS.PETS), {
         ownerId: user.uid,
-        ownerEmail: user.email || '',
-        ownerRut: (user as any).rut || '',
         name: data.name,
         species: data.species,
         breed: data.breed,
