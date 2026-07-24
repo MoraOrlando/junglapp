@@ -149,8 +149,17 @@ export default function MatchScreen() {
             status: 'matched',
             updatedAt: new Date().toISOString(),
           });
-          const ownerDoc = await getDoc(doc(db, COLLECTIONS.USERS, candidate.ownerId));
-          const ownerData = ownerDoc.exists() ? ownerDoc.data() : null;
+          // Best-effort only — firestore.rules doesn't let one owner read
+          // another owner's users/{uid} doc (that read is reserved for
+          // professionals with a clientLinks record), so this always threw
+          // permission-denied here and aborted the whole match before the
+          // chat/modal below ever ran. The chat list already falls back to
+          // "Usuario" when participantNames is missing an entry.
+          let ownerData: { name?: string } | null = null;
+          try {
+            const ownerDoc = await getDoc(doc(db, COLLECTIONS.USERS, candidate.ownerId));
+            ownerData = ownerDoc.exists() ? ownerDoc.data() : null;
+          } catch {}
           const chatRef = await addDoc(collection(db, COLLECTIONS.CHATS), {
             participants: [user.uid, candidate.ownerId],
             participantNames: {
