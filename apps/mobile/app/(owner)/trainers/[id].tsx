@@ -6,7 +6,7 @@ import {
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, getDocs, collection, query, where, addDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, where, addDoc, writeBatch } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import { addAppointmentToDeviceCalendar } from '../../../lib/calendar';
@@ -85,9 +85,16 @@ export default function TrainerDetailScreen() {
     if (!user || !trainer) return;
     setBooking(true);
     try {
-      await addDoc(collection(db, COLLECTIONS.APPOINTMENTS), {
+      // Both writes commit atomically — if the clientLinks write is
+      // rejected, the appointment must not be left orphaned either,
+      // otherwise retrying after the error re-creates it (duplicate
+      // agenda entries every retry).
+      const apptRef = doc(collection(db, COLLECTIONS.APPOINTMENTS));
+      const batch = writeBatch(db);
+      batch.set(apptRef, {
         vetId: trainer.id,
         ownerId: user.uid,
+        ownerName: user.name || 'Dueño',
         petId: '',
         date: selectedDate,
         time: selectedTime,
@@ -96,17 +103,20 @@ export default function TrainerDetailScreen() {
         type: 'training',
         createdAt: new Date().toISOString(),
       });
-      logAppointmentBooked('trainer');
       // Grants the trainer scoped read access to this owner's profile (see
       // firestore.rules `users/{uid}` read rule) — only for owners they've
       // actually booked with, not every owner in the app. Must be keyed by
       // the trainer's auth UID (trainer.userId), not the trainers doc ID
-      // (trainer.id) — the read-side rule checks request.auth.uid.
-      await setDoc(doc(db, COLLECTIONS.CLIENT_LINKS, `${trainer.userId}_${user.uid}`), {
+      // (trainer.id) — the read-side rule checks request.auth.uid. merge:true
+      // keeps repeat bookings with the same trainer idempotent instead of
+      // failing (the doc already exists after the first booking).
+      batch.set(doc(db, COLLECTIONS.CLIENT_LINKS, `${trainer.userId}_${user.uid}`), {
         professionalId: trainer.userId,
         ownerId: user.uid,
         createdAt: new Date().toISOString(),
-      });
+      }, { merge: true });
+      await batch.commit();
+      logAppointmentBooked('trainer');
 
       // Add to the owner's device calendar — non-critical, failure must not block the booking
       addAppointmentToDeviceCalendar(`Adiestramiento — ${trainer.name}`, selectedDate, selectedTime);

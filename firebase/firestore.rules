@@ -459,12 +459,16 @@ service cloud.firestore {
     // scope `users/{uid}` read access — see isLinkedClient() above.
     match /clientLinks/{linkId} {
       allow read: if isAuth() && resource.data.professionalId == request.auth.uid;
-      allow create: if isAuth()
+      // create and update share the same check: the link is a plain
+      // existence marker re-written (with merge) on every booking, so a
+      // second booking with the same professional must not be rejected
+      // just because the doc already exists from the first one.
+      allow create, update: if isAuth()
         && request.resource.data.ownerId is string
         && request.resource.data.professionalId is string
         && (request.auth.uid == request.resource.data.ownerId || request.auth.uid == request.resource.data.professionalId)
         && linkId == request.resource.data.professionalId + '_' + request.resource.data.ownerId;
-      allow update, delete: if false;
+      allow delete: if false;
     }
 
     // ── Password Reset Cooldowns (server-side only) ────────────────────────

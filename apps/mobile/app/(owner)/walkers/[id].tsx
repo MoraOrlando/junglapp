@@ -6,7 +6,7 @@ import {
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, getDocs, collection, query, where, addDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, where, addDoc, writeBatch } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import { addAppointmentToDeviceCalendar } from '../../../lib/calendar';
@@ -69,7 +69,7 @@ export default function WalkerDetailScreen() {
     }).catch(() => {});
     if (user?.uid) {
       getDocs(query(collection(db, COLLECTIONS.PETS), where('ownerId', '==', user.uid))).then((snap) => {
-        setPets(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)));
+        setPets(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)).filter((p) => !p.deceasedAt));
       }).catch(() => {});
 
       Promise.all([
@@ -101,9 +101,16 @@ export default function WalkerDetailScreen() {
     if (!user || !walker) return;
     setBooking(true);
     try {
-      await addDoc(collection(db, COLLECTIONS.APPOINTMENTS), {
+      // Both writes commit atomically — if the clientLinks write is
+      // rejected, the appointment must not be left orphaned either,
+      // otherwise retrying after the error re-creates it (duplicate
+      // agenda entries every retry).
+      const apptRef = doc(collection(db, COLLECTIONS.APPOINTMENTS));
+      const batch = writeBatch(db);
+      batch.set(apptRef, {
         vetId: walker.id,
         ownerId: user.uid,
+        ownerName: user.name || 'Dueño',
         petId: selectedPet,
         date: selectedDate,
         time: selectedTime,
@@ -112,17 +119,20 @@ export default function WalkerDetailScreen() {
         type: serviceType === 'walk' ? 'walk' : 'pet_care',
         createdAt: new Date().toISOString(),
       });
-      logAppointmentBooked('walker');
       // Grants the walker scoped read access to this owner's profile (see
       // firestore.rules `users/{uid}` read rule) — only for owners they've
       // actually booked with, not every owner in the app. Must be keyed by
       // the walker's auth UID (walker.userId), not the walkers doc ID
-      // (walker.id) — the read-side rule checks request.auth.uid.
-      await setDoc(doc(db, COLLECTIONS.CLIENT_LINKS, `${walker.userId}_${user.uid}`), {
+      // (walker.id) — the read-side rule checks request.auth.uid. merge:true
+      // keeps repeat bookings with the same walker idempotent instead of
+      // failing (the doc already exists after the first booking).
+      batch.set(doc(db, COLLECTIONS.CLIENT_LINKS, `${walker.userId}_${user.uid}`), {
         professionalId: walker.userId,
         ownerId: user.uid,
         createdAt: new Date().toISOString(),
-      });
+      }, { merge: true });
+      await batch.commit();
+      logAppointmentBooked('walker');
 
       // Add to the owner's device calendar — non-critical, failure must not block the booking
       addAppointmentToDeviceCalendar(

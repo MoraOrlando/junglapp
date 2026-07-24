@@ -6,7 +6,7 @@ import {
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, getDocs, collection, query, where, addDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, where, addDoc, writeBatch } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import { addAppointmentToDeviceCalendar } from '../../../lib/calendar';
@@ -78,7 +78,7 @@ export default function GroomerDetailScreen() {
     }).catch(() => {});
     if (user?.uid) {
       getDocs(query(collection(db, COLLECTIONS.PETS), where('ownerId', '==', user.uid))).then((snap) => {
-        setPets(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)));
+        setPets(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)).filter((p) => !p.deceasedAt));
       }).catch(() => {});
 
       Promise.all([
@@ -113,9 +113,16 @@ export default function GroomerDetailScreen() {
     if (!user || !groomer) return;
     setBooking(true);
     try {
-      await addDoc(collection(db, COLLECTIONS.APPOINTMENTS), {
+      // Both writes commit atomically — if the clientLinks write is
+      // rejected, the appointment must not be left orphaned either,
+      // otherwise retrying after the error re-creates it (duplicate
+      // agenda entries every retry).
+      const apptRef = doc(collection(db, COLLECTIONS.APPOINTMENTS));
+      const batch = writeBatch(db);
+      batch.set(apptRef, {
         vetId: groomer.id,
         ownerId: user.uid,
+        ownerName: user.name || 'Dueño',
         petId: selectedPet,
         date: selectedDate,
         time: selectedTime,
@@ -129,17 +136,20 @@ export default function GroomerDetailScreen() {
         } : {}),
         createdAt: new Date().toISOString(),
       });
-      logAppointmentBooked('groomer');
       // Grants the groomer scoped read access to this owner's profile (see
       // firestore.rules `users/{uid}` read rule) — only for owners they've
       // actually booked with, not every owner in the app. Must be keyed by
       // the groomer's auth UID (groomer.userId), not the groomers doc ID
-      // (groomer.id) — the read-side rule checks request.auth.uid.
-      await setDoc(doc(db, COLLECTIONS.CLIENT_LINKS, `${groomer.userId}_${user.uid}`), {
+      // (groomer.id) — the read-side rule checks request.auth.uid. merge:true
+      // keeps repeat bookings with the same groomer idempotent instead of
+      // failing (the doc already exists after the first booking).
+      batch.set(doc(db, COLLECTIONS.CLIENT_LINKS, `${groomer.userId}_${user.uid}`), {
         professionalId: groomer.userId,
         ownerId: user.uid,
         createdAt: new Date().toISOString(),
-      });
+      }, { merge: true });
+      await batch.commit();
+      logAppointmentBooked('groomer');
 
       // Add to the owner's device calendar — non-critical, failure must not block the booking
       addAppointmentToDeviceCalendar(`Peluquería — ${groomer.name}`, selectedDate, selectedTime);

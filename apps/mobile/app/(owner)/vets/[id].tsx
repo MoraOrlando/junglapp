@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, Alert, TextInput, Image } fro
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
-  doc, getDoc, collection, query, where, getDocs, addDoc, setDoc, serverTimestamp,
+  doc, getDoc, collection, query, where, getDocs, addDoc, writeBatch, serverTimestamp,
 } from 'firebase/firestore';
 import { ref, set } from 'firebase/database';
 import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
@@ -95,7 +95,7 @@ export default function VetDetailScreen() {
 
     if (user) {
       getDocs(query(collection(db, COLLECTIONS.PETS), where('ownerId', '==', user.uid))).then((snap) => {
-        setPets(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)));
+        setPets(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pet)).filter((p) => !p.deceasedAt));
       }).catch(() => {});
 
       Promise.all([
@@ -146,9 +146,16 @@ export default function VetDetailScreen() {
     bookingInProgress.current = true;
     setBooking(true);
     try {
-      const apptRef = await addDoc(collection(db, COLLECTIONS.APPOINTMENTS), {
+      // Both writes commit atomically — if the clientLinks write is
+      // rejected, the appointment must not be left orphaned either,
+      // otherwise retrying after the error re-creates it (duplicate
+      // agenda entries every retry).
+      const apptRef = doc(collection(db, COLLECTIONS.APPOINTMENTS));
+      const batch = writeBatch(db);
+      batch.set(apptRef, {
         petId: selectedPet,
         ownerId: user.uid,
+        ownerName: user.name || 'Dueño',
         vetId: vet.id,
         date: selectedDate,
         time: selectedTime,
@@ -156,17 +163,20 @@ export default function VetDetailScreen() {
         status: 'pending',
         createdAt: new Date().toISOString(),
       });
-      logAppointmentBooked('vet');
       // Grants the vet scoped read access to this owner's profile (see
       // firestore.rules `users/{uid}` read rule) — only for owners they've
       // actually booked with, not every owner in the app. Must be keyed by
       // the vet's auth UID (vet.userId), not the veterinarians doc ID
-      // (vet.id) — the read-side rule checks request.auth.uid.
-      await setDoc(doc(db, COLLECTIONS.CLIENT_LINKS, `${vet.userId}_${user.uid}`), {
+      // (vet.id) — the read-side rule checks request.auth.uid. merge:true
+      // keeps repeat bookings with the same vet idempotent instead of
+      // failing (the doc already exists after the first booking).
+      batch.set(doc(db, COLLECTIONS.CLIENT_LINKS, `${vet.userId}_${user.uid}`), {
         professionalId: vet.userId,
         ownerId: user.uid,
         createdAt: new Date().toISOString(),
-      });
+      }, { merge: true });
+      await batch.commit();
+      logAppointmentBooked('vet');
 
       // Add to the owner's device calendar — non-critical, failure must not block the booking
       addAppointmentToDeviceCalendar(`Cita veterinaria — ${vet.name}`, selectedDate, selectedTime);
