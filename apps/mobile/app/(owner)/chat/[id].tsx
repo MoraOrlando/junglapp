@@ -182,8 +182,12 @@ export default function ChatRoomScreen() {
         className="flex-row items-center px-4 py-3 gap-3 border-b border-gray-100"
         style={{ backgroundColor: '#FFFFFF' }}
       >
-        <TouchableOpacity className="pr-1" onPress={() => router.navigate('/(owner)/chat' as any)}>
-          <Text className="text-2xl text-gray-600">←</Text>
+        <TouchableOpacity
+          className="pr-1 py-1"
+          hitSlop={12}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/(owner)/chat' as any))}
+        >
+          <Text className="text-3xl text-gray-600">←</Text>
         </TouchableOpacity>
         <View
           className="w-11 h-11 rounded-full items-center justify-center"
