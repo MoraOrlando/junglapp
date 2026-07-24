@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, RefreshControl, TextInput, Pl
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import * as Location from 'expo-location';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
@@ -35,19 +35,22 @@ export default function LostPetsPublicScreen() {
   const [bannerIndex, setBannerIndex] = useState(0);
   const bannerRef = useRef<ScrollView>(null);
 
-  async function load() {
-    try {
-      const snap = await getDocs(
-        query(collection(db, COLLECTIONS.LOST_PETS), where('isFound', '==', false))
-      );
-      const data = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as LostPet))
-        .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt));
-      setLostPets(data);
-    } catch {}
-  }
-
-  useEffect(() => { load().catch(() => {}); }, []);
+  // Live listener instead of a one-shot getDocs — a report published from
+  // report.tsx (or a pet found elsewhere) must show up here without the
+  // user having to remember to pull-to-refresh or remount the screen.
+  useEffect(() => {
+    const unsub = onSnapshot(
+      query(collection(db, COLLECTIONS.LOST_PETS), where('isFound', '==', false)),
+      (snap) => {
+        const data = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as LostPet))
+          .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt));
+        setLostPets(data);
+      },
+      () => {}
+    );
+    return unsub;
+  }, []);
 
   // User location → map centers on their surroundings
   useEffect(() => {
@@ -75,10 +78,11 @@ export default function LostPetsPublicScreen() {
     return () => clearInterval(t);
   }, [bannerPets.length]);
 
-  async function onRefresh() {
+  // The list is already kept live by the onSnapshot listener above — pull-to-refresh
+  // just gives the usual tactile feedback rather than triggering a real refetch.
+  function onRefresh() {
     setRefreshing(true);
-    await load();
-    setRefreshing(false);
+    setTimeout(() => setRefreshing(false), 400);
   }
 
   const filtered = lostPets.filter((lp) => {

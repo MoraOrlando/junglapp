@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, addDoc, collection } from 'firebase/firestore';
+import { doc, getDoc, addDoc, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import * as Location from 'expo-location';
 import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
@@ -70,6 +70,26 @@ export default function ReportLostPetScreen() {
     }
     setSaving(true);
     try {
+      // Guard against duplicate active reports for the same pet — the
+      // pet-detail screen's "already reported" check only reflects state
+      // fetched at mount time, so it can go stale and let the user reach
+      // this screen twice for the same pet. This is the actual write path,
+      // so it must not trust the caller already verified that.
+      const existing = await getDocs(
+        query(
+          collection(db, COLLECTIONS.LOST_PETS),
+          where('petId', '==', pet.id),
+          where('isFound', '==', false),
+          limit(1),
+        )
+      );
+      if (!existing.empty) {
+        Alert.alert('Ya reportada', `${pet.name} ya está publicada como extraviada.`, [
+          { text: 'OK', onPress: () => router.back() },
+        ]);
+        return;
+      }
+
       // Capture reporter coordinates so the lost pet appears on the map
       let lat: number | null = null;
       let lng: number | null = null;
