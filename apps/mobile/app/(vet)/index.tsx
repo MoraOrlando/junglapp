@@ -7,6 +7,7 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { ref, onValue, off, remove } from 'firebase/database';
 import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
+import YearCalendar from '../../components/YearCalendar';
 import type { Appointment, Veterinarian } from '@junglapp/types';
 
 const { db, rtdb } = initFirebase();
@@ -39,6 +40,11 @@ export default function VetDashboardScreen() {
   const [vetProfile, setVetProfile] = useState<Veterinarian | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [newNotifCount, setNewNotifCount] = useState(0);
+  const [filterFrom, setFilterFrom] = useState<string | null>(null);
+  const [filterTo, setFilterTo] = useState<string | null>(null);
+  const [showFilter, setShowFilter] = useState(false);
+  const [showFromCalendar, setShowFromCalendar] = useState(false);
+  const [showToCalendar, setShowToCalendar] = useState(false);
   const today = new Date();
 
   // Listen for new-appointment notifications from RTDB
@@ -116,6 +122,15 @@ export default function VetDashboardScreen() {
   const todayAppts = appointments.filter((a) => a.date === todayStr);
   const upcomingAppts = appointments.filter((a) => (a.date ?? '') > todayStr);
   const pendingCount = appointments.filter((a) => ['pending', 'confirmed'].includes(a.status)).length;
+
+  // Date-range filter over the same upcoming/active appointment list —
+  // when active it replaces the Hoy/Próximas split with one combined result.
+  const dateFilterActive = !!(filterFrom || filterTo);
+  const filteredAppts = dateFilterActive
+    ? appointments
+        .filter((a) => (!filterFrom || (a.date ?? '') >= filterFrom) && (!filterTo || (a.date ?? '') <= filterTo))
+        .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '') || (a.time ?? '').localeCompare(b.time ?? ''))
+    : [];
 
   // Monthly KPIs (exclude cancelled)
   const monthActive = monthlyAll.filter((a) => a.status !== 'cancelled');
@@ -257,7 +272,121 @@ export default function VetDashboardScreen() {
           </View>
         </View>
 
-        {/* ── Citas de hoy ── */}
+        {/* ── Filtro por rango de fechas ── */}
+        <View className="px-4 mt-6">
+          <TouchableOpacity
+            onPress={() => setShowFilter((v) => !v)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: showFilter ? 10 : 0 }}
+          >
+            <Text style={{ fontSize: 13, fontWeight: '700', color: '#2D6A4F' }}>
+              🔍 Buscar por rango de fechas
+            </Text>
+            <Text style={{ fontSize: 11, color: '#94A3B8' }}>{showFilter ? '▲' : '▼'}</Text>
+          </TouchableOpacity>
+
+          {showFilter && (
+            <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 4 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => { setShowFromCalendar((v) => !v); setShowToCalendar(false); }}
+                  style={{ flex: 1, borderWidth: 1, borderColor: filterFrom ? '#2D6A4F' : '#E2E8F0', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12 }}
+                >
+                  <Text style={{ fontSize: 10, color: '#94A3B8', fontWeight: '600' }}>DESDE</Text>
+                  <Text style={{ fontSize: 13, color: filterFrom ? '#1F2937' : '#9CA3AF', fontWeight: '600', marginTop: 2 }}>
+                    {filterFrom || 'Cualquiera'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => { setShowToCalendar((v) => !v); setShowFromCalendar(false); }}
+                  style={{ flex: 1, borderWidth: 1, borderColor: filterTo ? '#2D6A4F' : '#E2E8F0', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12 }}
+                >
+                  <Text style={{ fontSize: 10, color: '#94A3B8', fontWeight: '600' }}>HASTA</Text>
+                  <Text style={{ fontSize: 13, color: filterTo ? '#1F2937' : '#9CA3AF', fontWeight: '600', marginTop: 2 }}>
+                    {filterTo || 'Cualquiera'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {showFromCalendar && (
+                <View style={{ marginTop: 10, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: '#E2E8F0' }}>
+                  <YearCalendar
+                    onDayPress={(day) => { setFilterFrom(day.dateString); setShowFromCalendar(false); }}
+                    minDate={todayStr}
+                    initialDate={filterFrom || todayStr}
+                    markedDates={filterFrom ? { [filterFrom]: { selected: true, selectedColor: '#2D6A4F' } } : {}}
+                  />
+                </View>
+              )}
+              {showToCalendar && (
+                <View style={{ marginTop: 10, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: '#E2E8F0' }}>
+                  <YearCalendar
+                    onDayPress={(day) => { setFilterTo(day.dateString); setShowToCalendar(false); }}
+                    minDate={filterFrom || todayStr}
+                    initialDate={filterTo || filterFrom || todayStr}
+                    markedDates={filterTo ? { [filterTo]: { selected: true, selectedColor: '#2D6A4F' } } : {}}
+                  />
+                </View>
+              )}
+
+              {dateFilterActive && (
+                <TouchableOpacity
+                  onPress={() => { setFilterFrom(null); setFilterTo(null); }}
+                  style={{ marginTop: 10, alignSelf: 'flex-start' }}
+                >
+                  <Text style={{ fontSize: 12, color: '#DC2626', fontWeight: '700' }}>✕ Limpiar filtro</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </View>
+
+        {dateFilterActive ? (
+          <View className="px-4 mt-4">
+            <Text className="text-gray-500 font-semibold text-xs mb-3 uppercase tracking-widest">
+              Resultados {filterFrom || '…'} → {filterTo || '…'} ({filteredAppts.length})
+            </Text>
+            {filteredAppts.length === 0 ? (
+              <View className="bg-white rounded-2xl p-8 items-center border border-gray-100 shadow-sm mb-4">
+                <Text className="text-4xl mb-2">📅</Text>
+                <Text className="text-gray-500 text-sm">No hay citas en ese rango de fechas</Text>
+              </View>
+            ) : (
+              <View className="gap-3 mb-8">
+                {filteredAppts.map((appt) => (
+                  <TouchableOpacity
+                    key={appt.id}
+                    className="bg-white rounded-2xl shadow-sm border border-gray-100 flex-row overflow-hidden"
+                    style={{ borderLeftWidth: 4, borderLeftColor: '#3B82F6' }}
+                    activeOpacity={0.8}
+                    onPress={() => router.push(`/(vet)/appointment/${appt.id}` as any)}
+                  >
+                    <View className="flex-1 flex-row items-center px-4 py-4 gap-3">
+                      <View className="bg-blue-50 rounded-full w-12 h-12 items-center justify-center">
+                        <Text className="text-2xl">🐕</Text>
+                      </View>
+                      <View className="flex-1">
+                        <Text className="text-sm font-bold text-blue-500">
+                          {appt.date} · {formatTime(appt.time || '00:00')}
+                        </Text>
+                        <Text className="text-gray-800 font-semibold text-base leading-tight mt-0.5">
+                          Consulta veterinaria
+                        </Text>
+                        <Text className="text-gray-400 text-xs mt-0.5" numberOfLines={1}>
+                          {(appt as any).reason || '—'}
+                        </Text>
+                      </View>
+                      <View style={{ backgroundColor: appt.status === 'confirmed' ? '#DCFCE7' : '#FEF9C3', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: appt.status === 'confirmed' ? '#16A34A' : '#92400E' }}>
+                          {appt.status === 'confirmed' ? 'Confirmada' : 'Pendiente'}
+                        </Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        ) : (
         <View className="px-4 mt-6">
           <Text className="text-gray-500 font-semibold text-xs mb-3 uppercase tracking-widest">
             Hoy — {today.toLocaleDateString('es-CL', { month: 'short', day: 'numeric' })}
@@ -358,6 +487,7 @@ export default function VetDashboardScreen() {
             </View>
           )}
         </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
