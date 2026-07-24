@@ -2,8 +2,14 @@ import { httpsCallable } from 'firebase/functions';
 import { initFirebase } from './config';
 
 // React Native only. Optional require so this module still loads in web bundles.
+// Must be the /legacy subpath: SDK 54's expo-file-system replaced
+// readAsStringAsync/EncodingType with a new File/Directory API, and the
+// bare "expo-file-system" import only re-exports stubs for the old names
+// that throw at runtime (and don't export EncodingType at all, so
+// `FileSystem.EncodingType.Base64` below would read a property off
+// undefined) — see https://docs.expo.dev/versions/v54.0.0/sdk/filesystem/.
 let FileSystem: any = null;
-try { FileSystem = require('expo-file-system'); } catch {}
+try { FileSystem = require('expo-file-system/legacy'); } catch {}
 
 const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
 
