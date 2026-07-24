@@ -164,7 +164,12 @@ export default function LitterDiscoveryScreen() {
             const gifts = hasGifts(litter);
             const price = minPrice(litter);
             return (
-              <View key={litter.id} style={{ backgroundColor: '#fff', borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: '#F3F4F6' }}>
+              <TouchableOpacity
+                key={litter.id}
+                activeOpacity={0.9}
+                onPress={() => router.push(`/(owner)/litter/${litter.id}` as any)}
+                style={{ backgroundColor: '#fff', borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: '#F3F4F6' }}
+              >
                 {/* Photos */}
                 {litter.photos?.[0] ? (
                   <Image source={{ uri: litter.photos[0] }} style={{ width: '100%', height: 200 }} contentFit="cover" />
@@ -233,7 +238,7 @@ export default function LitterDiscoveryScreen() {
                     <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>💬 Contactar dueño</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })}
         </ScrollView>
