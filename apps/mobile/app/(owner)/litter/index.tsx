@@ -14,6 +14,8 @@ interface LitterAnimal {
   isGift: boolean;
   price: number;
   available: boolean;
+  sex?: 'M' | 'F' | null;
+  photoUrl?: string | null;
   description?: string;
 }
 
@@ -119,12 +121,20 @@ export default function LitterDiscoveryScreen() {
         <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, marginTop: 4 }}>
           Mascotas disponibles para adoptar o comprar cerca de ti
         </Text>
-        <TouchableOpacity
-          style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20, paddingHorizontal: 18, paddingVertical: 10, marginTop: 14, alignSelf: 'flex-start' }}
-          onPress={() => router.push('/(owner)/litter/add' as any)}
-        >
-          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>🐣 Publicar camada</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+          <TouchableOpacity
+            style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20, paddingHorizontal: 18, paddingVertical: 10, alignSelf: 'flex-start' }}
+            onPress={() => router.push('/(owner)/litter/add' as any)}
+          >
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>🐣 Publicar camada</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 20, paddingHorizontal: 18, paddingVertical: 10, alignSelf: 'flex-start' }}
+            onPress={() => router.push('/(owner)/litter/mine' as any)}
+          >
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>📋 Mis publicaciones</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loading ? (

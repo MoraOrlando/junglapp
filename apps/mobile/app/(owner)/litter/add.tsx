@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { collection, getDocs, query, where, addDoc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
-import { initFirebase, COLLECTIONS, uploadImages } from '@junglapp/firebase';
+import { initFirebase, COLLECTIONS, uploadImage, uploadImages } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import type { Pet } from '@junglapp/types';
 
@@ -16,14 +16,20 @@ const { db } = initFirebase();
 const GREEN = '#2D6A4F';
 
 interface AnimalEntry {
+  // Starts undecided so the photo/sex/description fields stay hidden until
+  // the owner actually picks Regalar or Vender for this animal, instead of
+  // showing every field at once with a silently pre-selected "Regalar".
+  decided: boolean;
   isGift: boolean;
   price: string;
+  sex: 'M' | 'F' | '';
+  photo: string | null;
   description: string;
   available: boolean;
 }
 
 function makeAnimal(): AnimalEntry {
-  return { isGift: true, price: '', description: '', available: true };
+  return { decided: false, isGift: true, price: '', sex: '', photo: null, description: '', available: true };
 }
 
 export default function AddLitterScreen() {
@@ -54,10 +60,6 @@ export default function AddLitterScreen() {
     if (!result.canceled) setPhotos([...photos, ...result.assets.map((a) => a.uri)]);
   }
 
-  function addAnimal() {
-    setAnimals([...animals, makeAnimal()]);
-  }
-
   function removeAnimal(index: number) {
     if (animals.length === 1) return;
     setAnimals(animals.filter((_, i) => i !== index));
@@ -67,17 +69,39 @@ export default function AddLitterScreen() {
     setAnimals(animals.map((a, i) => i === index ? { ...a, ...patch } : a));
   }
 
+  // Quick "total de camada" stepper — grows/shrinks the animal list instead
+  // of clicking "+ Agregar" one by one. New slots start undecided just like
+  // makeAnimal(); shrinking trims from the end.
+  function setLitterTotal(n: number) {
+    const clamped = Math.max(1, Math.min(30, n));
+    setAnimals((prev) => {
+      if (clamped === prev.length) return prev;
+      if (clamped > prev.length) return [...prev, ...Array.from({ length: clamped - prev.length }, makeAnimal)];
+      return prev.slice(0, clamped);
+    });
+  }
+
+  async function pickAnimalPhoto(index: number) {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.8 });
+    if (!result.canceled && result.assets[0]) updateAnimal(index, { photo: result.assets[0].uri });
+  }
+
   async function handlePublish() {
     if (!selectedPet) { Alert.alert('Falta info', 'Selecciona el padre o madre de la camada.'); return; }
     if (photos.length === 0) { Alert.alert('Falta info', 'Agrega al menos una foto de los animales.'); return; }
     if (!user) return;
 
+    const undecided = animals.some((a) => !a.decided);
+    if (undecided) { Alert.alert('Falta info', 'Indica si cada animal se regala o se vende.'); return; }
     const invalidSale = animals.some((a) => !a.isGift && (!a.price.trim() || isNaN(Number(a.price))));
     if (invalidSale) { Alert.alert('Falta info', 'Ingresa el precio de los animales en venta.'); return; }
 
     setLoading(true);
     try {
       const photoUrls = await uploadImages(photos);
+      const animalPhotoUrls = await Promise.all(
+        animals.map((a) => (a.photo ? uploadImage(a.photo) : Promise.resolve(null)))
+      );
       await addDoc(collection(db, COLLECTIONS.LITTERS), {
         ownerId: user.uid,
         ownerName: user.name || 'Usuario',
@@ -87,9 +111,11 @@ export default function AddLitterScreen() {
         breed: selectedPet.breed || '',
         photos: photoUrls,
         description: description.trim(),
-        animals: animals.map((a) => ({
+        animals: animals.map((a, i) => ({
           isGift: a.isGift,
           price: a.isGift ? 0 : Number(a.price),
+          sex: a.sex || null,
+          photoUrl: animalPhotoUrls[i],
           description: a.description.trim(),
           available: true,
         })),
@@ -202,18 +228,33 @@ export default function AddLitterScreen() {
             onChangeText={setDescription}
           />
 
-          {/* Animales individuales */}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <Text style={{ fontSize: 14, fontWeight: '700', color: '#374151' }}>
-              Animales disponibles ({animals.length})
+          {/* Total de camada */}
+          <Text style={{ fontSize: 14, fontWeight: '700', color: '#374151', marginBottom: 10 }}>
+            Total de animales en la camada *
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 20 }}>
+            <TouchableOpacity
+              onPress={() => setLitterTotal(animals.length - 1)}
+              disabled={animals.length <= 1}
+              style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', opacity: animals.length <= 1 ? 0.4 : 1 }}
+            >
+              <Text style={{ fontSize: 18, fontWeight: '800', color: '#374151' }}>−</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 22, fontWeight: '800', color: GREEN, minWidth: 32, textAlign: 'center' }}>
+              {animals.length}
             </Text>
             <TouchableOpacity
-              onPress={addAnimal}
-              style={{ backgroundColor: '#D8F3DC', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6 }}
+              onPress={() => setLitterTotal(animals.length + 1)}
+              style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#D8F3DC', alignItems: 'center', justifyContent: 'center' }}
             >
-              <Text style={{ color: GREEN, fontWeight: '700', fontSize: 13 }}>+ Agregar</Text>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: GREEN }}>+</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Animales individuales */}
+          <Text style={{ fontSize: 14, fontWeight: '700', color: '#374151', marginBottom: 12 }}>
+            Detalle de cada animal
+          </Text>
 
           {animals.map((animal, i) => (
             <View key={i} style={{ backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F3F4F6' }}>
@@ -226,33 +267,33 @@ export default function AddLitterScreen() {
                 )}
               </View>
 
-              {/* Regalar vs vender */}
+              {/* Regalar vs vender — deciding one reveals photo/sexo/descripción below */}
               <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
                 <TouchableOpacity
-                  onPress={() => updateAnimal(i, { isGift: true })}
+                  onPress={() => updateAnimal(i, { isGift: true, decided: true })}
                   style={{
                     flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center', borderWidth: 2,
-                    backgroundColor: animal.isGift ? '#FEF3C7' : '#fff',
-                    borderColor: animal.isGift ? '#F59E0B' : '#E5E7EB',
+                    backgroundColor: animal.decided && animal.isGift ? '#FEF3C7' : '#fff',
+                    borderColor: animal.decided && animal.isGift ? '#F59E0B' : '#E5E7EB',
                   }}
                 >
                   <Text style={{ fontSize: 20 }}>🎁</Text>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: animal.isGift ? '#92400E' : '#9CA3AF', marginTop: 2 }}>Regalar</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: animal.decided && animal.isGift ? '#92400E' : '#9CA3AF', marginTop: 2 }}>Regalar</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  onPress={() => updateAnimal(i, { isGift: false })}
+                  onPress={() => updateAnimal(i, { isGift: false, decided: true })}
                   style={{
                     flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center', borderWidth: 2,
-                    backgroundColor: !animal.isGift ? '#ECFDF5' : '#fff',
-                    borderColor: !animal.isGift ? GREEN : '#E5E7EB',
+                    backgroundColor: animal.decided && !animal.isGift ? '#ECFDF5' : '#fff',
+                    borderColor: animal.decided && !animal.isGift ? GREEN : '#E5E7EB',
                   }}
                 >
                   <Text style={{ fontSize: 20 }}>💰</Text>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: !animal.isGift ? GREEN : '#9CA3AF', marginTop: 2 }}>Vender</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: animal.decided && !animal.isGift ? GREEN : '#9CA3AF', marginTop: 2 }}>Vender</Text>
                 </TouchableOpacity>
               </View>
 
-              {!animal.isGift && (
+              {animal.decided && !animal.isGift && (
                 <TextInput
                   style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: '#F9FAFB', fontSize: 14, marginBottom: 10 }}
                   placeholder="Precio (CLP)"
@@ -262,12 +303,43 @@ export default function AddLitterScreen() {
                 />
               )}
 
-              <TextInput
-                style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: '#F9FAFB', fontSize: 14 }}
-                placeholder="Descripción opcional (sexo, color, etc.)"
-                value={animal.description}
-                onChangeText={(v) => updateAnimal(i, { description: v })}
-              />
+              {animal.decided && (
+                <>
+                  {/* Foto individual */}
+                  <TouchableOpacity onPress={() => pickAnimalPhoto(i)} style={{ marginBottom: 10 }}>
+                    {animal.photo ? (
+                      <Image source={{ uri: animal.photo }} style={{ width: 64, height: 64, borderRadius: 12 }} contentFit="cover" />
+                    ) : (
+                      <View style={{ width: 64, height: 64, borderRadius: 12, borderWidth: 2, borderStyle: 'dashed', borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 20 }}>📷</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Sexo */}
+                  <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+                    <TouchableOpacity
+                      onPress={() => updateAnimal(i, { sex: 'M' })}
+                      style={{ flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center', borderWidth: 2, backgroundColor: animal.sex === 'M' ? '#EFF6FF' : '#fff', borderColor: animal.sex === 'M' ? '#3B82F6' : '#E5E7EB' }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: animal.sex === 'M' ? '#3B82F6' : '#9CA3AF' }}>♂ Macho</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => updateAnimal(i, { sex: 'F' })}
+                      style={{ flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center', borderWidth: 2, backgroundColor: animal.sex === 'F' ? '#FDF2F8' : '#fff', borderColor: animal.sex === 'F' ? '#EC4899' : '#E5E7EB' }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: animal.sex === 'F' ? '#EC4899' : '#9CA3AF' }}>♀ Hembra</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <TextInput
+                    style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: '#F9FAFB', fontSize: 14 }}
+                    placeholder="Descripción opcional (color, personalidad, etc.)"
+                    value={animal.description}
+                    onChangeText={(v) => updateAnimal(i, { description: v })}
+                  />
+                </>
+              )}
             </View>
           ))}
 
