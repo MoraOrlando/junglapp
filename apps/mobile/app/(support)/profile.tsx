@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
@@ -13,6 +14,7 @@ const PURPLE = '#7C3AED';
 
 export default function SupportProfileScreen() {
   const { user, logOut } = useAuth();
+  const router = useRouter();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -127,6 +129,13 @@ export default function SupportProfileScreen() {
               {creating ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Crear cuenta de soporte</Text>}
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity
+            onPress={() => router.push('/(auth)/change-password' as any)}
+            style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 16, paddingVertical: 16, alignItems: 'center', backgroundColor: '#fff', marginBottom: 12 }}
+          >
+            <Text style={{ color: '#374151', fontWeight: '700' }}>🔑 Cambiar contraseña</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity onPress={logOut} style={{ borderWidth: 1, borderColor: '#FCA5A5', borderRadius: 16, paddingVertical: 16, alignItems: 'center', backgroundColor: '#FEF2F2', marginBottom: 40 }}>
             <Text style={{ color: '#EF4444', fontWeight: '700' }}>Cerrar sesión</Text>

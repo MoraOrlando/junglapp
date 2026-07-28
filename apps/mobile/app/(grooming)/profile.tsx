@@ -311,6 +311,13 @@ export default function GroomingProfileScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
+          style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 16, paddingVertical: 14, alignItems: 'center', marginBottom: 12, backgroundColor: '#fff' }}
+          onPress={() => router.push('/(auth)/change-password' as any)}
+        >
+          <Text style={{ color: '#374151', fontWeight: '700', fontSize: 15 }}>🔑 Cambiar contraseña</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={{ borderWidth: 1, borderColor: '#FCA5A5', borderRadius: 16, paddingVertical: 14, alignItems: 'center', marginBottom: 12, backgroundColor: '#FEE2E2' }}
           onPress={() => Alert.alert('Cerrar sesión', '¿Seguro que deseas salir?', [
             { text: 'Cancelar', style: 'cancel' },

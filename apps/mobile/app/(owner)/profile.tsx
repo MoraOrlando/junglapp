@@ -203,6 +203,15 @@ export default function ProfileScreen() {
               <Text className="flex-1 text-gray-800 font-medium">Términos y Privacidad</Text>
               <Text className="text-gray-300 text-xl">›</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex-row items-center"
+              onPress={() => router.push('/(auth)/change-password' as any)}
+            >
+              <Text className="text-xl mr-3">🔑</Text>
+              <Text className="flex-1 text-gray-800 font-medium">Cambiar contraseña</Text>
+              <Text className="text-gray-300 text-xl">›</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Logout */}

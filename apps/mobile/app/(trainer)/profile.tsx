@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
@@ -14,6 +15,7 @@ const INDIGO = '#4F46E5';
 
 export default function TrainerProfileScreen() {
   const { user, logOut, deleteAccount } = useAuth();
+  const router = useRouter();
   const [trainer, setTrainer] = useState<Trainer | null>(null);
   const [docId, setDocId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -204,6 +206,12 @@ export default function TrainerProfileScreen() {
 
         <TouchableOpacity onPress={save} disabled={saving} style={{ backgroundColor: INDIGO, borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 12, opacity: saving ? 0.7 : 1 }}>
           <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>{saving ? 'Guardando...' : 'Guardar cambios'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => router.push('/(auth)/change-password' as any)}
+          style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 12, backgroundColor: '#fff' }}
+        >
+          <Text style={{ color: '#374151', fontWeight: '700' }}>🔑 Cambiar contraseña</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={logOut} style={{ borderWidth: 1, borderColor: '#FCA5A5', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 12, backgroundColor: '#FEE2E2' }}>
           <Text style={{ color: '#DC2626', fontWeight: '700' }}>Cerrar sesión</Text>

@@ -59,6 +59,8 @@ export default function ChangePasswordScreen() {
             if (user.role === 'owner') router.replace('/(owner)');
             else if (user.role === 'vet') router.replace('/(vet)');
             else if (user.role === 'store') router.replace('/(store)');
+            else if (user.role === 'trainer') router.replace('/(trainer)');
+            else if (user.role === 'support') router.replace('/(support)');
             else if (user.role === 'walker') router.replace('/(walker)' as any);
             else if (user.role === 'grooming') router.replace('/(grooming)' as any);
             else router.replace('/(auth)/login');
@@ -81,8 +83,16 @@ export default function ChangePasswordScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24 }} keyboardShouldPersistTaps="handled">
+          {/* A forced change (temp password) has no way out — the user must
+              comply before using the app. A voluntary visit from the
+              profile menu should let them back out without changing anything. */}
+          {!(user as any)?.mustChangePassword && router.canGoBack() && (
+            <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16, alignSelf: 'flex-start' }} hitSlop={12}>
+              <Text style={{ color: '#6B7280', fontSize: 15 }}>← Cancelar</Text>
+            </TouchableOpacity>
+          )}
           {/* Header */}
-          <View style={{ alignItems: 'center', marginTop: 40, marginBottom: 32 }}>
+          <View style={{ alignItems: 'center', marginTop: 24, marginBottom: 32 }}>
             <View style={{ backgroundColor: '#FEF9C3', borderRadius: 40, width: 80, height: 80, alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
               <Text style={{ fontSize: 40 }}>🔐</Text>
             </View>

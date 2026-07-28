@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
@@ -24,6 +25,7 @@ const AMBER = '#D97706';
 
 export default function StoreProfileScreen() {
   const { user, logOut, deleteAccount } = useAuth();
+  const router = useRouter();
   const [store, setStore] = useState<Store | null>(null);
   const [storeDocId, setStoreDocId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -296,6 +298,13 @@ export default function StoreProfileScreen() {
           <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>
             {saving ? 'Guardando...' : 'Guardar cambios'}
           </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => router.push('/(auth)/change-password' as any)}
+          style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 12, backgroundColor: '#fff' }}
+        >
+          <Text style={{ color: '#374151', fontWeight: '700' }}>🔑 Cambiar contraseña</Text>
         </TouchableOpacity>
 
         <TouchableOpacity

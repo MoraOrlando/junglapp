@@ -58,8 +58,22 @@ function RouteGuard() {
         router.replace('/(auth)/complete-profile');
         return;
       }
+      // A temp password (forgot-password email, admin reset, or a new
+      // collaborator's first login) sets this — without this check the
+      // change-password screen existed but was unreachable: signing in
+      // pushes segments back to (auth) for a tick, which the block below
+      // treats as "still on the login screen" and bounces straight to the
+      // role home before the user ever sees the redirect to change it.
+      if (u.mustChangePassword === true && segments[1] !== 'change-password') {
+        router.replace('/(auth)/change-password');
+        return;
+      }
       const role = user.role;
-      if (inAuth) {
+      // Also exempt a *voluntary* visit to change-password (from the profile
+      // menu, mustChangePassword false) — otherwise this same inAuth check
+      // bounces the user back to their role home before the screen renders,
+      // same failure mode as the forced case above.
+      if (inAuth && segments[1] !== 'change-password') {
         if (role === 'owner') router.replace('/(owner)');
         else if (role === 'vet') router.replace('/(vet)');
         else if (role === 'store') router.replace('/(store)');
