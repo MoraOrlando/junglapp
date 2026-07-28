@@ -42,7 +42,9 @@ function initFirebase() {
     }
     db = getFirestore(app);
     storage = getStorage(app);
-    functionsInstance = getFunctions(app);
+    // Cloud Functions are deployed to southamerica-west1, not the default
+    // us-central1 — omitting the region here would 404 every callable.
+    functionsInstance = getFunctions(app, 'southamerica-west1');
     const databaseURL = process.env.EXPO_PUBLIC_FIREBASE_DATABASE_URL || process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || '';
     if (databaseURL) rtdb = getDatabase(app, databaseURL);
   }

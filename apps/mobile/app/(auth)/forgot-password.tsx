@@ -10,7 +10,10 @@ import { initFirebase } from '@junglapp/firebase';
 import { validateEmail } from '../../lib/email';
 
 const { app } = initFirebase();
-const fns = getFunctions(app, 'us-central1');
+// Cloud Functions moved to southamerica-west1 (see functions/src/index.ts) —
+// this must match or the client gets a not-found error calling a region
+// where the function no longer exists.
+const fns = getFunctions(app, 'southamerica-west1');
 
 const inputStyle = {
   height: 52,
