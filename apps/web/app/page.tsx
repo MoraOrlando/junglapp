@@ -10,7 +10,7 @@ export default function LandingPage() {
       <header className="bg-white border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Image src="/logo.svg" alt="JunglApp" width={180} height={56} className="h-14 w-auto" />
+            <Image src="/logo-mark.png" alt="JunglApp" width={210} height={87} className="h-20 w-auto" priority />
           </div>
           <nav className="flex items-center gap-6">
             <Link href="/acceso" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition">

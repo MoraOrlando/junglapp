@@ -88,10 +88,10 @@ const STATUS_COLOR: Record<string, string> = {
 const FORTY_FIVE_DAYS_MS = 45 * 24 * 60 * 60 * 1000;
 const TABS = [
   { key: 'resumen', label: 'Resumen', icon: '📊' },
-  { key: 'inventario', label: 'Inventario', icon: '📦' },
-  { key: 'pedidos', label: 'Pedidos', icon: '🧾' },
   { key: 'carrito', label: 'Carrito', icon: '🛒' },
+  { key: 'pedidos', label: 'Pedidos', icon: '🧾' },
   { key: 'chat', label: 'Chat', icon: '💬' },
+  { key: 'inventario', label: 'Inventario', icon: '📦' },
 ] as const;
 type Tab = (typeof TABS)[number]['key'];
 
@@ -727,7 +727,7 @@ export default function StorePortalPage() {
 
       <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">
         {/* Tabs */}
-        <div className="flex gap-2 bg-white rounded-2xl p-1.5 shadow-sm w-fit">
+        <div className="flex flex-nowrap gap-2 bg-white rounded-2xl p-1.5 shadow-sm w-fit max-w-full overflow-x-auto">
           {TABS.map((t) => (
             <button
               key={t.key}
