@@ -33,10 +33,29 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/clientLinks/$(request.auth.uid + '_' + ownerId));
     }
 
+    // A collaborator account (added by the store owner from the web portal)
+    // gets the same operational access as the owner without being the
+    // stores/{storeId} doc's own userId — membership lives in staffUids,
+    // written server-side (Cloud Function, Admin SDK) on invite and
+    // removable by the owner via a normal client update (already allowed by
+    // the stores update rule below, since it only locks the `status` field).
+    function isStoreStaff(storeId) {
+      return isAuth() && request.auth.uid in get(/databases/$(database)/documents/stores/$(storeId)).data.get('staffUids', []);
+    }
+
+    // Lets a store owner read a collaborator's profile (to list their
+    // name/email/phone in the portal) — the store doc's ID is the owner's
+    // own uid (stores/{storeId} === stores/{ownerUid}), so this only needs
+    // to check the caller's own store's staffUids, not an arbitrary one.
+    function isMyStoreStaffMember(uid) {
+      return isAuth() && uid in get(/databases/$(database)/documents/stores/$(request.auth.uid)).data.get('staffUids', []);
+    }
+
     // ── Users ──────────────────────────────────────────────────────────────
     match /users/{uid} {
       allow read: if isSelf(uid) || isSupport()
-        || (isAuth() && getRole() in ['vet', 'walker', 'grooming', 'trainer'] && isLinkedClient(uid));
+        || (isAuth() && getRole() in ['vet', 'walker', 'grooming', 'trainer'] && isLinkedClient(uid))
+        || isMyStoreStaffMember(uid);
       allow create: if (isSelf(uid)
           && request.resource.data.uid == uid
           && request.resource.data.role in ['owner', 'vet', 'store', 'trainer', 'walker', 'grooming'])
@@ -245,18 +264,20 @@ service cloud.firestore {
       allow read: if isAuth();
       allow create: if isAuth() && (
         request.resource.data.userId == request.auth.uid
+        || isStoreStaff(request.resource.data.storeId)
         || isSupport()
       );
       // The owning store can change anything except it may never set
       // promotionStatus to 'approved' itself — only support can approve (or
       // later revoke by setting it back to 'rejected') a promo banner slot.
       allow update: if isAuth() && (
-        (resource.data.userId == request.auth.uid
+        ((resource.data.userId == request.auth.uid || isStoreStaff(resource.data.storeId))
           && request.resource.data.get('promotionStatus', null) != 'approved')
         || isSupport()
       );
       allow delete: if isAuth() && (
         resource.data.userId == request.auth.uid
+        || isStoreStaff(resource.data.storeId)
         || isSupport()
       );
     }
@@ -380,18 +401,19 @@ service cloud.firestore {
       allow read: if isAuth() && (
         resource.data.buyerId == request.auth.uid ||
         get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.userId == request.auth.uid ||
+        isStoreStaff(resource.data.storeId) ||
         isSupport()
       );
       allow create: if isAuth()
         && request.resource.data.buyerId == request.auth.uid;
-      // Store owner can only update status + updatedAt. The buyer may only
-      // cancel their own order (while it's still pending or while an
-      // alternative is being negotiated) or accept an offered alternative —
-      // never touch products/total/shippingAddress once the store has acted
-      // on it. While still pending (store hasn't confirmed yet), the buyer
-      // may instead edit products/total to add/remove items.
+      // Store owner (or staff) can only update status + updatedAt. The buyer
+      // may only cancel their own order (while it's still pending or while
+      // an alternative is being negotiated) or accept an offered alternative
+      // — never touch products/total/shippingAddress once the store has
+      // acted on it. While still pending (store hasn't confirmed yet), the
+      // buyer may instead edit products/total to add/remove items.
       allow update: if isAuth() && (
-        (get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.userId == request.auth.uid
+        ((get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.userId == request.auth.uid || isStoreStaff(resource.data.storeId))
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
         || (resource.data.buyerId == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'cancelledBy'])
@@ -414,10 +436,12 @@ service cloud.firestore {
     match /posSales/{saleId} {
       allow read: if isAuth() && (
         get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.userId == request.auth.uid
+        || isStoreStaff(resource.data.storeId)
         || isSupport()
       );
       allow create: if isAuth()
-        && get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.userId == request.auth.uid;
+        && (get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.userId == request.auth.uid
+          || isStoreStaff(request.resource.data.storeId));
       allow update, delete: if isSupport();
     }
 

@@ -158,6 +158,98 @@ export const adminResetUserPassword = onCall(async (request) => {
   return { tempPassword };
 });
 
+// Lets a store owner create a "collaborator" account with the same
+// operational access to their store (products, orders, POS sales — see
+// isStoreStaff() in firestore.rules). Must run server-side: creating a
+// second Firebase Auth account from the client SDK would sign the caller
+// out of their own session.
+export const createStoreCollaborator = onCall({ secrets: [resendApiKey] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  // The store doc's ID is the owner's own uid (see register-store.tsx),
+  // so this doubles as the "is this caller actually a store owner" check.
+  const storeDoc = await admin.firestore().collection('stores').doc(request.auth.uid).get();
+  if (!storeDoc.exists) {
+    throw new HttpsError('permission-denied', 'Solo el dueño de una tienda puede agregar colaboradores.');
+  }
+  const storeData = storeDoc.data()!;
+
+  const { name, email, phone } = request.data as { name?: string; email?: string; phone?: string };
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    throw new HttpsError('invalid-argument', 'Falta el nombre del colaborador.');
+  }
+  if (!email || typeof email !== 'string' || email.length > 320 || !EMAIL_REGEX.test(email)) {
+    throw new HttpsError('invalid-argument', 'Correo inválido.');
+  }
+  const normalizedEmail = email.trim().toLowerCase();
+  const trimmedName = name.trim();
+
+  const existing = await admin.auth().getUserByEmail(normalizedEmail).catch(() => null);
+  if (existing) {
+    throw new HttpsError('already-exists', 'Ya existe una cuenta con ese correo.');
+  }
+
+  const tempPassword = generateTempPassword();
+  const newUser = await admin.auth().createUser({
+    email: normalizedEmail,
+    password: tempPassword,
+    displayName: trimmedName,
+  });
+
+  await admin.firestore().collection('users').doc(newUser.uid).set({
+    uid: newUser.uid,
+    role: 'store',
+    name: trimmedName,
+    email: normalizedEmail,
+    phone: typeof phone === 'string' ? phone.trim() : '',
+    rut: '',
+    address: '',
+    region: '',
+    city: '',
+    mustChangePassword: true,
+    createdAt: new Date().toISOString(),
+  });
+
+  await storeDoc.ref.update({
+    staffUids: admin.firestore.FieldValue.arrayUnion(newUser.uid),
+  });
+
+  // Best-effort — the temp password is also returned below so the owner can
+  // relay it manually (WhatsApp, in person) if this email doesn't arrive,
+  // same fallback the support-side password reset already relies on.
+  try {
+    const resend = new Resend(resendApiKey.value());
+    await resend.emails.send({
+      from: MAIL_FROM,
+      to: normalizedEmail,
+      subject: `🔑 Te agregaron como colaborador de ${storeData.name || 'una tienda'} en JunglApp`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #f9fafb; border-radius: 12px;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="color: #2D6A4F; font-size: 28px; margin: 0;">🐾 JunglApp</h1>
+          </div>
+          <div style="background: white; border-radius: 12px; padding: 24px; border: 1px solid #e5e7eb;">
+            <p style="color: #374151; font-size: 16px;">Hola <strong>${trimmedName}</strong>,</p>
+            <p style="color: #6B7280;">${storeData.name || 'Una tienda'} te agregó como colaborador en JunglApp. Ya puedes acceder al portal de tienda con estos datos:</p>
+            <p style="color: #374151; margin-top: 16px;"><strong>Correo:</strong> ${normalizedEmail}</p>
+            <p style="color: #374151;">Tu <strong>contraseña temporal</strong> es:</p>
+            <div style="background: #f0fdf4; border: 2px dashed #2D6A4F; border-radius: 10px; padding: 16px; text-align: center; margin: 16px 0;">
+              <span style="font-size: 28px; font-weight: bold; color: #2D6A4F; letter-spacing: 4px;">${tempPassword}</span>
+            </div>
+            <p style="color: #6B7280; font-size: 13px;">Al ingresar, la aplicación te pedirá crear una nueva contraseña.</p>
+          </div>
+        </div>
+      `,
+    });
+  } catch {
+    // Swallow — the caller still gets tempPassword back to relay manually.
+  }
+
+  return { uid: newUser.uid, tempPassword };
+});
+
 const ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
 const IMAGE_MIME_TYPES: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf',

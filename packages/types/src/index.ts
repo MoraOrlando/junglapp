@@ -259,6 +259,10 @@ export interface Store {
   // offersDelivery: true, offersPickup: false (today's implicit behavior).
   offersDelivery?: boolean;
   offersPickup?: boolean;
+  // Collaborator accounts (created from the web store portal) — same
+  // operational access as the owner (products, orders, POS sales) without
+  // being the store doc's own userId. See firestore.rules isStoreStaff().
+  staffUids?: string[];
   createdAt: string;
 }
 
