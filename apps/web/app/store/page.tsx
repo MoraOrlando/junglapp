@@ -3,16 +3,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  collection, query, where, getDocs, doc, updateDoc, addDoc,
-  runTransaction, deleteField, onSnapshot,
+  collection, query, where, getDocs, getDoc, doc, updateDoc, addDoc,
+  runTransaction, deleteField, onSnapshot, arrayRemove,
 } from 'firebase/firestore';
 import { ref, onValue, push, set as rtdbSet } from 'firebase/database';
+import { httpsCallable } from 'firebase/functions';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { ProductRow, PRODUCT_CATEGORIES, parseProductWorkbook, downloadProductTemplate } from '../../lib/productImport';
 import { generateReceiptPdf } from '../../lib/receipt';
 
-const { db, rtdb } = initFirebase();
+const { db, rtdb, functions } = initFirebase();
 
 interface Product {
   id: string;
@@ -250,6 +251,173 @@ function ProductFormModal({
   );
 }
 
+function ProfileModal({
+  authUid, initialName, initialEmail, initialPhone, isOwner, storeId, staffUids, onClose, onStaffUidsChange,
+}: {
+  authUid: string;
+  initialName: string;
+  initialEmail: string;
+  initialPhone: string;
+  isOwner: boolean;
+  storeId: string | null;
+  staffUids: string[];
+  onClose: () => void;
+  onStaffUidsChange: (uids: string[]) => void;
+}) {
+  const [name, setName] = useState(initialName);
+  const [phone, setPhone] = useState(initialPhone);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
+
+  const [collaborators, setCollaborators] = useState<{ uid: string; name?: string; email?: string }[]>([]);
+  const [loadingCollabs, setLoadingCollabs] = useState(false);
+
+  const [showAddCollab, setShowAddCollab] = useState(false);
+  const [collabName, setCollabName] = useState('');
+  const [collabEmail, setCollabEmail] = useState('');
+  const [collabPhone, setCollabPhone] = useState('');
+  const [addingCollab, setAddingCollab] = useState(false);
+  const [newCollabPassword, setNewCollabPassword] = useState<string | null>(null);
+  const [collabError, setCollabError] = useState('');
+
+  useEffect(() => {
+    if (!isOwner || staffUids.length === 0) { setCollaborators([]); return; }
+    setLoadingCollabs(true);
+    Promise.all(staffUids.map((uid) => getDoc(doc(db, COLLECTIONS.USERS, uid))))
+      .then((snaps) => setCollaborators(
+        snaps.filter((s) => s.exists()).map((s) => ({ uid: s.id, ...s.data() } as any))
+      ))
+      .finally(() => setLoadingCollabs(false));
+  }, [isOwner, staffUids]);
+
+  async function saveProfile() {
+    setSavingProfile(true);
+    try {
+      await updateDoc(doc(db, COLLECTIONS.USERS, authUid), { name: name.trim(), phone: phone.trim() });
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 2000);
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  async function addCollaborator() {
+    setCollabError('');
+    if (!collabName.trim() || !collabEmail.trim()) { setCollabError('Nombre y correo son obligatorios.'); return; }
+    setAddingCollab(true);
+    try {
+      const createStoreCollaborator = httpsCallable(functions, 'createStoreCollaborator');
+      const result = await createStoreCollaborator({ name: collabName.trim(), email: collabEmail.trim(), phone: collabPhone.trim() });
+      const { uid, tempPassword } = result.data as { uid: string; tempPassword: string };
+      setNewCollabPassword(tempPassword);
+      onStaffUidsChange([...staffUids, uid]);
+      setCollabName(''); setCollabEmail(''); setCollabPhone('');
+      setShowAddCollab(false);
+    } catch (e: any) {
+      setCollabError(e.message || 'No se pudo crear el colaborador.');
+    } finally {
+      setAddingCollab(false);
+    }
+  }
+
+  async function removeCollaborator(uid: string) {
+    if (!storeId) return;
+    if (!confirm('¿Quitar el acceso de este colaborador?')) return;
+    await updateDoc(doc(db, COLLECTIONS.STORES, storeId), { staffUids: arrayRemove(uid) });
+    onStaffUidsChange(staffUids.filter((u) => u !== uid));
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <h3 className="text-lg font-bold text-gray-900 mb-4">Mi perfil</h3>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-gray-500">Nombre</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-primary-400" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-500">Correo</label>
+            <input value={initialEmail} disabled className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mt-1 bg-gray-50 text-gray-400" />
+            <p className="text-xs text-gray-400 mt-1">El correo de acceso no se puede cambiar aquí — contacta a soporte.</p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-500">Teléfono de contacto</label>
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-primary-400" />
+          </div>
+        </div>
+        <button
+          onClick={saveProfile}
+          disabled={savingProfile}
+          className="w-full mt-3 bg-primary-500 text-white font-semibold py-2.5 rounded-xl hover:bg-primary-600 transition active:scale-[0.97] text-sm disabled:opacity-50"
+        >
+          {savingProfile ? 'Guardando...' : profileSaved ? '✓ Guardado' : 'Guardar perfil'}
+        </button>
+
+        {isOwner && (
+          <div className="border-t border-gray-100 mt-6 pt-5">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-bold text-gray-900">Colaboradores</h4>
+              <button onClick={() => setShowAddCollab((v) => !v)} className="text-xs font-semibold text-primary-600 hover:underline">
+                + Agregar
+              </button>
+            </div>
+
+            {loadingCollabs ? (
+              <p className="text-xs text-gray-400">Cargando...</p>
+            ) : collaborators.length === 0 ? (
+              <p className="text-xs text-gray-400 mb-3">Sin colaboradores todavía.</p>
+            ) : (
+              <div className="space-y-2 mb-3">
+                {collaborators.map((c) => (
+                  <div key={c.uid} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{c.name}</p>
+                      <p className="text-xs text-gray-400">{c.email}</p>
+                    </div>
+                    <button onClick={() => removeCollaborator(c.uid)} className="text-xs text-red-500 hover:underline">
+                      Quitar
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {showAddCollab && (
+              <div className="bg-gray-50 rounded-xl p-3 space-y-2">
+                <input placeholder="Nombre" value={collabName} onChange={(e) => setCollabName(e.target.value)} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                <input placeholder="Correo" value={collabEmail} onChange={(e) => setCollabEmail(e.target.value)} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                <input placeholder="Teléfono (opcional)" value={collabPhone} onChange={(e) => setCollabPhone(e.target.value)} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                {collabError && <p className="text-xs text-red-500">{collabError}</p>}
+                <button
+                  onClick={addCollaborator}
+                  disabled={addingCollab}
+                  className="w-full bg-primary-500 text-white font-semibold py-2 rounded-xl text-sm disabled:opacity-50"
+                >
+                  {addingCollab ? 'Creando...' : 'Crear colaborador'}
+                </button>
+              </div>
+            )}
+
+            {newCollabPassword && (
+              <div className="bg-primary-50 border border-primary-200 rounded-xl p-3 mt-3">
+                <p className="text-xs text-gray-600 mb-1">
+                  Se envió un correo con estos datos, pero por si acaso, la contraseña temporal es:
+                </p>
+                <p className="text-center font-bold text-primary-700 tracking-widest">{newCollabPassword}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        <button onClick={onClose} className="w-full mt-6 text-gray-500 text-sm hover:underline">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function StorePortalPage() {
   const router = useRouter();
   const { user, loading, logOut } = useAuth();
@@ -259,6 +427,9 @@ export default function StorePortalPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [posSales, setPosSales] = useState<PosSale[]>([]);
   const [storeId, setStoreId] = useState<string | null>(null);
+  const [isStoreOwner, setIsStoreOwner] = useState(true);
+  const [staffUids, setStaffUids] = useState<string[]>([]);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [storeName, setStoreName] = useState<string>('JunglApp');
   const [storeLogoUrl, setStoreLogoUrl] = useState<string | undefined>(undefined);
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -362,13 +533,22 @@ export default function StorePortalPage() {
     if (!user) return;
     async function load() {
       try {
-        const storeSnap = await getDocs(query(collection(db, COLLECTIONS.STORES), where('userId', '==', user!.uid)));
+        let storeSnap = await getDocs(query(collection(db, COLLECTIONS.STORES), where('userId', '==', user!.uid)));
+        let owner = true;
+        if (storeSnap.empty) {
+          // Not an owner — check if this account is a collaborator on
+          // someone else's store instead (see Store.staffUids).
+          storeSnap = await getDocs(query(collection(db, COLLECTIONS.STORES), where('staffUids', 'array-contains', user!.uid)));
+          owner = false;
+        }
         if (!storeSnap.empty) {
           const sid = storeSnap.docs[0].id;
           const storeData = storeSnap.docs[0].data() as any;
           setStoreId(sid);
           setStoreLogoUrl(storeData.photoUrl);
           if (storeData.name) setStoreName(storeData.name);
+          setIsStoreOwner(owner);
+          setStaffUids(storeData.staffUids || []);
           await loadStoreData(sid);
         }
       } catch {}
@@ -714,10 +894,22 @@ export default function StorePortalPage() {
           </label>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo-mark.png" alt="JunglApp" className="h-6 w-auto bg-white rounded px-1.5 py-1" />
-          <span className="font-bold">— Tienda</span>
+          <button
+            onClick={() => setShowProfileModal(true)}
+            className="font-bold hover:underline decoration-white/50 underline-offset-2"
+            title="Editar perfil y colaboradores"
+          >
+            — {storeName}
+          </button>
         </div>
         <div className="flex items-center gap-4">
-          <span className="text-sm text-white/80">{user.name || user.email}</span>
+          <button
+            onClick={() => setShowProfileModal(true)}
+            className="text-sm text-white/80 hover:underline decoration-white/50 underline-offset-2"
+            title="Editar perfil y colaboradores"
+          >
+            {user.name || user.email}
+          </button>
           <button
             onClick={() => logOut().then(() => router.replace('/acceso'))}
             className="text-sm bg-white/20 hover:bg-white/30 px-4 py-1.5 rounded-full transition active:scale-[0.97]"
@@ -1277,6 +1469,20 @@ export default function StorePortalPage() {
           saving={editSaving}
           onCancel={() => setEditingProduct(null)}
           onSubmit={submitEditProduct}
+        />
+      )}
+
+      {showProfileModal && user && (
+        <ProfileModal
+          authUid={user.uid}
+          initialName={user.name || ''}
+          initialEmail={user.email || ''}
+          initialPhone={user.phone || ''}
+          isOwner={isStoreOwner}
+          storeId={storeId}
+          staffUids={staffUids}
+          onClose={() => setShowProfileModal(false)}
+          onStaffUidsChange={setStaffUids}
         />
       )}
     </div>
