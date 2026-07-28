@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 
 export default function AccesoPage() {
   const router = useRouter();
-  const { user, loading, signIn } = useAuth();
+  const { user, loading, authError, signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -19,8 +19,13 @@ export default function AccesoPage() {
       else if (user.role === 'store') router.replace('/store');
       else if (user.role === 'support') router.replace('/dashboard');
       else setError('Este tipo de cuenta no tiene acceso web por ahora.');
+    } else if (!loading && authError) {
+      // Signed in with Firebase Auth, but the app-level profile failed to
+      // load — previously this left the form stuck on "Ingresando..." (or
+      // silently back to normal) with no explanation at all.
+      setError(authError);
     }
-  }, [user, loading, router]);
+  }, [user, loading, authError, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

@@ -15,6 +15,10 @@ const { auth, db } = initFirebase();
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  // Set when Firebase Auth succeeded but the app-level profile couldn't be
+  // loaded (Firestore read failed, or no users/{uid} doc exists) — distinct
+  // from a bad password, which signIn() below already rejects on its own.
+  authError: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
 }
@@ -24,18 +28,35 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser) {
-        const userDoc = await getDoc(doc(db, 'users', fbUser.uid));
-        if (userDoc.exists()) {
-          setUser({ uid: fbUser.uid, ...userDoc.data() } as User);
+      try {
+        if (fbUser) {
+          const userDoc = await getDoc(doc(db, 'users', fbUser.uid));
+          if (userDoc.exists()) {
+            setUser({ uid: fbUser.uid, ...userDoc.data() } as User);
+            setAuthError(null);
+          } else {
+            setUser(null);
+            setAuthError('Tu cuenta no tiene un perfil asociado. Contacta a soporte.');
+          }
+        } else {
+          setUser(null);
         }
-      } else {
+      } catch (e) {
+        // A throw here (e.g. permission-denied reading the profile doc) used
+        // to skip the setLoading(false) below entirely, leaving the app
+        // stuck in a permanent loading state — the login form would show
+        // success (signIn() itself resolved) but never redirect and never
+        // surface an error either.
+        console.error('Failed to load user profile after sign-in:', e);
         setUser(null);
+        setAuthError('No se pudo cargar tu cuenta. Intenta de nuevo en unos segundos.');
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     });
     return unsubscribe;
   }, []);
@@ -50,7 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, logOut }}>
+    <AuthContext.Provider value={{ user, loading, authError, signIn, logOut }}>
       {children}
     </AuthContext.Provider>
   );
