@@ -712,7 +712,9 @@ export default function StorePortalPage() {
             )}
             <input type="file" accept="image/*" onChange={uploadLogo} className="hidden" />
           </label>
-          <span className="font-bold">JunglApp — Tienda</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-mark.png" alt="JunglApp" className="h-6 w-auto bg-white rounded px-1.5 py-1" />
+          <span className="font-bold">— Tienda</span>
         </div>
         <div className="flex items-center gap-4">
           <span className="text-sm text-white/80">{user.name || user.email}</span>
