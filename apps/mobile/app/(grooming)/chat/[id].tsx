@@ -126,11 +126,6 @@ export default function GroomingChatScreen() {
   }
 
   async function pickAndSendImage() {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permiso requerido', 'Necesitamos acceso a tu galería.');
-      return;
-    }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.8 });
     if (result.canceled || !result.assets[0]) return;
     setUploading(true);
