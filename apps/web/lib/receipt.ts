@@ -10,6 +10,9 @@ export interface ReceiptData {
   storeName: string;
   storeLogoUrl?: string;
   items: ReceiptItem[];
+  // Shown as a line item between the products and the Neto/IVA breakdown —
+  // amount and iva/neto below are already post-discount.
+  discount?: { label: string; amount: number };
   neto: number;
   iva: number;
   total: number;
@@ -46,14 +49,14 @@ function imageFormatFromDataUrl(dataUrl: string): 'PNG' | 'WEBP' | 'JPEG' {
   return 'JPEG';
 }
 
-// Generates and downloads a receipt sized for an 80mm thermal-printer roll.
-// The store prints the resulting PDF through their printer's normal print
-// dialog — this is plain PDF generation, not ESC/POS printer integration.
-export async function generateReceiptPdf(data: ReceiptData): Promise<void> {
+// Builds the receipt PDF — shared by generateReceiptPdf (download) and
+// generateReceiptPdfBase64 (emailing, via the sendReceiptEmail Cloud
+// Function) so the two never drift into different layouts.
+async function buildReceiptDoc(data: ReceiptData): Promise<jsPDF> {
   const width = 80;
   const lineHeight = 5;
   const baseHeight = 65;
-  const height = baseHeight + data.items.length * lineHeight + (data.storeLogoUrl ? 22 : 0);
+  const height = baseHeight + data.items.length * lineHeight + (data.storeLogoUrl ? 22 : 0) + (data.discount && data.discount.amount > 0 ? lineHeight : 0);
 
   const doc = new jsPDF({ unit: 'mm', format: [width, height] });
   const margin = 4;
@@ -101,6 +104,11 @@ export async function generateReceiptPdf(data: ReceiptData): Promise<void> {
   y += 4;
 
   doc.setFontSize(8);
+  if (data.discount && data.discount.amount > 0) {
+    doc.text(data.discount.label, margin, y);
+    doc.text(`-$${Math.round(data.discount.amount).toLocaleString('es-CL')}`, width - margin, y, { align: 'right' });
+    y += lineHeight;
+  }
   doc.text('Neto', margin, y);
   doc.text(`$${Math.round(data.neto).toLocaleString('es-CL')}`, width - margin, y, { align: 'right' });
   y += 4;
@@ -118,5 +126,22 @@ export async function generateReceiptPdf(data: ReceiptData): Promise<void> {
   doc.setFontSize(7);
   doc.text('Gracias por su compra — JunglApp', centerX, y, { align: 'center' });
 
+  return doc;
+}
+
+// Generates and downloads a receipt sized for an 80mm thermal-printer roll.
+// The store prints the resulting PDF through their printer's normal print
+// dialog — this is plain PDF generation, not ESC/POS printer integration.
+export async function generateReceiptPdf(data: ReceiptData): Promise<void> {
+  const doc = await buildReceiptDoc(data);
   doc.save(`boleta-${new Date(data.createdAt).getTime()}.pdf`);
+}
+
+// Same receipt, returned as a plain base64 string (no data: URI prefix) for
+// the sendReceiptEmail callable's `attachments[].content`.
+export async function generateReceiptPdfBase64(data: ReceiptData): Promise<string> {
+  const doc = await buildReceiptDoc(data);
+  // jsPDF's types only expose the data-URI form ("data:application/pdf;base64,...")
+  // — strip the prefix to get the plain base64 the Resend attachment API wants.
+  return doc.output('datauristring').split(',')[1];
 }

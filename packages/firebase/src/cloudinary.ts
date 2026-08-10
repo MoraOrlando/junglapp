@@ -11,15 +11,22 @@ import { initFirebase } from './config';
 let FileSystem: any = null;
 try { FileSystem = require('expo-file-system/legacy'); } catch {}
 
-const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
+// Every current call site is a photo (from the camera or the gallery, via
+// expo-image-picker's mediaTypes:'images') — nothing in the app picks a PDF
+// or other document today. Rejecting anything outside this list, instead of
+// the old behavior of silently defaulting an unrecognized extension to
+// 'jpg', matters because it used to let a non-image file (e.g. a video)
+// upload mislabeled as a jpg instead of failing with a clear error.
+// Kept in lockstep with ALLOWED_IMAGE_EXTENSIONS in functions/src/index.ts —
+// the server has the final say (this is just an early, friendlier check).
+const ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
 
 function getMimeType(ext: string): string {
   const map: Record<string, string> = {
     jpg: 'image/jpeg', jpeg: 'image/jpeg',
     png: 'image/png', webp: 'image/webp',
-    pdf: 'application/pdf',
   };
-  return map[ext] || 'image/jpeg';
+  return map[ext];
 }
 
 function blobToBase64(blob: Blob): Promise<string> {
@@ -46,11 +53,17 @@ function blobToBase64(blob: Blob): Promise<string> {
 // Calling a Function instead reuses the JS SDK's existing auth session (its ID token
 // is attached to the call automatically), and the actual Storage write happens
 // server-side via the Admin SDK.
-export async function uploadImage(uri: string): Promise<string> {
-  const pathWithoutQuery = uri.split('?')[0];
+// `filename` is only used to determine the extension — pass the original
+// File.name on web, where `uri` is a `blob:` object URL with no extension
+// of its own (mobile's `file://` URIs already carry a real one, so callers
+// there can omit it).
+export async function uploadImage(uri: string, filename?: string): Promise<string> {
+  const pathWithoutQuery = (filename ?? uri).split('?')[0];
   const ext = pathWithoutQuery.split('.').pop()?.toLowerCase() ?? '';
-  const resolvedExt = ALLOWED_EXTENSIONS.includes(ext) ? ext : 'jpg';
-  const mimeType = getMimeType(resolvedExt);
+  if (!ALLOWED_IMAGE_EXTENSIONS.includes(ext)) {
+    throw new Error('Solo se permiten fotos (JPG, PNG o WEBP). Selecciona una imagen válida.');
+  }
+  const mimeType = getMimeType(ext);
 
   let base64: string;
   if (FileSystem && uri.startsWith('file://')) {
@@ -66,10 +79,10 @@ export async function uploadImage(uri: string): Promise<string> {
     functions,
     'uploadUserImage'
   );
-  const result = await uploadUserImage({ base64, ext: resolvedExt, contentType: mimeType });
+  const result = await uploadUserImage({ base64, ext, contentType: mimeType });
   return result.data.url;
 }
 
 export async function uploadImages(uris: string[]): Promise<string[]> {
-  return Promise.all(uris.map(uploadImage));
+  return Promise.all(uris.map((uri) => uploadImage(uri)));
 }

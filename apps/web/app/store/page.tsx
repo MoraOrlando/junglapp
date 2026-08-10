@@ -6,12 +6,15 @@ import {
   collection, query, where, getDocs, getDoc, doc, updateDoc, addDoc,
   runTransaction, deleteField, onSnapshot, arrayRemove,
 } from 'firebase/firestore';
-import { ref, onValue, push, set as rtdbSet } from 'firebase/database';
+import { ref, onValue, push } from 'firebase/database';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer } from 'recharts';
 import { httpsCallable } from 'firebase/functions';
-import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
+import { initFirebase, COLLECTIONS, uploadImage, joinChat } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { ProductRow, PRODUCT_CATEGORIES, parseProductWorkbook, downloadProductTemplate } from '../../lib/productImport';
-import { generateReceiptPdf } from '../../lib/receipt';
+import { generateReceiptPdf, generateReceiptPdfBase64 } from '../../lib/receipt';
+import { validateRut, formatRut } from '../../lib/rut';
+import { netoFromTotal, ivaFromTotal, computeDiscountAmount, type CartDiscount } from '../../lib/pricing';
 
 const { db, rtdb, functions } = initFirebase();
 
@@ -48,13 +51,28 @@ interface Order {
   alternativeMessage?: string;
 }
 
+interface StoreCustomer {
+  id: string;
+  storeId: string;
+  name: string;
+  rut: string;
+  email: string;
+  createdAt: string;
+}
+
 interface PosSale {
   id: string;
   createdAt: string;
   total: number;
   neto?: number;
   iva?: number;
+  // Pre-discount total and the discount applied, kept for the receipt/audit
+  // trail — absent on sales made before discounts existed, or with no discount.
+  subtotal?: number;
+  discount?: CartDiscount & { amount: number; productName?: string };
   paymentMethod?: string;
+  customerId?: string;
+  buyerId?: string;
   items: OrderItem[];
 }
 
@@ -459,12 +477,28 @@ export default function StorePortalPage() {
   const [cartSearch, setCartSearch] = useState('');
   const [cartCategory, setCartCategory] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'efectivo' | 'tarjeta' | 'transferencia'>('efectivo');
+  // Discount applies to either the whole cart or a single product line, never
+  // both at once — keeps the receipt breakdown unambiguous.
+  const [discountScope, setDiscountScope] = useState<'none' | 'cart' | 'product'>('none');
+  const [discountProductId, setDiscountProductId] = useState('');
+  const [discountType, setDiscountType] = useState<'percent' | 'fixed'>('percent');
+  const [discountValue, setDiscountValue] = useState('');
+
+  const [storeCustomers, setStoreCustomers] = useState<StoreCustomer[]>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [showCreateCustomer, setShowCreateCustomer] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState('');
+  const [newCustomerRut, setNewCustomerRut] = useState('');
+  const [newCustomerEmail, setNewCustomerEmail] = useState('');
+  const [customerError, setCustomerError] = useState('');
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
 
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageText, setMessageText] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!loading && !user) router.replace('/acceso');
@@ -516,16 +550,27 @@ export default function StorePortalPage() {
     return () => unsub();
   }, [activeChatId]);
 
+  useEffect(() => {
+    const el = messagesScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, activeChatId]);
+
   async function loadStoreData(sid: string) {
-    const [productsSnap, posSalesSnap] = await Promise.all([
+    const [productsSnap, posSalesSnap, customersSnap] = await Promise.all([
       getDocs(query(collection(db, COLLECTIONS.PRODUCTS), where('storeId', '==', sid))),
       getDocs(query(collection(db, COLLECTIONS.POS_SALES), where('storeId', '==', sid))),
+      getDocs(query(collection(db, COLLECTIONS.STORE_CUSTOMERS), where('storeId', '==', sid))),
     ]);
     setProducts(productsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Product)));
     setPosSales(
       posSalesSnap.docs
         .map((d) => ({ id: d.id, ...d.data() } as PosSale))
         .sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1))
+    );
+    setStoreCustomers(
+      customersSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as StoreCustomer))
+        .sort((a, b) => a.name.localeCompare(b.name))
     );
   }
 
@@ -644,7 +689,7 @@ export default function StorePortalPage() {
     try {
       let photoUrl: string | undefined;
       if (values.photoFile) {
-        photoUrl = await uploadImage(URL.createObjectURL(values.photoFile));
+        photoUrl = await uploadImage(URL.createObjectURL(values.photoFile), values.photoFile.name);
       }
       const price = Number(values.price) || 0;
       const originalPrice = Number(values.originalPrice) || 0;
@@ -676,7 +721,7 @@ export default function StorePortalPage() {
     try {
       let photos = editingProduct.photos;
       if (values.photoFile) {
-        const url = await uploadImage(URL.createObjectURL(values.photoFile));
+        const url = await uploadImage(URL.createObjectURL(values.photoFile), values.photoFile.name);
         photos = [url];
       }
       const price = Number(values.price) || 0;
@@ -722,6 +767,36 @@ export default function StorePortalPage() {
     });
   }
 
+  async function createCustomer() {
+    setCustomerError('');
+    if (!newCustomerName.trim()) { setCustomerError('El nombre es obligatorio.'); return; }
+    if (!validateRut(newCustomerRut)) { setCustomerError('El RUT no es válido.'); return; }
+    if (newCustomerEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newCustomerEmail.trim())) {
+      setCustomerError('El correo no es válido.');
+      return;
+    }
+    if (!storeId) return;
+    setCreatingCustomer(true);
+    try {
+      const newCustomer = {
+        storeId,
+        name: newCustomerName.trim(),
+        rut: formatRut(newCustomerRut),
+        email: newCustomerEmail.trim().toLowerCase(),
+        createdAt: new Date().toISOString(),
+      };
+      const ref = await addDoc(collection(db, COLLECTIONS.STORE_CUSTOMERS), newCustomer);
+      setStoreCustomers((prev) => [...prev, { id: ref.id, ...newCustomer }].sort((a, b) => a.name.localeCompare(b.name)));
+      setSelectedCustomerId(ref.id);
+      setNewCustomerName(''); setNewCustomerRut(''); setNewCustomerEmail('');
+      setShowCreateCustomer(false);
+    } catch (e: any) {
+      setCustomerError(e.message || 'No se pudo crear el cliente.');
+    } finally {
+      setCreatingCustomer(false);
+    }
+  }
+
   async function confirmSale() {
     if (!storeId) return;
     const entries = Object.entries(cart);
@@ -729,8 +804,16 @@ export default function StorePortalPage() {
     setCartSaving(true);
     try {
       const now = new Date().toISOString();
+      const customer = storeCustomers.find((c) => c.id === selectedCustomerId);
       let committedItems: OrderItem[] = [];
       let committedTotal = 0;
+      let committedSaleId = '';
+      let committedDiscountAmount = 0;
+      const discountLabel = activeDiscount
+        ? (activeDiscount.scope === 'cart'
+          ? `Descuento carrito (${activeDiscount.type === 'percent' ? `${activeDiscount.value}%` : 'monto fijo'})`
+          : `Descuento ${products.find((p) => p.id === activeDiscount.productId)?.name ?? 'producto'} (${activeDiscount.type === 'percent' ? `${activeDiscount.value}%` : 'monto fijo'})`)
+        : '';
 
       await runTransaction(db, async (tx) => {
         const saleItems: OrderItem[] = [];
@@ -747,16 +830,31 @@ export default function StorePortalPage() {
           saleItems.push({ productId, productName: data.name, quantity: qty, price: data.price });
         });
 
-        const total = saleItems.reduce((sum, it) => sum + it.price * it.quantity, 0);
-        const neto = total / 1.19;
-        const iva = total - neto;
+        const subtotal = saleItems.reduce((sum, it) => sum + it.price * it.quantity, 0);
+        const discountAmount = computeDiscountAmount(
+          saleItems.map((it) => ({ productId: it.productId, price: it.price, qty: it.quantity })),
+          activeDiscount,
+        );
+        const total = subtotal - discountAmount;
+        const neto = netoFromTotal(total);
+        const iva = ivaFromTotal(total);
         const saleRef = doc(collection(db, COLLECTIONS.POS_SALES));
-        tx.set(saleRef, { storeId, items: saleItems, total, neto, iva, paymentMethod, createdAt: now });
+        tx.set(saleRef, {
+          storeId, items: saleItems, subtotal, total, neto, iva, paymentMethod, createdAt: now,
+          ...(activeDiscount && discountAmount > 0 ? { discount: { ...activeDiscount, amount: discountAmount } } : {}),
+          ...(customer ? { customerId: customer.id } : {}),
+        });
         committedItems = saleItems;
         committedTotal = total;
+        committedSaleId = saleRef.id;
+        committedDiscountAmount = discountAmount;
       });
 
       setCart({});
+      setSelectedCustomerId('');
+      setDiscountScope('none');
+      setDiscountProductId('');
+      setDiscountValue('');
       await loadStoreData(storeId);
 
       try {
@@ -764,8 +862,9 @@ export default function StorePortalPage() {
           storeName,
           storeLogoUrl,
           items: committedItems,
-          neto: committedTotal / 1.19,
-          iva: committedTotal - committedTotal / 1.19,
+          discount: committedDiscountAmount > 0 ? { label: discountLabel, amount: committedDiscountAmount } : undefined,
+          neto: netoFromTotal(committedTotal),
+          iva: ivaFromTotal(committedTotal),
           total: committedTotal,
           paymentMethod,
           createdAt: now,
@@ -773,6 +872,33 @@ export default function StorePortalPage() {
       } catch {
         // The sale is already committed at this point — a PDF failure
         // (e.g. logo fetch blocked by CORS) must not look like a failed sale.
+      }
+
+      // Best-effort, non-blocking — the sale is already committed either way.
+      // Links the sale to the customer's JunglApp account (if they have one,
+      // so it shows up in their in-app purchase history) and emails them the
+      // receipt already generated above.
+      if (customer?.email) {
+        try {
+          const linkPosSaleToBuyer = httpsCallable(functions, 'linkPosSaleToBuyer');
+          linkPosSaleToBuyer({ saleId: committedSaleId, email: customer.email }).catch(() => {});
+
+          const pdfBase64 = await generateReceiptPdfBase64({
+            storeName,
+            storeLogoUrl,
+            items: committedItems,
+            discount: committedDiscountAmount > 0 ? { label: discountLabel, amount: committedDiscountAmount } : undefined,
+            neto: netoFromTotal(committedTotal),
+            iva: ivaFromTotal(committedTotal),
+            total: committedTotal,
+            paymentMethod,
+            createdAt: now,
+          });
+          const sendReceiptEmail = httpsCallable(functions, 'sendReceiptEmail');
+          await sendReceiptEmail({ to: customer.email, storeName, pdfBase64, total: committedTotal });
+        } catch {
+          // Sale + local PDF already succeeded — email delivery is a bonus, not a requirement.
+        }
       }
     } catch (err: any) {
       alert(err?.message || 'No se pudo confirmar la venta.');
@@ -784,7 +910,7 @@ export default function StorePortalPage() {
   async function openChat(chatId: string) {
     setActiveChatId(chatId);
     if (!user || !rtdb) return;
-    await rtdbSet(ref(rtdb, `chatMembers/${chatId}/${user.uid}`), true).catch(() => {});
+    await joinChat(chatId).catch(() => {});
     await updateDoc(doc(db, COLLECTIONS.CHATS, chatId), { [`lastReadAt.${user.uid}`]: new Date().toISOString() }).catch(() => {});
   }
 
@@ -839,7 +965,7 @@ export default function StorePortalPage() {
     if (!file || !storeId) return;
     setUploadingLogo(true);
     try {
-      const url = await uploadImage(URL.createObjectURL(file));
+      const url = await uploadImage(URL.createObjectURL(file), file.name);
       await updateDoc(doc(db, COLLECTIONS.STORES, storeId), { photoUrl: url });
       setStoreLogoUrl(url);
     } finally {
@@ -860,6 +986,28 @@ export default function StorePortalPage() {
     posSalesInRange.reduce((sum, s) => sum + (s.total || 0), 0);
   const ordersInRangeFiltered = ordersInRange.filter((o) => !orderStatusFilter || o.status === orderStatusFilter);
 
+  // Annual sales chart + IVA estimate — combines app orders (confirmed/delivered,
+  // same status filter as amountInRange above) with in-store POS sales, grouped
+  // by calendar month of the current year.
+  const currentYear = new Date().getFullYear();
+  const currentMonthIdx = new Date().getMonth();
+  const MONTH_LABELS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const monthlySales = MONTH_LABELS.map((label, i) => {
+    const ordersTotal = orders
+      .filter((o) => (o.status === 'confirmed' || o.status === 'delivered'))
+      .filter((o) => { const d = new Date(o.createdAt); return d.getFullYear() === currentYear && d.getMonth() === i; })
+      .reduce((sum, o) => sum + (o.total || 0), 0);
+    const posTotal = posSales
+      .filter((s) => { const d = new Date(s.createdAt); return d.getFullYear() === currentYear && d.getMonth() === i; })
+      .reduce((sum, s) => sum + (s.total || 0), 0);
+    const total = ordersTotal + posTotal;
+    return { month: label, total, iva: ivaFromTotal(total), isClosedMonth: i < currentMonthIdx };
+  });
+  const salesYearTotal = monthlySales.reduce((sum, m) => sum + m.total, 0);
+  // Only complete (already-ended) months — the current month isn't a closed
+  // tax period yet, so including it would understate what's still to come.
+  const ivaClosedMonthsTotal = monthlySales.filter((m) => m.isClosedMonth).reduce((sum, m) => sum + m.iva, 0);
+
   const validImportCount = importRows.filter((r) => !r.error).length;
   const errorImportCount = importRows.filter((r) => !!r.error).length;
 
@@ -867,10 +1015,21 @@ export default function StorePortalPage() {
     const product = products.find((p) => p.id === productId);
     return { productId, qty, product };
   }).filter((l) => l.product);
-  const cartTotal = cartLines.reduce((sum, l) => sum + (l.product!.price * l.qty), 0);
+  const cartSubtotal = cartLines.reduce((sum, l) => sum + (l.product!.price * l.qty), 0);
   const cartQtyTotal = cartLines.reduce((sum, l) => sum + l.qty, 0);
-  const cartNeto = cartTotal / 1.19;
-  const cartIva = cartTotal - cartNeto;
+  const activeDiscount: CartDiscount | null = discountScope === 'none' || !discountValue ? null : {
+    scope: discountScope,
+    productId: discountScope === 'product' ? discountProductId : undefined,
+    type: discountType,
+    value: parseFloat(discountValue) || 0,
+  };
+  const cartDiscountAmount = computeDiscountAmount(
+    cartLines.map((l) => ({ productId: l.productId, price: l.product!.price, qty: l.qty })),
+    activeDiscount,
+  );
+  const cartTotal = cartSubtotal - cartDiscountAmount;
+  const cartNeto = netoFromTotal(cartTotal);
+  const cartIva = ivaFromTotal(cartTotal);
   const availableForCart = products
     .filter((p) => p.isActive && (p.stock ?? 0) > 0)
     .filter((p) => !cartCategory || p.category === cartCategory)
@@ -935,37 +1094,80 @@ export default function StorePortalPage() {
           ))}
         </div>
 
-        {(tab === 'resumen' || tab === 'pedidos') && (
+        {tab === 'pedidos' && (
           <div className="bg-white rounded-2xl p-4 shadow-sm flex flex-wrap items-center gap-3">
             <span className="text-sm font-medium text-gray-500">Rango de fechas:</span>
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-gray-200 rounded-xl px-3 py-1.5 text-sm" />
             <span className="text-gray-400 text-sm">a</span>
             <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-gray-200 rounded-xl px-3 py-1.5 text-sm" />
-            {tab === 'pedidos' && (
-              <>
-                <span className="text-gray-300">|</span>
-                <span className="text-sm font-medium text-gray-500">Estado:</span>
-                <select value={orderStatusFilter} onChange={(e) => setOrderStatusFilter(e.target.value)} className="border border-gray-200 rounded-xl px-3 py-1.5 text-sm">
-                  <option value="">Todos</option>
-                  <option value="pending">Pendiente</option>
-                  <option value="confirmed">Confirmado</option>
-                  <option value="shipped">Enviado</option>
-                  <option value="delivered">Entregado</option>
-                  <option value="cancelled">Cancelado</option>
-                </select>
-              </>
-            )}
+            <span className="text-gray-300">|</span>
+            <span className="text-sm font-medium text-gray-500">Estado:</span>
+            <select value={orderStatusFilter} onChange={(e) => setOrderStatusFilter(e.target.value)} className="border border-gray-200 rounded-xl px-3 py-1.5 text-sm">
+              <option value="">Todos</option>
+              <option value="pending">Pendiente</option>
+              <option value="confirmed">Confirmado</option>
+              <option value="shipped">Enviado</option>
+              <option value="delivered">Entregado</option>
+              <option value="cancelled">Cancelado</option>
+            </select>
           </div>
         )}
 
         {tab === 'resumen' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <StatCard label="Productos activos" value={dataLoading ? '—' : activeProducts.length} icon="📦" color="bg-primary-100" />
-            <StatCard label="Activos sin ventas en 45 días" value={dataLoading ? '—' : staleProducts.length} icon="🐌" color="bg-amber-100" />
-            <StatCard label="Pedidos pendientes" value={dataLoading ? '—' : pendingOrders.length} icon="⏳" color="bg-yellow-100" />
-            <StatCard label="Pedidos totales (rango)" value={dataLoading ? '—' : ordersInRange.length + posSalesInRange.length} icon="🧾" color="bg-blue-100" />
-            <StatCard label="Monto vendido (rango)" value={dataLoading ? '—' : `$${amountInRange.toLocaleString('es-CL')}`} icon="💰" color="bg-green-100" />
-            <StatCard label="Pedidos cancelados (rango)" value={dataLoading ? '—' : cancelledInRange.length} icon="❌" color="bg-red-100" />
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <StatCard label="Productos activos" value={dataLoading ? '—' : activeProducts.length} icon="📦" color="bg-primary-100" />
+              <StatCard label="Activos sin ventas en 45 días" value={dataLoading ? '—' : staleProducts.length} icon="🐌" color="bg-amber-100" />
+              <StatCard label="Pedidos pendientes" value={dataLoading ? '—' : pendingOrders.length} icon="⏳" color="bg-yellow-100" />
+              <StatCard label="Pedidos totales (rango)" value={dataLoading ? '—' : ordersInRange.length + posSalesInRange.length} icon="🧾" color="bg-blue-100" />
+              <StatCard label="Monto vendido (rango)" value={dataLoading ? '—' : `$${amountInRange.toLocaleString('es-CL')}`} icon="💰" color="bg-green-100" />
+              <StatCard label="Pedidos cancelados (rango)" value={dataLoading ? '—' : cancelledInRange.length} icon="❌" color="bg-red-100" />
+            </div>
+
+            {/* Date filter and these two totals sit in one row so they render
+                at the same height — separate stacked blocks looked uneven. */}
+            <div className="flex flex-col md:flex-row items-stretch gap-4">
+              <div className="bg-white rounded-2xl p-4 shadow-sm flex flex-wrap items-center gap-3">
+                <span className="text-sm font-medium text-gray-500">Rango de fechas:</span>
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-gray-200 rounded-xl px-3 py-1.5 text-sm" />
+                <span className="text-gray-400 text-sm">a</span>
+                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-gray-200 rounded-xl px-3 py-1.5 text-sm" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
+                <StatCard label={`Ventas totales (${currentYear})`} value={dataLoading ? '—' : `$${Math.round(salesYearTotal).toLocaleString('es-CL')}`} icon="📈" color="bg-primary-100" />
+                <StatCard label="IVA acumulado (meses cerrados)" value={dataLoading ? '—' : `$${Math.round(ivaClosedMonthsTotal).toLocaleString('es-CL')}`} icon="🧮" color="bg-amber-100" />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-semibold text-gray-700">Ventas mensuales — {currentYear}</h3>
+              </div>
+              <p className="text-gray-400 text-xs mb-4">
+                Combina pedidos confirmados/entregados de la app y ventas directas en tienda. El IVA acumulado es estimado (19%) y no reemplaza tu declaración.
+              </p>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={monthlySales}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                  <XAxis dataKey="month" fontSize={12} stroke="#9CA3AF" />
+                  <YAxis fontSize={12} stroke="#9CA3AF" tickFormatter={(v) => `$${(v / 1000).toLocaleString('es-CL')}k`} />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.[0]) return null;
+                      const point = payload[0].payload as { total: number; iva: number };
+                      return (
+                        <div className="bg-white border border-gray-200 rounded-xl px-3 py-2 shadow-sm text-xs">
+                          <p className="font-semibold text-gray-800 mb-1">{label} {currentYear}</p>
+                          <p className="text-gray-500">Total: <span className="font-medium text-gray-800">${Math.round(point.total).toLocaleString('es-CL')}</span></p>
+                          <p className="text-gray-500">IVA (19%): <span className="font-medium text-gray-800">${Math.round(point.iva).toLocaleString('es-CL')}</span></p>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar dataKey="total" fill="#2D6A4F" radius={[8, 8, 0, 0]} name="Total" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         )}
 
@@ -1321,20 +1523,104 @@ export default function StorePortalPage() {
                         ))}
                       </div>
 
-                      <label className="text-xs font-medium text-gray-500">Correo del cliente (opcional)</label>
-                      <input
-                        type="email"
-                        disabled
-                        placeholder="correo@ejemplo.com"
-                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mt-1 bg-gray-50 text-gray-400 cursor-not-allowed"
-                      />
-                      <p className="text-[11px] text-gray-400 mt-1 mb-3">Enviar copia de la venta por correo — próximamente.</p>
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium text-gray-500">Cliente (opcional)</label>
+                        <button
+                          onClick={() => setShowCreateCustomer(true)}
+                          className="text-[11px] font-semibold text-primary-600 hover:text-primary-700"
+                        >
+                          ➕ Crear cliente
+                        </button>
+                      </div>
+                      <select
+                        value={selectedCustomerId}
+                        onChange={(e) => setSelectedCustomerId(e.target.value)}
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-primary-400"
+                      >
+                        <option value="">Sin cliente registrado</option>
+                        {storeCustomers.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}{c.email ? ` — ${c.email}` : ''}</option>
+                        ))}
+                      </select>
+                      <p className="text-[11px] text-gray-400 mt-1 mb-3">
+                        {selectedCustomerId && storeCustomers.find((c) => c.id === selectedCustomerId)?.email
+                          ? 'Se le enviará la boleta por correo.'
+                          : 'Elige un cliente con correo para enviarle la boleta.'}
+                      </p>
+
+                      <p className="text-xs font-medium text-gray-500 mb-2">Descuento (opcional)</p>
+                      <div className="grid grid-cols-3 gap-2 mb-2">
+                        {([
+                          { key: 'none', label: 'Sin descuento' },
+                          { key: 'cart', label: 'Carrito' },
+                          { key: 'product', label: 'Un producto' },
+                        ] as const).map((o) => (
+                          <button
+                            key={o.key}
+                            onClick={() => {
+                              setDiscountScope(o.key);
+                              if (o.key === 'none') { setDiscountValue(''); setDiscountProductId(''); }
+                            }}
+                            className={`text-xs font-semibold py-2 rounded-xl transition active:scale-[0.97] ${
+                              discountScope === o.key ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            }`}
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {discountScope === 'product' && (
+                        <select
+                          value={discountProductId}
+                          onChange={(e) => setDiscountProductId(e.target.value)}
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-primary-400"
+                        >
+                          <option value="">Selecciona un producto del carro...</option>
+                          {cartLines.map((l) => (
+                            <option key={l.productId} value={l.productId}>{l.product!.name}</option>
+                          ))}
+                        </select>
+                      )}
+
+                      {discountScope !== 'none' && (
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="flex rounded-xl overflow-hidden border border-gray-200 shrink-0">
+                            <button
+                              onClick={() => setDiscountType('percent')}
+                              className={`px-3 py-2 text-xs font-semibold ${discountType === 'percent' ? 'bg-primary-500 text-white' : 'bg-white text-gray-500'}`}
+                            >
+                              %
+                            </button>
+                            <button
+                              onClick={() => setDiscountType('fixed')}
+                              className={`px-3 py-2 text-xs font-semibold ${discountType === 'fixed' ? 'bg-primary-500 text-white' : 'bg-white text-gray-500'}`}
+                            >
+                              $
+                            </button>
+                          </div>
+                          <input
+                            type="number"
+                            min="0"
+                            value={discountValue}
+                            onChange={(e) => setDiscountValue(e.target.value)}
+                            placeholder={discountType === 'percent' ? 'Ej: 10' : 'Ej: 5000'}
+                            className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+                          />
+                        </div>
+                      )}
 
                       <div className="space-y-1 text-sm">
                         <div className="flex items-center justify-between text-gray-500">
                           <span>Productos</span>
                           <span>{cartQtyTotal}</span>
                         </div>
+                        {cartDiscountAmount > 0 && (
+                          <div className="flex items-center justify-between text-red-500">
+                            <span>Descuento</span>
+                            <span>-${Math.round(cartDiscountAmount).toLocaleString('es-CL')}</span>
+                          </div>
+                        )}
                         <div className="flex items-center justify-between text-gray-500">
                           <span>Valor neto</span>
                           <span>${Math.round(cartNeto).toLocaleString('es-CL')}</span>
@@ -1395,14 +1681,14 @@ export default function StorePortalPage() {
               )}
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm md:col-span-2 flex flex-col" style={{ minHeight: 500 }}>
+            <div className="bg-white rounded-2xl shadow-sm md:col-span-2 flex flex-col" style={{ height: 600 }}>
               {!activeChatId ? (
                 <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
                   Selecciona una conversación
                 </div>
               ) : (
                 <>
-                  <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                  <div ref={messagesScrollRef} className="flex-1 overflow-y-auto p-4 space-y-2">
                     {messages.length === 0 && (
                       <p className="text-gray-400 text-sm text-center py-8">Sin mensajes todavía. Escribe el primero.</p>
                     )}
@@ -1484,6 +1770,53 @@ export default function StorePortalPage() {
           onClose={() => setShowProfileModal(false)}
           onStaffUidsChange={setStaffUids}
         />
+      )}
+
+      {showCreateCustomer && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">➕ Crear cliente</h3>
+            <p className="text-gray-500 text-xs mb-4">
+              Queda guardado para tus próximas ventas — base para un futuro programa de fidelización.
+            </p>
+            <div className="space-y-2">
+              <input
+                placeholder="Nombre completo"
+                value={newCustomerName}
+                onChange={(e) => setNewCustomerName(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
+              />
+              <input
+                placeholder="RUT (ej: 12.345.678-9)"
+                value={newCustomerRut}
+                onChange={(e) => setNewCustomerRut(e.target.value)}
+                onBlur={(e) => setNewCustomerRut(formatRut(e.target.value))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
+              />
+              <input
+                type="email"
+                placeholder="Correo (opcional — para enviarle la boleta)"
+                value={newCustomerEmail}
+                onChange={(e) => setNewCustomerEmail(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
+              />
+              {customerError && <p className="text-xs text-red-500">{customerError}</p>}
+              <button
+                onClick={createCustomer}
+                disabled={creatingCustomer}
+                className="w-full bg-primary-500 text-white font-semibold py-2.5 rounded-xl text-sm disabled:opacity-50 mt-2"
+              >
+                {creatingCustomer ? 'Creando...' : 'Crear cliente'}
+              </button>
+            </div>
+            <button
+              onClick={() => { setShowCreateCustomer(false); setCustomerError(''); }}
+              className="w-full mt-3 text-gray-500 text-sm hover:underline"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
