@@ -5,6 +5,7 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
+  type User as FirebaseUser,
 } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { initFirebase } from '@junglapp/firebase';
@@ -14,6 +15,10 @@ const { auth, db } = initFirebase();
 
 interface AuthContextType {
   user: User | null;
+  // The raw Firebase Auth user — needed for updatePassword() in the
+  // cambiar-contraseña screen, which app-level `user` (Firestore profile)
+  // can't provide.
+  firebaseUser: FirebaseUser | null;
   loading: boolean;
   // Set when Firebase Auth succeeded but the app-level profile couldn't be
   // loaded (Firestore read failed, or no users/{uid} doc exists) — distinct
@@ -27,11 +32,13 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      setFirebaseUser(fbUser);
       try {
         if (fbUser) {
           const userDoc = await getDoc(doc(db, 'users', fbUser.uid));
@@ -71,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, authError, signIn, logOut }}>
+    <AuthContext.Provider value={{ user, firebaseUser, loading, authError, signIn, logOut }}>
       {children}
     </AuthContext.Provider>
   );

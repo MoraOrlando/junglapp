@@ -15,6 +15,10 @@ export default function AccesoPage() {
 
   useEffect(() => {
     if (!loading && user) {
+      if ((user as any).mustChangePassword) {
+        router.replace('/acceso/cambiar-contrasena');
+        return;
+      }
       if (user.role === 'owner') router.replace('/owner');
       else if (user.role === 'store') router.replace('/store');
       else if (user.role === 'support') router.replace('/dashboard');
@@ -66,7 +70,12 @@ export default function AccesoPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700">Contraseña</label>
+              <Link href="/acceso/recuperar" className="text-xs font-medium text-primary-600 hover:text-primary-700">
+                ¿Olvidaste tu contraseña?
+              </Link>
+            </div>
             <input
               type="password"
               value={password}
