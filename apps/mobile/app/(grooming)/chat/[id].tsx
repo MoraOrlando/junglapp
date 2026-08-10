@@ -167,11 +167,10 @@ export default function GroomingChatScreen() {
         )}
       </View>
 
-      {/* AndroidManifest.xml already sets windowSoftInputMode="adjustResize" —
-          applying 'height' here too double-shrinks the layout on Android and
-          pushes the input bar out of view; undefined lets the native resize
-          do the whole job. */}
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      {/* targetSdk 36 (Android 15+) forces edge-to-edge, which breaks the
+          classic assumption that windowSoftInputMode="adjustResize" alone
+          resizes the window — 'height' handles the adjustment here too. */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         {/* Messages */}
         <ScrollView
           ref={scrollRef}

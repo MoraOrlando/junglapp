@@ -217,13 +217,11 @@ export default function ChatRoomScreen() {
       </View>
 
       <KeyboardAvoidingView
-        // AndroidManifest.xml already sets windowSoftInputMode="adjustResize",
-        // which resizes the whole window when the keyboard opens. Also
-        // applying the 'height' behavior here shrinks this view a *second*
-        // time on top of that, over-squeezing the layout and pushing the
-        // input bar out of view — undefined lets Android's native resize do
-        // the whole job.
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        // targetSdk 36 (Android 15+) forces edge-to-edge, which breaks the
+        // classic assumption that windowSoftInputMode="adjustResize" alone
+        // resizes the window — the keyboard now covers the input bar unless
+        // 'height' handles the adjustment here too, same as add-visit.tsx/login.tsx.
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
       >
         {/* ── Messages ── */}
