@@ -306,6 +306,56 @@ export interface ConsultationNote {
   careInstructions: string;
   prescription?: string;
   prescriptionImageUrl?: string;
+  // Same categories as the owner's manual visit log (add-visit.tsx) —
+  // 'Vacunas' | 'Control' | 'Operación' | 'Otro' — kept as a plain string
+  // rather than a union so both entry points share one literal list without
+  // this type having to be the source of truth for it.
+  visitReason?: string;
+  createdAt: string;
+}
+
+// Fecha de próxima dosis/control (vacuna, antiparasitario, control general).
+// 'vet_control' cubre también los reminders legacy creados antes de que
+// existieran los tipos 'vaccine'/'antiparasitic'.
+export type ReminderType = 'vaccine' | 'antiparasitic' | 'vet_control';
+
+export interface Reminder {
+  id: string;
+  ownerId: string;
+  petId: string;
+  type: ReminderType;
+  // Denormalizado desde el MedicalVisit que originó el ciclo — ausente en
+  // reminders creados antes de este campo (fallback a 'general' en la UI).
+  visitReason?: string;
+  date: string; // YYYY-MM-DD
+  vetName?: string | null;
+  done: boolean;
+  completedAt?: string;
+  // Usado por la Cloud Function programada para no reenviar el push el mismo día.
+  lastNotifiedDate?: string;
+  sourceVisitId?: string;
+  createdAt: string;
+}
+
+export interface MedicalVisit {
+  id: string;
+  petId: string;
+  ownerId: string;
+  date: string;
+  // 'Vacunas' | 'Control' (=antiparasitario) | 'Operación' | 'Otro' — ver
+  // apps/mobile/lib/visitReasons.ts, fuente única de verdad de estas categorías.
+  visitReason: string;
+  vetName: string;
+  vetId?: string | null;
+  // 0 cuando la visita se crea desde el flujo corto de "marcar como realizada".
+  rating: number;
+  notes?: string;
+  // También reusado como foto de "comprobante de dosis" al completar un reminder.
+  prescriptionUrl?: string | null;
+  // Generalizado: próxima dosis/control para cualquier visitReason (antes solo
+  // pensado para controles veterinarios).
+  nextControlDate?: string | null;
+  previousVisitId?: string | null;
   createdAt: string;
 }
 

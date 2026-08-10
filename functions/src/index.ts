@@ -2,6 +2,7 @@ import { setGlobalOptions } from 'firebase-functions/v2';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { onValueCreated } from 'firebase-functions/v2/database';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineSecret } from 'firebase-functions/params';
 import * as admin from 'firebase-admin';
 import { Resend } from 'resend';
@@ -368,6 +369,87 @@ export const onAppointmentUpdated = onDocumentUpdated('appointments/{appointment
     await sendPush(token, 'Cita cancelada', `La cita del ${date} a las ${time} fue cancelada`);
   }
 });
+
+// apps/mobile/lib/visitReasons.ts is the source of truth for these labels on
+// the client — functions/ isn't part of the monorepo workspaces (doesn't
+// depend on @junglapp/types), so the small map is duplicated here instead.
+const REMINDER_LABEL: Record<string, string> = {
+  vaccine: 'vacuna',
+  antiparasitic: 'control antiparasitario',
+  vet_control: 'control veterinario',
+};
+
+// Primera Cloud Function programada del proyecto: revisa diariamente los
+// reminders de vacunas/antiparasitarios/controles vencidos o próximos (en 3
+// días) y envía un push real, para avisar al dueño aunque no tenga la app
+// abierta. lastNotifiedDate evita reenviar el mismo aviso el mismo día en
+// corridas repetidas o si un reminder califica en ambos rangos.
+// Cloud Scheduler (a diferencia de Cloud Functions v2) no soporta la región
+// southamerica-west1 todavía — mismo tipo de excepción que onChatMessageCreated
+// más abajo, así que se sobreescribe a us-central1 explícitamente.
+export const sendVetReminderPushesV2 = onSchedule(
+  { schedule: '0 9 * * *', timeZone: 'America/Santiago', region: 'us-central1' },
+  async () => {
+    const db = admin.firestore();
+    const todayStr = new Date().toISOString().split('T')[0];
+    const in3DaysStr = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const [overdueSnap, upcomingSnap] = await Promise.all([
+      db.collection('reminders').where('done', '==', false).where('date', '<=', todayStr).get(),
+      db.collection('reminders').where('done', '==', false).where('date', '==', in3DaysStr).get(),
+    ]);
+
+    type Job = { ref: FirebaseFirestore.DocumentReference; ownerId: string; petId: string; type: string; date: string; kind: 'due' | 'upcoming' };
+    const jobs: Job[] = [];
+    const seen = new Set<string>();
+    const addJobs = (snap: FirebaseFirestore.QuerySnapshot, kind: Job['kind']) => {
+      for (const d of snap.docs) {
+        if (seen.has(d.id)) continue; // a reminder could match both ranges (e.g. date == today == in3Days edge case)
+        const data = d.data();
+        if (data.lastNotifiedDate === todayStr) continue; // already notified today
+        if (!data.ownerId || !data.petId) continue;
+        seen.add(d.id);
+        jobs.push({ ref: d.ref, ownerId: data.ownerId, petId: data.petId, type: data.type ?? 'vet_control', date: data.date, kind });
+      }
+    };
+    addJobs(overdueSnap, 'due');
+    addJobs(upcomingSnap, 'upcoming');
+    if (jobs.length === 0) return;
+
+    // Batch fetch — one .get() per unique owner/pet instead of one per job,
+    // since several jobs can share the same owner or pet.
+    const ownerIds = [...new Set(jobs.map((j) => j.ownerId))];
+    const petIds = [...new Set(jobs.map((j) => j.petId))];
+    const [tokenEntries, petEntries] = await Promise.all([
+      Promise.all(ownerIds.map(async (uid) => [uid, await getUserPushToken(uid)] as const)),
+      Promise.all(petIds.map(async (pid) => [pid, (await db.collection('pets').doc(pid).get()).data()?.name ?? 'tu mascota'] as const)),
+    ]);
+    const tokenByOwner = new Map(tokenEntries);
+    const petNameById = new Map(petEntries);
+
+    const messages = jobs
+      .map((job) => {
+        const token = tokenByOwner.get(job.ownerId);
+        if (!token || !Expo.isExpoPushToken(token)) return null;
+        const label = REMINDER_LABEL[job.type] ?? 'control veterinario';
+        const petName = petNameById.get(job.petId) ?? 'tu mascota';
+        const title = job.kind === 'due' ? `🔔 ${label} pendiente` : `📅 ${label} en 3 días`;
+        const body = job.kind === 'due'
+          ? `${petName} tiene un/a ${label} pendiente desde el ${job.date}.`
+          : `${petName} tiene un/a ${label} programado/a para el ${job.date}.`;
+        return { to: token, title, body, sound: 'default' as const, data: { petId: job.petId } };
+      })
+      .filter((m): m is NonNullable<typeof m> => m !== null);
+
+    for (const chunk of expo.chunkPushNotifications(messages)) {
+      await expo.sendPushNotificationsAsync(chunk).catch((e) => console.error('sendVetReminderPushesV2 push error', e));
+    }
+
+    // Mark every processed job (with or without a valid token) so the next
+    // run doesn't re-select it today.
+    await Promise.all(jobs.map((j) => j.ref.update({ lastNotifiedDate: todayStr })));
+  }
+);
 
 // Notifica a ambos dueños cuando dos mascotas hacen match mutuo. La app solo
 // muestra el modal "¡Es un match!" al dueño que está mirando la pantalla en

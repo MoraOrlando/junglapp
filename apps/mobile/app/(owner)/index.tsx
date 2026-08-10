@@ -7,16 +7,13 @@ import { collection, query, where, onSnapshot, getDocs, addDoc } from 'firebase/
 import { ref, set } from 'firebase/database';
 import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
-import type { Pet, Veterinarian, Walker } from '@junglapp/types';
+import CompleteReminderModal from '../../components/CompleteReminderModal';
+import { getVisitSection, SECTION_META } from '../../lib/visitReasons';
+import type { Pet, Veterinarian, Walker, Reminder } from '@junglapp/types';
 
 const { db, rtdb } = initFirebase();
 
-interface ControlReminder {
-  id: string;
-  petId: string;
-  date: string;
-  vetName?: string | null;
-}
+const ACTIVE_REMINDER_TYPES = ['vaccine', 'antiparasitic', 'vet_control'];
 
 interface AppointmentSummary {
   id: string;
@@ -34,10 +31,11 @@ export default function OwnerHomeScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const [pets, setPets] = useState<Pet[]>([]);
-  const [reminders, setReminders] = useState<ControlReminder[]>([]);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
   const [appointments, setAppointments] = useState<AppointmentSummary[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [activeReminder, setActiveReminder] = useState<Reminder | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -54,8 +52,8 @@ export default function OwnerHomeScreen() {
     const unsub = onSnapshot(q, (snap) => {
       setReminders(
         snap.docs
-          .map((d) => ({ id: d.id, ...d.data() } as any))
-          .filter((r) => r.type === 'vet_control' && !r.done)
+          .map((d) => ({ id: d.id, ...d.data() } as Reminder))
+          .filter((r) => ACTIVE_REMINDER_TYPES.includes(r.type) && !r.done)
           .sort((a, b) => a.date.localeCompare(b.date))
       );
     }, (err) => { if (__DEV__) console.log('reminders listener:', err.code); });
@@ -180,10 +178,11 @@ export default function OwnerHomeScreen() {
           {upcomingReminders.map((r) => {
             const petName = pets.find((p) => p.id === r.petId)?.name ?? 'tu mascota';
             const isToday = r.date === today;
+            const sectionTitle = SECTION_META[getVisitSection(r.visitReason)].title;
             return (
               <TouchableOpacity
                 key={r.id}
-                onPress={() => router.push(`/(owner)/pets/${r.petId}?from=home` as any)}
+                onPress={() => setActiveReminder(r)}
                 style={{
                   backgroundColor: isToday ? '#FEF2F2' : '#FFFBEB',
                   borderWidth: 1, borderColor: isToday ? '#FECACA' : '#FDE68A',
@@ -194,7 +193,7 @@ export default function OwnerHomeScreen() {
                 <Text style={{ fontSize: 22 }}>🔔</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontWeight: '700', fontSize: 13, color: isToday ? '#DC2626' : '#92400E' }}>
-                    {isToday ? '¡Control veterinario HOY!' : 'Próximo control veterinario'}
+                    {isToday ? `¡${sectionTitle} HOY!` : `Próximo/a: ${sectionTitle}`}
                   </Text>
                   <Text style={{ fontSize: 12, color: isToday ? '#EF4444' : '#B45309', marginTop: 1 }}>
                     {petName} — {r.date}{r.vetName ? ` · ${r.vetName}` : ''}
@@ -381,6 +380,14 @@ export default function OwnerHomeScreen() {
           </View>
         )}
       </ScrollView>
+
+      <CompleteReminderModal
+        visible={!!activeReminder}
+        reminder={activeReminder}
+        petName={pets.find((p) => p.id === activeReminder?.petId)?.name ?? 'tu mascota'}
+        onClose={() => setActiveReminder(null)}
+        onCompleted={() => setActiveReminder(null)}
+      />
     </SafeAreaView>
   );
 }

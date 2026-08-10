@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+import { VISIT_REASONS, reminderTypeForReason } from '../../../lib/visitReasons';
 import type { Veterinarian } from '@junglapp/types';
 
 const { db } = initFirebase();
@@ -50,8 +51,6 @@ export default function AddVisitScreen() {
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reminderAdded, setReminderAdded] = useState(false);
-
-  const VISIT_REASONS = ['Vacunas', 'Control', 'Operación', 'Otro'];
 
   // Autocomplete: search registered vets by name or email as user types
   useEffect(() => {
@@ -189,7 +188,7 @@ export default function AddVisitScreen() {
       let prescriptionUrl: string | undefined;
       if (prescriptionUri) prescriptionUrl = await uploadImage(prescriptionUri);
 
-      await addDoc(collection(db, COLLECTIONS.MEDICAL_VISITS), {
+      const visitDoc = await addDoc(collection(db, COLLECTIONS.MEDICAL_VISITS), {
         petId,
         ownerId: user?.uid ?? null,
         date: new Date().toISOString().split('T')[0],
@@ -209,10 +208,12 @@ export default function AddVisitScreen() {
         await addDoc(collection(db, COLLECTIONS.REMINDERS), {
           ownerId: user?.uid ?? null,
           petId,
-          type: 'vet_control',
+          type: reminderTypeForReason(visitReason),
+          visitReason,
           date: nextControlDate,
           vetName: selectedVet?.name || vetName || null,
           done: false,
+          sourceVisitId: visitDoc.id,
           createdAt: new Date().toISOString(),
         });
         // Device calendar reminder

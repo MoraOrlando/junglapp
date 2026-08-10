@@ -13,7 +13,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import YearCalendar from '../../../components/YearCalendar';
-import type { Pet } from '@junglapp/types';
+import CompleteReminderModal from '../../../components/CompleteReminderModal';
+import { getVisitSection, SECTION_META, SECTION_ORDER, VISIT_REASON_ICONS, type VisitSection } from '../../../lib/visitReasons';
+import type { Pet, Reminder } from '@junglapp/types';
 
 // deceasedAt is stored as YYYY-MM-DD, shown to the user as DD-MM-YYYY.
 function toDisplayDate(isoDate: string): string {
@@ -28,6 +30,7 @@ interface VisitEntry {
   date: string;
   vetName: string;
   source: 'owner' | 'vet';
+  visitReason?: string;
   notes?: string;
   diagnosis?: string;
   treatment?: string;
@@ -73,6 +76,8 @@ export default function PetDetailScreen() {
   const { user } = useAuth();
   const [pet, setPet] = useState<Pet | null>(null);
   const [visits, setVisits] = useState<VisitEntry[]>([]);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [activeReminder, setActiveReminder] = useState<Reminder | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLost, setIsLost] = useState(false);
   const [showDeceasedCalendar, setShowDeceasedCalendar] = useState(false);
@@ -116,6 +121,18 @@ export default function PetDetailScreen() {
     return unsubLost;
   }, [id]);
 
+  // Pending vaccine/control reminders for this pet — same source the home
+  // banner reads from, so "marcar como realizada" from either screen stays in sync.
+  useEffect(() => {
+    if (!id || !user) return;
+    const unsub = onSnapshot(
+      query(collection(db, COLLECTIONS.REMINDERS), where('petId', '==', id), where('ownerId', '==', user.uid)),
+      (snap) => setReminders(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Reminder)).filter((r) => !r.done)),
+      () => {}
+    );
+    return unsub;
+  }, [id, user?.uid]);
+
   // Reload visit history every time this screen comes into focus (e.g. after adding a visit).
   useFocusEffect(useCallback(() => {
     if (!id || !user) return;
@@ -137,6 +154,7 @@ export default function PetDetailScreen() {
           ownerVisits.push({
             id: d.id, source: 'owner',
             date: v.date ?? '', vetName: v.vetName ?? 'Veterinario',
+            visitReason: v.visitReason,
             notes: v.notes, prescriptionUrl: v.prescriptionUrl,
             nextControlDate: v.nextControlDate,
           });
@@ -159,6 +177,7 @@ export default function PetDetailScreen() {
             vetVisits.push({
               id: d.id, source: 'vet',
               date: a.date ?? '', vetName: a.vetName ?? 'Veterinario JunglApp',
+              visitReason: a.consultation?.visitReason,
               diagnosis: a.consultation?.diagnosis,
               treatment: a.consultation?.treatmentDone || a.consultation?.treatment,
               prescriptionUrl: a.consultation?.prescriptionImageUrl,
@@ -447,6 +466,14 @@ export default function PetDetailScreen() {
                     </Text>
                   </View>
 
+                  {/* Reason */}
+                  {selectedVisit.visitReason ? (
+                    <View style={{ backgroundColor: '#F8FAFC', borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: 18 }}>{VISIT_REASON_ICONS[selectedVisit.visitReason] ?? '📋'}</Text>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#1E293B' }}>{selectedVisit.visitReason}</Text>
+                    </View>
+                  ) : null}
+
                   {/* Diagnosis */}
                   {selectedVisit.diagnosis ? (
                     <View style={{ backgroundColor: '#EFF6FF', borderRadius: 12, padding: 12 }}>
@@ -494,7 +521,7 @@ export default function PetDetailScreen() {
                     </TouchableOpacity>
                   ) : null}
 
-                  {!selectedVisit.diagnosis && !selectedVisit.treatment && !selectedVisit.notes && !selectedVisit.prescriptionUrl && (
+                  {!selectedVisit.visitReason && !selectedVisit.diagnosis && !selectedVisit.treatment && !selectedVisit.notes && !selectedVisit.prescriptionUrl && (
                     <Text style={{ color: '#94A3B8', textAlign: 'center', paddingVertical: 16 }}>Sin detalles adicionales registrados</Text>
                   )}
                 </View>
@@ -882,38 +909,81 @@ export default function PetDetailScreen() {
             </View>
           )}
 
-          {/* Visit history */}
-          <View className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100">
-            <Text className="text-gray-400 text-xs mb-2">Historial de visitas</Text>
-            {visits.length === 0 ? (
-              <View className="items-center py-4">
-                <Text className="text-gray-300 text-4xl mb-2">🏥</Text>
-                <Text className="text-gray-400 text-sm">Sin visitas registradas aún</Text>
-              </View>
-            ) : (
-              visits.map((v) => (
-                <TouchableOpacity
-                  key={`${v.source}-${v.id}`}
-                  onPress={() => setSelectedVisit(v)}
-                  activeOpacity={0.7}
-                  style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}
-                >
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ fontWeight: '700', color: '#1E293B', fontSize: 13 }}>🩺 {v.vetName}</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={{ color: '#94A3B8', fontSize: 12 }}>{v.date}</Text>
-                      <Text style={{ color: '#CBD5E1', fontSize: 16 }}>›</Text>
+          {/* Visit history, grouped into Vacunas / Control antiparasitario / Consultas generales */}
+          {SECTION_ORDER.map((section) => {
+            const sectionVisits = visits.filter((v) => getVisitSection(v.visitReason) === section);
+            const sectionReminder = reminders
+              .filter((r) => getVisitSection(r.visitReason) === section)
+              .sort((a, b) => a.date.localeCompare(b.date))[0];
+            const meta = SECTION_META[section as VisitSection];
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            return (
+              <View key={section} className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100">
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                  <Text style={{ fontSize: 16 }}>{meta.emoji}</Text>
+                  <Text className="text-gray-700 font-semibold text-sm">{meta.title}</Text>
+                  <Text className="text-gray-400 text-xs">({sectionVisits.length})</Text>
+                </View>
+
+                {sectionReminder && (
+                  <TouchableOpacity
+                    onPress={() => setActiveReminder(sectionReminder)}
+                    activeOpacity={0.8}
+                    style={{
+                      backgroundColor: sectionReminder.date < todayStr ? '#FEF2F2' : '#FFFBEB',
+                      borderWidth: 1, borderColor: sectionReminder.date < todayStr ? '#FECACA' : '#FDE68A',
+                      borderRadius: 12, padding: 10, marginBottom: 10,
+                      flexDirection: 'row', alignItems: 'center', gap: 8,
+                    }}
+                  >
+                    <Text style={{ fontSize: 18 }}>🔔</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontWeight: '700', fontSize: 12, color: sectionReminder.date < todayStr ? '#DC2626' : '#92400E' }}>
+                        Próxima dosis: {sectionReminder.date}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#9CA3AF' }}>Toca para marcar como realizada</Text>
                     </View>
+                    <Text style={{ color: '#D1D5DB', fontSize: 16 }}>›</Text>
+                  </TouchableOpacity>
+                )}
+
+                {sectionVisits.length === 0 ? (
+                  <View className="items-center py-4">
+                    <Text className="text-gray-300 text-4xl mb-2">{meta.emoji}</Text>
+                    <Text className="text-gray-400 text-sm">Sin registros aún</Text>
                   </View>
-                  <Text style={{ fontSize: 11, marginTop: 2, color: v.source === 'vet' ? '#3B82F6' : '#94A3B8' }}>
-                    {v.source === 'vet' ? 'Consulta agendada vía JunglApp ✓' : 'Registrada por ti'}
-                  </Text>
-                  {v.diagnosis ? <Text style={{ color: '#64748B', fontSize: 11, marginTop: 2 }} numberOfLines={1}>Diagnóstico: {v.diagnosis}</Text> : null}
-                  {v.prescriptionUrl ? <Text style={{ color: '#059669', fontSize: 11, marginTop: 2 }}>📎 Ver receta</Text> : null}
-                </TouchableOpacity>
-              ))
-            )}
-          </View>
+                ) : (
+                  sectionVisits.map((v) => (
+                    <TouchableOpacity
+                      key={`${v.source}-${v.id}`}
+                      onPress={() => setSelectedVisit(v)}
+                      activeOpacity={0.7}
+                      style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}
+                    >
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ fontWeight: '700', color: '#1E293B', fontSize: 13 }}>🩺 {v.vetName}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={{ color: '#94A3B8', fontSize: 12 }}>{v.date}</Text>
+                          <Text style={{ color: '#CBD5E1', fontSize: 16 }}>›</Text>
+                        </View>
+                      </View>
+                      <Text style={{ fontSize: 11, marginTop: 2, color: v.source === 'vet' ? '#3B82F6' : '#94A3B8' }}>
+                        {v.source === 'vet' ? 'Consulta agendada vía JunglApp ✓' : 'Registrada por ti'}
+                      </Text>
+                      {v.visitReason ? (
+                        <Text style={{ color: '#374151', fontSize: 11, marginTop: 2, fontWeight: '600' }}>
+                          {VISIT_REASON_ICONS[v.visitReason] ?? '📋'} {v.visitReason}
+                        </Text>
+                      ) : null}
+                      {v.diagnosis ? <Text style={{ color: '#64748B', fontSize: 11, marginTop: 2 }} numberOfLines={1}>Diagnóstico: {v.diagnosis}</Text> : null}
+                      {v.prescriptionUrl ? <Text style={{ color: '#059669', fontSize: 11, marginTop: 2 }}>📎 Ver receta</Text> : null}
+                    </TouchableOpacity>
+                  ))
+                )}
+              </View>
+            );
+          })}
 
           {pet.medicalRecord?.notes && (
             <View className="bg-white rounded-2xl p-4 mb-6 shadow-sm border border-gray-100">
@@ -925,6 +995,14 @@ export default function PetDetailScreen() {
           <View className="h-8" />
         </View>
       </ScrollView>
+
+      <CompleteReminderModal
+        visible={!!activeReminder}
+        reminder={activeReminder}
+        petName={pet.name}
+        onClose={() => setActiveReminder(null)}
+        onCompleted={() => setActiveReminder(null)}
+      />
     </SafeAreaView>
   );
 }
