@@ -29,16 +29,18 @@ function initFirebase() {
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     try {
       // Try to initialize with AsyncStorage persistence (React Native only).
-      // Falls back to default persistence on web or if AsyncStorage is unavailable.
+      // getReactNativePersistence isn't exported by the installed firebase
+      // version, so this always throws and we fall through to getAuth()
+      // below. Kept as the primary attempt in case a future firebase bump
+      // restores it. On web, calling initializeAuth(app) as a middle
+      // fallback (previously here) silently produced an auth instance with
+      // no working persistence — sessions didn't survive a page refresh.
+      // getAuth() auto-selects indexedDB/localStorage/sessionStorage on web.
       const AsyncStorage = require('@react-native-async-storage/async-storage').default;
       const { getReactNativePersistence } = require('firebase/auth');
       auth = initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) });
     } catch {
-      try {
-        auth = initializeAuth(app);
-      } catch {
-        auth = getAuth(app);
-      }
+      auth = getAuth(app);
     }
     db = getFirestore(app);
     storage = getStorage(app);
