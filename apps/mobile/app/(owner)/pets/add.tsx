@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform, Alert, Switch,
+  KeyboardAvoidingView, Platform, Alert, Switch, Modal,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -164,6 +164,8 @@ export default function AddPetScreen() {
   const [allergyDetail, setAllergyDetail] = useState('');
   const [breedPickerOpen, setBreedPickerOpen] = useState(false);
   const [customBreed, setCustomBreed] = useState(false);
+  const [showCareModal, setShowCareModal] = useState(false);
+  const [savedCareSpecies, setSavedCareSpecies] = useState<'dog' | 'cat' | null>(null);
 
   const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -171,9 +173,6 @@ export default function AddPetScreen() {
   });
 
   const species = watch('species');
-  const birthDateInput = watch('birthDate');
-  const ageMonths = species !== 'other' ? getAgeInMonths(toISO(birthDateInput || '')) : null;
-  const showBabyCare = (species === 'dog' || species === 'cat') && ageMonths !== null && ageMonths < 3;
 
   useEffect(() => {
     if (!user) return;
@@ -220,7 +219,7 @@ export default function AddPetScreen() {
     ]);
   }
 
-  async function onSubmit(data: FormData, redirectToVetSearch = false) {
+  async function onSubmit(data: FormData) {
     if (!user) return;
     setLoading(true);
     try {
@@ -258,10 +257,16 @@ export default function AddPetScreen() {
         medicalRecord: { vaccinations: [], allergies: [], conditions: [], notes: '', lastUpdated: new Date().toISOString() },
         createdAt: new Date().toISOString(),
       });
-      // Replace (not push) so "Volver" from the vet search doesn't land
-      // back on this now-submitted form.
-      if (redirectToVetSearch) router.replace('/(owner)/near/vet' as any);
-      else router.back();
+      // Pop the care tips up as a modal after saving instead of navigating
+      // away — keeps the registration form itself short, and the pet is
+      // already safely persisted by the time this shows.
+      const ageAtSubmit = data.species !== 'other' ? getAgeInMonths(toISO(data.birthDate)) : null;
+      if ((data.species === 'dog' || data.species === 'cat') && ageAtSubmit !== null && ageAtSubmit < 3) {
+        setSavedCareSpecies(data.species);
+        setShowCareModal(true);
+      } else {
+        router.back();
+      }
     } catch (e: any) {
       Alert.alert('Error al guardar', e.message);
     } finally {
@@ -421,45 +426,6 @@ export default function AddPetScreen() {
               )}
             />
 
-            {/* Baby care info — vaccines/deworming/feeding are standard by
-                species+age, not breed, so this only depends on species. */}
-            {showBabyCare && (
-              <View style={{ backgroundColor: PRIMARY_LIGHT, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#BBF7D0' }}>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: PRIMARY, marginBottom: 10 }}>
-                  {BABY_CARE[species as 'dog' | 'cat'].emoji} {BABY_CARE[species as 'dog' | 'cat'].title}
-                </Text>
-
-                <Text style={{ fontSize: 13, fontWeight: '600', color: DARK_TEXT, marginBottom: 4 }}>💉 Vacunas</Text>
-                {BABY_CARE[species as 'dog' | 'cat'].vaccines.map((v, i) => (
-                  <Text key={i} style={{ fontSize: 13, color: GRAY_TEXT, marginBottom: 2 }}>• {v}</Text>
-                ))}
-
-                <Text style={{ fontSize: 13, fontWeight: '600', color: DARK_TEXT, marginTop: 10, marginBottom: 4 }}>🪱 Desparasitación</Text>
-                <Text style={{ fontSize: 13, color: GRAY_TEXT }}>{BABY_CARE[species as 'dog' | 'cat'].deworming}</Text>
-
-                <Text style={{ fontSize: 13, fontWeight: '600', color: DARK_TEXT, marginTop: 10, marginBottom: 4 }}>🍽️ Alimentación</Text>
-                <Text style={{ fontSize: 13, color: GRAY_TEXT }}>{BABY_CARE[species as 'dog' | 'cat'].feeding}</Text>
-
-                <Text style={{ fontSize: 13, fontWeight: '600', color: DARK_TEXT, marginTop: 10, marginBottom: 4 }}>🩺 Cuidados generales</Text>
-                {BABY_CARE[species as 'dog' | 'cat'].generalCare.map((v, i) => (
-                  <Text key={i} style={{ fontSize: 13, color: GRAY_TEXT, marginBottom: 2 }}>• {v}</Text>
-                ))}
-
-                <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 10, fontStyle: 'italic' }}>
-                  Información orientativa, no reemplaza una consulta veterinaria.
-                </Text>
-                <TouchableOpacity
-                  style={{ marginTop: 10, backgroundColor: loading ? '#86efac' : PRIMARY, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}
-                  disabled={loading}
-                  onPress={handleSubmit((data) => onSubmit(data, true))}
-                >
-                  <Text style={{ color: 'white', fontWeight: '600', fontSize: 13 }}>
-                    {loading ? 'Guardando...' : 'Guardar y agendar con un veterinario'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
             {/* Optional fields */}
             <View>
               <Text style={{ fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 6 }}>Número de chip (opcional)</Text>
@@ -593,7 +559,7 @@ export default function AddPetScreen() {
               borderRadius: 16, paddingVertical: 16, alignItems: 'center',
               marginTop: 24, marginBottom: 40,
             }}
-            onPress={handleSubmit((data) => onSubmit(data))}
+            onPress={handleSubmit(onSubmit)}
             disabled={loading}
           >
             <Text style={{ color: 'white', fontWeight: '600', fontSize: 16 }}>
@@ -603,6 +569,63 @@ export default function AddPetScreen() {
 
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Baby care pop-up — shown after the pet is already saved, so it
+          doesn't add length to the registration form itself. Vaccines/
+          deworming/feeding are standard by species+age, not breed. */}
+      <Modal visible={showCareModal} animationType="slide" transparent onRequestClose={() => { setShowCareModal(false); router.back(); }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: '85%' }}>
+            {savedCareSpecies && (
+              <>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <Text style={{ fontSize: 17, fontWeight: '800', color: PRIMARY, flex: 1, paddingRight: 12 }}>
+                    {BABY_CARE[savedCareSpecies].emoji} {BABY_CARE[savedCareSpecies].title}
+                  </Text>
+                  <TouchableOpacity onPress={() => { setShowCareModal(false); router.back(); }} style={{ padding: 4 }}>
+                    <Text style={{ fontSize: 22, color: '#94A3B8' }}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: DARK_TEXT, marginBottom: 4 }}>💉 Vacunas</Text>
+                  {BABY_CARE[savedCareSpecies].vaccines.map((v, i) => (
+                    <Text key={i} style={{ fontSize: 13, color: GRAY_TEXT, marginBottom: 2 }}>• {v}</Text>
+                  ))}
+
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: DARK_TEXT, marginTop: 10, marginBottom: 4 }}>🪱 Desparasitación</Text>
+                  <Text style={{ fontSize: 13, color: GRAY_TEXT }}>{BABY_CARE[savedCareSpecies].deworming}</Text>
+
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: DARK_TEXT, marginTop: 10, marginBottom: 4 }}>🍽️ Alimentación</Text>
+                  <Text style={{ fontSize: 13, color: GRAY_TEXT }}>{BABY_CARE[savedCareSpecies].feeding}</Text>
+
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: DARK_TEXT, marginTop: 10, marginBottom: 4 }}>🩺 Cuidados generales</Text>
+                  {BABY_CARE[savedCareSpecies].generalCare.map((v, i) => (
+                    <Text key={i} style={{ fontSize: 13, color: GRAY_TEXT, marginBottom: 2 }}>• {v}</Text>
+                  ))}
+
+                  <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 10, fontStyle: 'italic' }}>
+                    Información orientativa, no reemplaza una consulta veterinaria.
+                  </Text>
+
+                  <TouchableOpacity
+                    style={{ marginTop: 16, backgroundColor: PRIMARY, borderRadius: 12, paddingVertical: 14, alignItems: 'center' }}
+                    onPress={() => { setShowCareModal(false); router.replace('/(owner)/near/vet' as any); }}
+                  >
+                    <Text style={{ color: 'white', fontWeight: '700', fontSize: 14 }}>Agendar con un veterinario</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{ marginTop: 10, paddingVertical: 10, alignItems: 'center' }}
+                    onPress={() => { setShowCareModal(false); router.back(); }}
+                  >
+                    <Text style={{ color: '#6B7280', fontWeight: '600', fontSize: 13 }}>Ahora no</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
