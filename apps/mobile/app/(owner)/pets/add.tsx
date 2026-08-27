@@ -10,10 +10,13 @@ import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import YearCalendar from '../../../components/YearCalendar';
+import BreedPickerModal, { CUSTOM_BREED } from '../../../components/BreedPickerModal';
 import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import { initFirebase, COLLECTIONS, uploadImages } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+import { DOG_BREEDS, CAT_BREEDS } from '../../../lib/breeds';
+import { getAgeInMonths, BABY_CARE } from '../../../lib/petCare';
 
 const MAX_PETS = 5;
 
@@ -129,10 +132,13 @@ function DatePickerField({
   );
 }
 
+// Letters (incl. accents/ñ), spaces and hyphens only — no digits or symbols.
+const TEXT_ONLY = /^[A-Za-zÀ-ÖØ-öø-ÿÑñ][A-Za-zÀ-ÖØ-öø-ÿÑñ\s'-]*$/;
+
 const schema = z.object({
   name: z.string().min(1, 'Nombre requerido'),
   species: z.enum(['dog', 'cat', 'other']),
-  breed: z.string().min(1, 'Raza requerida'),
+  breed: z.string().min(1, 'Raza requerida').regex(TEXT_ONLY, 'Solo letras, sin números ni símbolos'),
   color: z.string().min(1, 'Color requerido'),
   birthDate: z.string().min(8, 'Fecha de nacimiento requerida'),
   familyDate: z.string().min(8, 'Fecha de unión requerida'),
@@ -158,11 +164,18 @@ export default function AddPetScreen() {
   const [weight, setWeight] = useState('');
   const [allergic, setAllergic] = useState(false);
   const [allergyDetail, setAllergyDetail] = useState('');
+  const [breedPickerOpen, setBreedPickerOpen] = useState(false);
+  const [customBreed, setCustomBreed] = useState(false);
 
-  const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
+  const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { species: 'dog' },
   });
+
+  const species = watch('species');
+  const birthDateInput = watch('birthDate');
+  const ageMonths = species !== 'other' ? getAgeInMonths(toISO(birthDateInput || '')) : null;
+  const showBabyCare = (species === 'dog' || species === 'cat') && ageMonths !== null && ageMonths < 3;
 
   useEffect(() => {
     if (!user) return;
@@ -306,7 +319,10 @@ export default function AddPetScreen() {
                       backgroundColor: value === s.id ? PRIMARY : 'white',
                       alignItems: 'center',
                     }}
-                    onPress={() => onChange(s.id)}
+                    onPress={() => {
+                      if (value !== s.id) { setCustomBreed(false); setValue('breed', ''); }
+                      onChange(s.id);
+                    }}
                   >
                     <Text style={{ fontSize: 13, fontWeight: '600', color: value === s.id ? 'white' : GRAY_TEXT }}>{s.label}</Text>
                   </TouchableOpacity>
@@ -315,11 +331,64 @@ export default function AddPetScreen() {
             )}
           />
 
+          {/* Breed / species-other field */}
+          <View style={{ marginBottom: 16 }}>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 6 }}>
+              {species === 'other' ? '¿Qué tipo de mascota?' : 'Raza'}
+            </Text>
+            {species === 'other' || customBreed ? (
+              <Controller
+                control={control}
+                name="breed"
+                render={({ field: { onChange, value } }) => (
+                  <TextInput
+                    style={inputStyle}
+                    placeholder={species === 'other' ? 'Conejo, hámster, tortuga...' : 'Escribe la raza'}
+                    placeholderTextColor="#9CA3AF"
+                    value={value}
+                    onChangeText={onChange}
+                  />
+                )}
+              />
+            ) : (
+              <Controller
+                control={control}
+                name="breed"
+                render={({ field: { value } }) => (
+                  <TouchableOpacity
+                    style={{ ...inputStyle, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                    onPress={() => setBreedPickerOpen(true)}
+                  >
+                    <Text style={{ fontSize: 15, color: value ? DARK_TEXT : '#9CA3AF' }}>
+                      {value || 'Selecciona la raza'}
+                    </Text>
+                    <Text style={{ color: GRAY_TEXT }}>▾</Text>
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+            {species !== 'other' && customBreed && (
+              <TouchableOpacity onPress={() => { setCustomBreed(false); setValue('breed', ''); }} style={{ marginTop: 6 }}>
+                <Text style={{ color: PRIMARY, fontSize: 12, fontWeight: '500' }}>← Elegir de la lista</Text>
+              </TouchableOpacity>
+            )}
+            {errors.breed && <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>{errors.breed.message}</Text>}
+          </View>
+
+          <BreedPickerModal
+            visible={breedPickerOpen}
+            breeds={species === 'cat' ? CAT_BREEDS : DOG_BREEDS}
+            onClose={() => setBreedPickerOpen(false)}
+            onSelect={(b) => {
+              if (b === CUSTOM_BREED) { setCustomBreed(true); setValue('breed', ''); }
+              else setValue('breed', b, { shouldValidate: true });
+            }}
+          />
+
           {/* Text fields */}
           <View style={{ gap: 16 }}>
             {([
               { name: 'name' as const, label: 'Nombre', placeholder: 'Max' },
-              { name: 'breed' as const, label: 'Raza', placeholder: 'Labrador Retriever' },
               { name: 'color' as const, label: 'Color', placeholder: 'Dorado' },
             ]).map((f) => (
               <View key={f.name}>
@@ -350,6 +419,42 @@ export default function AddPetScreen() {
                 <DatePickerField label="Fecha que se unió a la familia" value={value} onChange={onChange} maxDate={today} error={errors.familyDate?.message} />
               )}
             />
+
+            {/* Baby care info — vaccines/deworming/feeding are standard by
+                species+age, not breed, so this only depends on species. */}
+            {showBabyCare && (
+              <View style={{ backgroundColor: PRIMARY_LIGHT, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#BBF7D0' }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: PRIMARY, marginBottom: 10 }}>
+                  {BABY_CARE[species as 'dog' | 'cat'].emoji} {BABY_CARE[species as 'dog' | 'cat'].title}
+                </Text>
+
+                <Text style={{ fontSize: 13, fontWeight: '600', color: DARK_TEXT, marginBottom: 4 }}>💉 Vacunas</Text>
+                {BABY_CARE[species as 'dog' | 'cat'].vaccines.map((v, i) => (
+                  <Text key={i} style={{ fontSize: 13, color: GRAY_TEXT, marginBottom: 2 }}>• {v}</Text>
+                ))}
+
+                <Text style={{ fontSize: 13, fontWeight: '600', color: DARK_TEXT, marginTop: 10, marginBottom: 4 }}>🪱 Desparasitación</Text>
+                <Text style={{ fontSize: 13, color: GRAY_TEXT }}>{BABY_CARE[species as 'dog' | 'cat'].deworming}</Text>
+
+                <Text style={{ fontSize: 13, fontWeight: '600', color: DARK_TEXT, marginTop: 10, marginBottom: 4 }}>🍽️ Alimentación</Text>
+                <Text style={{ fontSize: 13, color: GRAY_TEXT }}>{BABY_CARE[species as 'dog' | 'cat'].feeding}</Text>
+
+                <Text style={{ fontSize: 13, fontWeight: '600', color: DARK_TEXT, marginTop: 10, marginBottom: 4 }}>🩺 Cuidados generales</Text>
+                {BABY_CARE[species as 'dog' | 'cat'].generalCare.map((v, i) => (
+                  <Text key={i} style={{ fontSize: 13, color: GRAY_TEXT, marginBottom: 2 }}>• {v}</Text>
+                ))}
+
+                <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 10, fontStyle: 'italic' }}>
+                  Información orientativa, no reemplaza una consulta veterinaria.
+                </Text>
+                <TouchableOpacity
+                  style={{ marginTop: 10, backgroundColor: PRIMARY, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}
+                  onPress={() => router.push('/(owner)/vets' as any)}
+                >
+                  <Text style={{ color: 'white', fontWeight: '600', fontSize: 13 }}>Agendar con un veterinario</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Optional fields */}
             <View>
