@@ -10,10 +10,11 @@ import YearCalendar from '../../../components/YearCalendar';
 import * as ImagePicker from 'expo-image-picker';
 import * as ExpoCalendar from 'expo-calendar';
 import {
-  collection, addDoc, query, where, getDocs, orderBy, limit, doc, getDoc
+  collection, addDoc, updateDoc, deleteDoc, query, where, getDocs, orderBy, limit, doc, getDoc
 } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+import { getSortedAvailableSlots } from '../../../lib/distance';
 import { VISIT_REASONS, reminderTypeForReason } from '../../../lib/visitReasons';
 import type { Veterinarian } from '@junglapp/types';
 
@@ -32,17 +33,25 @@ function StarRating({ value, onChange }: { value: number; onChange: (v: number) 
 }
 
 export default function AddVisitScreen() {
-  const { petId } = useLocalSearchParams<{ petId: string }>();
+  const { petId, visitId } = useLocalSearchParams<{ petId: string; visitId?: string }>();
+  const isEditMode = !!visitId;
   const router = useRouter();
   const { user } = useAuth();
 
+  const [loadingVisit, setLoadingVisit] = useState(isEditMode);
   const [visitReason, setVisitReason] = useState('');
   const [showReasonDropdown, setShowReasonDropdown] = useState(false);
+  // Defaults to today, but the visit may have happened in the past — the
+  // owner is logging it after the fact, not booking it, so any past date
+  // must be selectable (only future dates are blocked below via maxDate).
+  const [visitDate, setVisitDate] = useState(new Date().toISOString().split('T')[0]);
+  const [showVisitCalendar, setShowVisitCalendar] = useState(false);
   const [vetName, setVetName] = useState('');
   const [vetEmail, setVetEmail] = useState('');
   const [vetSuggestions, setVetSuggestions] = useState<Veterinarian[]>([]);
   const [selectedVet, setSelectedVet] = useState<Veterinarian | null>(null);
   const [rating, setRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
   const [notes, setNotes] = useState('');
   const [prescriptionUri, setPrescriptionUri] = useState<string | null>(null);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -51,6 +60,36 @@ export default function AddVisitScreen() {
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reminderAdded, setReminderAdded] = useState(false);
+
+  // Edit mode: load the existing owner-logged visit and prefill the form.
+  // Rating/review aren't stored fields meant to be re-edited here (the
+  // review lives in its own collection with a one-per-vet rule), so they're
+  // left at their defaults and that section of the form is hidden below.
+  useEffect(() => {
+    if (!visitId) return;
+    let cancelled = false;
+    (async () => {
+      const snap = await getDoc(doc(db, COLLECTIONS.MEDICAL_VISITS, visitId));
+      if (cancelled) return;
+      if (snap.exists()) {
+        const v = snap.data();
+        setVisitReason(v.visitReason ?? '');
+        setVisitDate(v.date ?? new Date().toISOString().split('T')[0]);
+        setVetName(v.vetName ?? '');
+        setNotes(v.notes ?? '');
+        setNextControlDate(v.nextControlDate ?? '');
+        if (v.prescriptionUrl) setPrescriptionUri(v.prescriptionUrl);
+        if (v.vetId) {
+          const vetSnap = await getDoc(doc(db, COLLECTIONS.VETERINARIANS, v.vetId));
+          if (!cancelled && vetSnap.exists()) setSelectedVet({ id: vetSnap.id, ...vetSnap.data() } as Veterinarian);
+        }
+      } else if (!cancelled) {
+        Alert.alert('No encontrada', 'Esta visita ya no existe.', [{ text: 'OK', onPress: () => router.back() }]);
+      }
+      if (!cancelled) setLoadingVisit(false);
+    })();
+    return () => { cancelled = true; };
+  }, [visitId]);
 
   // Autocomplete: search registered vets by name or email as user types
   useEffect(() => {
@@ -80,7 +119,7 @@ export default function AddVisitScreen() {
     const snap = await getDoc(doc(db, COLLECTIONS.VETERINARIANS, selectedVet.id));
     if (snap.exists()) {
       const vetData = snap.data();
-      const slots: string[] = vetData?.availability?.[day.dateString] ?? [];
+      const slots: string[] = getSortedAvailableSlots(vetData?.availability, day.dateString);
       setVetAvailability(slots);
     }
     setCheckingAvailability(false);
@@ -98,7 +137,7 @@ export default function AddVisitScreen() {
       },
       {
         text: 'Galería', onPress: async () => {
-          const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
+          const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.8 });
           if (!result.canceled) setPrescriptionUri(result.assets[0].uri);
         },
       },
@@ -164,7 +203,12 @@ export default function AddVisitScreen() {
   function handleSave() {
     if (!petId) return;
     if (!visitReason) { Alert.alert('Faltan datos', 'Por favor selecciona el motivo de la visita.'); return; }
+    if (!visitDate) { Alert.alert('Faltan datos', 'Por favor selecciona la fecha en que ocurrió la visita.'); return; }
+
+    if (isEditMode) { doUpdate(); return; }
+
     if (rating === 0) { Alert.alert('Faltan datos', 'Por favor califica el servicio.'); return; }
+    if (!reviewComment.trim()) { Alert.alert('Faltan datos', 'Escribe un comentario sobre la atención.'); return; }
 
     // Vet entered manually and not found among registered vets → offer to invite
     if (!selectedVet && vetName.trim().length > 0) {
@@ -191,7 +235,7 @@ export default function AddVisitScreen() {
       const visitDoc = await addDoc(collection(db, COLLECTIONS.MEDICAL_VISITS), {
         petId,
         ownerId: user?.uid ?? null,
-        date: new Date().toISOString().split('T')[0],
+        date: visitDate,
         visitReason,
         vetName: selectedVet?.name || vetName,
         vetId: selectedVet?.id || null,
@@ -201,6 +245,34 @@ export default function AddVisitScreen() {
         nextControlDate: nextControlDate || null,
         createdAt: new Date().toISOString(),
       });
+
+      // The star rating above only means something as a real review when
+      // it's tied to a registered vet (there's no vetId to attach one to
+      // otherwise) — mirrors the one-review-per-owner-per-vet rule already
+      // enforced in (owner)/vets/[id].tsx's canReview, so a visit logged
+      // for a vet the owner already reviewed doesn't create a duplicate.
+      let reviewMsg = '';
+      if (selectedVet && user) {
+        try {
+          const existingReview = await getDocs(query(
+            collection(db, COLLECTIONS.REVIEWS),
+            where('vetId', '==', selectedVet.id),
+            where('ownerId', '==', user.uid),
+          ));
+          if (existingReview.empty) {
+            await addDoc(collection(db, COLLECTIONS.REVIEWS), {
+              vetId: selectedVet.id,
+              ownerId: user.uid,
+              ownerName: user.name || 'Usuario',
+              rating,
+              comment: reviewComment.trim(),
+              createdAt: new Date().toISOString(),
+            });
+          } else {
+            reviewMsg = '\n\nYa habías calificado a este veterinario antes, así que no se duplicó la reseña.';
+          }
+        } catch {}
+      }
 
       let calendarMsg = '';
       if (nextControlDate) {
@@ -223,7 +295,7 @@ export default function AddVisitScreen() {
           : '\n\n🔔 La app te avisará cuando se acerque la fecha del próximo control.';
       }
 
-      Alert.alert('✅ Visita registrada', `La visita quedó guardada en la ficha médica.${calendarMsg}`, [
+      Alert.alert('✅ Visita registrada', `La visita quedó guardada en la ficha médica.${reviewMsg}${calendarMsg}`, [
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (e: any) {
@@ -231,6 +303,87 @@ export default function AddVisitScreen() {
     } finally {
       setSaving(false);
     }
+  }
+
+  // Corrects a visit the owner already logged (typo in the date, wrong vet
+  // name, etc). Only touches the MEDICAL_VISITS doc itself — the rating and
+  // review it may have produced at creation time live in their own
+  // collection and aren't re-opened here.
+  async function doUpdate() {
+    if (!visitId) return;
+    setSaving(true);
+    try {
+      let prescriptionUrl: string | null | undefined;
+      if (prescriptionUri && !prescriptionUri.startsWith('http')) {
+        prescriptionUrl = await uploadImage(prescriptionUri);
+      }
+
+      await updateDoc(doc(db, COLLECTIONS.MEDICAL_VISITS, visitId), {
+        date: visitDate,
+        visitReason,
+        vetName: selectedVet?.name || vetName,
+        vetId: selectedVet?.id || null,
+        notes,
+        nextControlDate: nextControlDate || null,
+        ...(prescriptionUrl !== undefined ? { prescriptionUrl } : {}),
+      });
+
+      // Keep an un-completed reminder created from this visit in sync if the
+      // control date changed, instead of leaving it pointing at a stale date.
+      if (nextControlDate) {
+        const reminders = await getDocs(query(
+          collection(db, COLLECTIONS.REMINDERS),
+          where('sourceVisitId', '==', visitId),
+          where('done', '==', false),
+        ));
+        await Promise.all(reminders.docs.map((d) => updateDoc(d.ref, {
+          date: nextControlDate,
+          vetName: selectedVet?.name || vetName || null,
+        })));
+      }
+
+      Alert.alert('✅ Cambios guardados', 'La visita quedó actualizada.', [
+        { text: 'OK', onPress: () => router.back() },
+      ]);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleDelete() {
+    if (!visitId) return;
+    Alert.alert('Eliminar visita', '¿Seguro que quieres eliminar este registro de la ficha médica? Esta acción no se puede deshacer.', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar', style: 'destructive', onPress: async () => {
+          setSaving(true);
+          try {
+            await deleteDoc(doc(db, COLLECTIONS.MEDICAL_VISITS, visitId));
+            const reminders = await getDocs(query(
+              collection(db, COLLECTIONS.REMINDERS),
+              where('sourceVisitId', '==', visitId),
+              where('done', '==', false),
+            ));
+            await Promise.all(reminders.docs.map((d) => deleteDoc(d.ref)));
+            router.back();
+          } catch (e: any) {
+            Alert.alert('Error', e.message);
+          } finally {
+            setSaving(false);
+          }
+        },
+      },
+    ]);
+  }
+
+  if (loadingVisit) {
+    return (
+      <SafeAreaView className="flex-1 bg-background items-center justify-center">
+        <Text className="text-gray-400">Cargando visita...</Text>
+      </SafeAreaView>
+    );
   }
 
   return (
@@ -241,7 +394,9 @@ export default function AddVisitScreen() {
             <Text className="text-primary-500 text-base">← Volver</Text>
           </TouchableOpacity>
 
-          <Text className="text-2xl font-bold text-primary-700 mb-6">🏥 Registrar Visita</Text>
+          <Text className="text-2xl font-bold text-primary-700 mb-6">
+            {isEditMode ? '✏️ Editar Visita' : '🏥 Registrar Visita'}
+          </Text>
 
           {/* Visit reason */}
           <View className="mb-5">
@@ -270,6 +425,30 @@ export default function AddVisitScreen() {
                     {visitReason === reason && <Text className="text-primary-500 ml-auto">✓</Text>}
                   </TouchableOpacity>
                 ))}
+              </View>
+            )}
+          </View>
+
+          {/* Visit date — defaults to today, but past dates are allowed since
+              owners often log visits that already happened a while ago. */}
+          <View className="mb-5">
+            <Text className="text-sm font-semibold text-gray-700 mb-2">Fecha de la visita <Text className="text-red-400">*</Text></Text>
+            <TouchableOpacity
+              className="bg-white border border-primary-400 rounded-xl px-4 py-3 flex-row items-center gap-3"
+              onPress={() => setShowVisitCalendar(!showVisitCalendar)}
+            >
+              <Text className="text-xl">📅</Text>
+              <Text className="text-primary-700 font-semibold">{visitDate}</Text>
+            </TouchableOpacity>
+
+            {showVisitCalendar && (
+              <View className="mt-2 rounded-2xl overflow-hidden border border-gray-200">
+                <YearCalendar
+                  onDayPress={(day) => { setVisitDate(day.dateString); setShowVisitCalendar(false); }}
+                  maxDate={new Date().toISOString().split('T')[0]}
+                  initialDate={visitDate}
+                  markedDates={{ [visitDate]: { selected: true, selectedColor: '#2D6A4F' } }}
+                />
               </View>
             )}
           </View>
@@ -357,9 +536,12 @@ export default function AddVisitScreen() {
             </View>
           </View>
 
-          {/* Rating */}
+          {/* Rating — only asked when logging a new visit; editing a
+              record afterward is for correcting facts, not re-reviewing
+              (the review lives in its own collection with a one-per-vet rule). */}
+          {!isEditMode && (
           <View className="mb-5">
-            <Text className="text-sm font-semibold text-gray-700 mb-2">¿Cómo fue el servicio?</Text>
+            <Text className="text-sm font-semibold text-gray-700 mb-2">¿Cómo fue el servicio? <Text className="text-red-400">*</Text></Text>
             <View className="bg-white border border-gray-200 rounded-xl p-4">
               <StarRating value={rating} onChange={setRating} />
               {rating > 0 && (
@@ -367,8 +549,18 @@ export default function AddVisitScreen() {
                   {['', 'Muy malo', 'Malo', 'Regular', 'Bueno', '¡Excelente!'][rating]}
                 </Text>
               )}
+              <TextInput
+                className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 mt-3"
+                placeholder="Cuéntanos cómo fue la atención..."
+                multiline
+                numberOfLines={3}
+                value={reviewComment}
+                onChangeText={setReviewComment}
+                style={{ minHeight: 70, textAlignVertical: 'top' }}
+              />
             </View>
           </View>
+          )}
 
           {/* Notes */}
           <View className="mb-5">
@@ -466,9 +658,15 @@ export default function AddVisitScreen() {
             disabled={saving}
           >
             <Text className="text-white font-bold text-base">
-              {saving ? 'Guardando...' : '✅ Registrar Visita'}
+              {saving ? 'Guardando...' : isEditMode ? '✅ Guardar cambios' : '✅ Registrar Visita'}
             </Text>
           </TouchableOpacity>
+
+          {isEditMode && (
+            <TouchableOpacity className="py-4 items-center" onPress={handleDelete} disabled={saving}>
+              <Text className="text-red-500 font-semibold text-sm">🗑️ Eliminar visita</Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

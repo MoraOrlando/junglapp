@@ -17,6 +17,7 @@ import { initFirebase, COLLECTIONS, uploadImages } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import { DOG_BREEDS, CAT_BREEDS } from '../../../lib/breeds';
 import { getAgeInMonths, BABY_CARE } from '../../../lib/petCare';
+import { TEXT_ONLY } from '../../../lib/validators';
 
 const MAX_PETS = 5;
 
@@ -132,9 +133,6 @@ function DatePickerField({
   );
 }
 
-// Letters (incl. accents/ñ), spaces and hyphens only — no digits or symbols.
-const TEXT_ONLY = /^[A-Za-zÀ-ÖØ-öø-ÿÑñ][A-Za-zÀ-ÖØ-öø-ÿÑñ\s'-]*$/;
-
 const schema = z.object({
   name: z.string().min(1, 'Nombre requerido'),
   species: z.enum(['dog', 'cat', 'other']),
@@ -222,7 +220,7 @@ export default function AddPetScreen() {
     ]);
   }
 
-  async function onSubmit(data: FormData) {
+  async function onSubmit(data: FormData, redirectToVetSearch = false) {
     if (!user) return;
     setLoading(true);
     try {
@@ -260,7 +258,10 @@ export default function AddPetScreen() {
         medicalRecord: { vaccinations: [], allergies: [], conditions: [], notes: '', lastUpdated: new Date().toISOString() },
         createdAt: new Date().toISOString(),
       });
-      router.back();
+      // Replace (not push) so "Volver" from the vet search doesn't land
+      // back on this now-submitted form.
+      if (redirectToVetSearch) router.replace('/(owner)/near/vet' as any);
+      else router.back();
     } catch (e: any) {
       Alert.alert('Error al guardar', e.message);
     } finally {
@@ -448,10 +449,13 @@ export default function AddPetScreen() {
                   Información orientativa, no reemplaza una consulta veterinaria.
                 </Text>
                 <TouchableOpacity
-                  style={{ marginTop: 10, backgroundColor: PRIMARY, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}
-                  onPress={() => router.push('/(owner)/vets' as any)}
+                  style={{ marginTop: 10, backgroundColor: loading ? '#86efac' : PRIMARY, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}
+                  disabled={loading}
+                  onPress={handleSubmit((data) => onSubmit(data, true))}
                 >
-                  <Text style={{ color: 'white', fontWeight: '600', fontSize: 13 }}>Agendar con un veterinario</Text>
+                  <Text style={{ color: 'white', fontWeight: '600', fontSize: 13 }}>
+                    {loading ? 'Guardando...' : 'Guardar y agendar con un veterinario'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -589,7 +593,7 @@ export default function AddPetScreen() {
               borderRadius: 16, paddingVertical: 16, alignItems: 'center',
               marginTop: 24, marginBottom: 40,
             }}
-            onPress={handleSubmit(onSubmit)}
+            onPress={handleSubmit((data) => onSubmit(data))}
             disabled={loading}
           >
             <Text style={{ color: 'white', fontWeight: '600', fontSize: 16 }}>

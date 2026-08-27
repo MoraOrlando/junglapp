@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback, memo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Alert,
-  Animated, Modal, Linking, TextInput, KeyboardAvoidingView, Platform, Switch
+  Animated, Modal, Linking, TextInput, KeyboardAvoidingView, Platform, Switch,
+  FlatList, Dimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,7 +15,10 @@ import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import YearCalendar from '../../../components/YearCalendar';
 import CompleteReminderModal from '../../../components/CompleteReminderModal';
+import BreedPickerModal, { CUSTOM_BREED } from '../../../components/BreedPickerModal';
 import { getVisitSection, SECTION_META, SECTION_ORDER, VISIT_REASON_ICONS, type VisitSection } from '../../../lib/visitReasons';
+import { DOG_BREEDS, CAT_BREEDS } from '../../../lib/breeds';
+import { TEXT_ONLY } from '../../../lib/validators';
 import type { Pet, Reminder } from '@junglapp/types';
 
 // deceasedAt is stored as YYYY-MM-DD, shown to the user as DD-MM-YYYY.
@@ -83,6 +87,7 @@ export default function PetDetailScreen() {
   const [showDeceasedCalendar, setShowDeceasedCalendar] = useState(false);
   const [showFlame, setShowFlame] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
   const [selectedVisit, setSelectedVisit] = useState<VisitEntry | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
@@ -96,6 +101,19 @@ export default function PetDetailScreen() {
   const [physAllergic, setPhysAllergic] = useState(false);
   const [physAllergyNotes, setPhysAllergyNotes] = useState('');
   const [savingPhysical, setSavingPhysical] = useState(false);
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [infoSpecies, setInfoSpecies] = useState<'dog' | 'cat' | 'other'>('dog');
+  const [infoBreed, setInfoBreed] = useState('');
+  const [infoCustomBreed, setInfoCustomBreed] = useState(false);
+  const [infoBreedPickerOpen, setInfoBreedPickerOpen] = useState(false);
+  const [infoColor, setInfoColor] = useState('');
+  const [infoBirthDate, setInfoBirthDate] = useState('');
+  const [infoFamilyDate, setInfoFamilyDate] = useState('');
+  const [infoChipNumber, setInfoChipNumber] = useState('');
+  const [infoInstagram, setInfoInstagram] = useState('');
+  const [infoDatePicker, setInfoDatePicker] = useState<'birth' | 'family' | null>(null);
+  const [infoError, setInfoError] = useState('');
+  const [savingInfo, setSavingInfo] = useState(false);
 
   const flameScale = useRef(new Animated.Value(0)).current;
   const flameOpacity = useRef(new Animated.Value(0)).current;
@@ -142,50 +160,46 @@ export default function PetDetailScreen() {
       const ownerVisits: VisitEntry[] = [];
       const vetVisits: VisitEntry[] = [];
 
-      // Medical visits registered by the owner
-      try {
-        const visitsSnap = await getDocs(query(
+      // Independent queries — medical visits the owner logged themselves,
+      // and completed appointments with a vet-filled consultation. Fetched
+      // together instead of one-after-the-other.
+      const [visitsResult, apptsResult] = await Promise.all([
+        getDocs(query(
           collection(db, COLLECTIONS.MEDICAL_VISITS),
           where('petId', '==', id),
           where('ownerId', '==', user!.uid),
-        ));
-        visitsSnap.docs.forEach((d) => {
-          const v = d.data();
-          ownerVisits.push({
-            id: d.id, source: 'owner',
-            date: v.date ?? '', vetName: v.vetName ?? 'Veterinario',
-            visitReason: v.visitReason,
-            notes: v.notes, prescriptionUrl: v.prescriptionUrl,
-            nextControlDate: v.nextControlDate,
-          });
-        });
-      } catch (e: any) {
-        if (__DEV__) console.log('medicalVisits query error:', e.code, e.message);
-      }
-
-      // Completed vet appointments that include a consultation record
-      try {
-        const apptsSnap = await getDocs(query(
+        )).catch((e) => { if (__DEV__) console.log('medicalVisits query error:', e.code, e.message); return null; }),
+        getDocs(query(
           collection(db, COLLECTIONS.APPOINTMENTS),
           where('petId', '==', id),
           where('ownerId', '==', user!.uid),
-        ));
-        apptsSnap.docs
-          .filter((d) => d.data().status === 'completed' && d.data().consultation)
-          .forEach((d) => {
-            const a = d.data();
-            vetVisits.push({
-              id: d.id, source: 'vet',
-              date: a.date ?? '', vetName: a.vetName ?? 'Veterinario JunglApp',
-              visitReason: a.consultation?.visitReason,
-              diagnosis: a.consultation?.diagnosis,
-              treatment: a.consultation?.treatmentDone || a.consultation?.treatment,
-              prescriptionUrl: a.consultation?.prescriptionImageUrl,
-            });
+        )).catch((e) => { if (__DEV__) console.log('appointments query error:', e.code, e.message); return null; }),
+      ]);
+
+      visitsResult?.docs.forEach((d) => {
+        const v = d.data();
+        ownerVisits.push({
+          id: d.id, source: 'owner',
+          date: v.date ?? '', vetName: v.vetName ?? 'Veterinario',
+          visitReason: v.visitReason,
+          notes: v.notes, prescriptionUrl: v.prescriptionUrl,
+          nextControlDate: v.nextControlDate,
+        });
+      });
+
+      apptsResult?.docs
+        .filter((d) => d.data().status === 'completed' && d.data().consultation)
+        .forEach((d) => {
+          const a = d.data();
+          vetVisits.push({
+            id: d.id, source: 'vet',
+            date: a.date ?? '', vetName: a.vetName ?? 'Veterinario JunglApp',
+            visitReason: a.consultation?.visitReason,
+            diagnosis: a.consultation?.diagnosis,
+            treatment: a.consultation?.treatmentDone || a.consultation?.treatment,
+            prescriptionUrl: a.consultation?.prescriptionImageUrl,
           });
-      } catch (e: any) {
-        if (__DEV__) console.log('appointments query error:', e.code, e.message);
-      }
+        });
 
       if (!cancelled) {
         setVisits([...ownerVisits, ...vetVisits].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? '')));
@@ -396,6 +410,57 @@ export default function PetDetailScreen() {
     }
   }
 
+  function openInfoEdit() {
+    if (!pet) return;
+    setInfoSpecies((pet.species as 'dog' | 'cat' | 'other') ?? 'dog');
+    setInfoBreed(pet.breed ?? '');
+    // A breed not in our curated list (picked as "Otra" originally, or set
+    // before the picker existed) must open in free-text mode, or the owner
+    // would be unable to see/edit their own current value.
+    const list = pet.species === 'cat' ? CAT_BREEDS : DOG_BREEDS;
+    setInfoCustomBreed(pet.species !== 'other' && !!pet.breed && !list.includes(pet.breed));
+    setInfoColor(pet.color ?? '');
+    setInfoBirthDate(pet.birthDate ?? '');
+    setInfoFamilyDate(pet.familyDate ?? '');
+    setInfoChipNumber(pet.chipNumber ?? '');
+    setInfoInstagram(pet.instagram ?? '');
+    setInfoError('');
+    setEditingInfo(true);
+  }
+
+  async function saveInfo() {
+    if (!id || !pet) return;
+    const breed = infoBreed.trim();
+    const color = infoColor.trim();
+    if (!breed || !TEXT_ONLY.test(breed)) {
+      setInfoError(infoSpecies === 'other' ? 'Indica el tipo de mascota (solo letras)' : 'Selecciona o escribe una raza válida (solo letras)');
+      return;
+    }
+    if (!color) { setInfoError('El color es requerido'); return; }
+    if (!infoBirthDate) { setInfoError('La fecha de nacimiento es requerida'); return; }
+    if (!infoFamilyDate) { setInfoError('La fecha de unión a la familia es requerida'); return; }
+    setInfoError('');
+    setSavingInfo(true);
+    try {
+      const updates = {
+        species: infoSpecies,
+        breed,
+        color,
+        birthDate: infoBirthDate,
+        familyDate: infoFamilyDate,
+        chipNumber: infoChipNumber.trim(),
+        instagram: infoInstagram.trim(),
+      };
+      await updateDoc(doc(db, COLLECTIONS.PETS, id), updates);
+      setPet({ ...pet, ...updates });
+      setEditingInfo(false);
+    } catch (e: any) {
+      setInfoError(e.message);
+    } finally {
+      setSavingInfo(false);
+    }
+  }
+
   function openPhysicalEdit() {
     if (!pet) return;
     setPhysSex((pet.sex as 'M' | 'F' | '') ?? '');
@@ -418,6 +483,65 @@ export default function PetDetailScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-background">
+      {/* Full-screen photo gallery — tap the header photo or a thumbnail to open,
+          swipe (pagingEnabled) between all of the pet's photos. */}
+      <Modal
+        visible={galleryIndex !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGalleryIndex(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: '#000' }}>
+          {pet.photos && galleryIndex !== null && (
+            <FlatList
+              data={pet.photos}
+              keyExtractor={(_, i) => String(i)}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              initialScrollIndex={galleryIndex}
+              getItemLayout={(_, i) => ({ length: Dimensions.get('window').width, offset: Dimensions.get('window').width * i, index: i })}
+              onMomentumScrollEnd={(e) => {
+                const width = Dimensions.get('window').width;
+                const idx = Math.round(e.nativeEvent.contentOffset.x / width);
+                setGalleryIndex(idx);
+              }}
+              renderItem={({ item }) => (
+                <View style={{ width: Dimensions.get('window').width, height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+                  <Image source={{ uri: item }} style={{ width: '100%', height: '100%' }} contentFit="contain" />
+                </View>
+              )}
+            />
+          )}
+
+          <TouchableOpacity
+            onPress={() => setGalleryIndex(null)}
+            hitSlop={12}
+            style={{
+              position: 'absolute', top: 56, right: 20,
+              backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 20,
+              width: 40, height: 40, alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 20, lineHeight: 20 }}>✕</Text>
+          </TouchableOpacity>
+
+          {pet.photos && pet.photos.length > 1 && galleryIndex !== null && (
+            <View style={{ position: 'absolute', bottom: 40, alignSelf: 'center', flexDirection: 'row', gap: 6 }}>
+              {pet.photos.map((_, i) => (
+                <View
+                  key={i}
+                  style={{
+                    width: 7, height: 7, borderRadius: 4,
+                    backgroundColor: i === galleryIndex ? '#fff' : 'rgba(255,255,255,0.4)',
+                  }}
+                />
+              ))}
+            </View>
+          )}
+        </View>
+      </Modal>
+
       {/* Flame overlay */}
       <Modal transparent visible={showFlame} animationType="none">
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' }}>
@@ -524,6 +648,26 @@ export default function PetDetailScreen() {
                   {!selectedVisit.visitReason && !selectedVisit.diagnosis && !selectedVisit.treatment && !selectedVisit.notes && !selectedVisit.prescriptionUrl && (
                     <Text style={{ color: '#94A3B8', textAlign: 'center', paddingVertical: 16 }}>Sin detalles adicionales registrados</Text>
                   )}
+
+                  {/* Only visits the owner logged themselves are editable —
+                      a vet-completed consultation is their clinical record;
+                      corrections to it have to go through the vet. */}
+                  {selectedVisit.source === 'owner' ? (
+                    <TouchableOpacity
+                      style={{ backgroundColor: '#F0FDF4', borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#BBF7D0' }}
+                      onPress={() => {
+                        const visitToEdit = selectedVisit.id;
+                        setSelectedVisit(null);
+                        router.push(`/(owner)/pets/add-visit?petId=${id}&visitId=${visitToEdit}` as any);
+                      }}
+                    >
+                      <Text style={{ color: '#166534', fontWeight: '700', fontSize: 13 }}>✏️ Editar o eliminar este registro</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <Text style={{ color: '#94A3B8', fontSize: 11, textAlign: 'center', marginTop: 4 }}>
+                      Para corregir una consulta agendada vía JunglApp, contacta a tu veterinario.
+                    </Text>
+                  )}
                 </View>
               )}
             </ScrollView>
@@ -594,6 +738,154 @@ export default function PetDetailScreen() {
       </Modal>
 
       {/* Edit physical data modal */}
+      {/* Edit general info modal (species/breed/color/dates/chip/instagram) */}
+      <Modal visible={editingInfo} animationType="slide" transparent onRequestClose={() => setEditingInfo(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}>
+          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: '88%' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ fontSize: 17, fontWeight: '800', color: '#1E293B' }}>🐾 Editar información</Text>
+              <TouchableOpacity onPress={() => setEditingInfo(false)} style={{ padding: 4 }}>
+                <Text style={{ fontSize: 22, color: '#94A3B8' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Species */}
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 }}>Especie</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+                {[{ id: 'dog', label: '🐕 Perro' }, { id: 'cat', label: '🐈 Gato' }, { id: 'other', label: '🐹 Otro' }].map((s) => (
+                  <TouchableOpacity
+                    key={s.id}
+                    style={{ flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: infoSpecies === s.id ? '#2D6A4F' : '#E5E7EB', backgroundColor: infoSpecies === s.id ? '#2D6A4F' : 'white', alignItems: 'center' }}
+                    onPress={() => {
+                      if (infoSpecies !== s.id) { setInfoCustomBreed(false); setInfoBreed(''); }
+                      setInfoSpecies(s.id as 'dog' | 'cat' | 'other');
+                    }}
+                  >
+                    <Text style={{ fontWeight: '600', color: infoSpecies === s.id ? 'white' : '#6B7280', fontSize: 13 }}>{s.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Breed / species-other */}
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 }}>
+                {infoSpecies === 'other' ? '¿Qué tipo de mascota?' : 'Raza'}
+              </Text>
+              {infoSpecies === 'other' || infoCustomBreed ? (
+                <TextInput
+                  style={{ height: 48, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, fontSize: 15, color: '#1F2937', backgroundColor: 'white', marginBottom: 6 }}
+                  placeholder={infoSpecies === 'other' ? 'Conejo, hámster, tortuga...' : 'Escribe la raza'}
+                  placeholderTextColor="#9CA3AF"
+                  value={infoBreed}
+                  onChangeText={setInfoBreed}
+                />
+              ) : (
+                <TouchableOpacity
+                  style={{ height: 48, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, backgroundColor: 'white', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}
+                  onPress={() => setInfoBreedPickerOpen(true)}
+                >
+                  <Text style={{ fontSize: 15, color: infoBreed ? '#1F2937' : '#9CA3AF' }}>{infoBreed || 'Selecciona la raza'}</Text>
+                  <Text style={{ color: '#6B7280' }}>▾</Text>
+                </TouchableOpacity>
+              )}
+              {infoSpecies !== 'other' && infoCustomBreed && (
+                <TouchableOpacity onPress={() => { setInfoCustomBreed(false); setInfoBreed(''); }} style={{ marginBottom: 10 }}>
+                  <Text style={{ color: '#2D6A4F', fontSize: 12, fontWeight: '500' }}>← Elegir de la lista</Text>
+                </TouchableOpacity>
+              )}
+
+              <BreedPickerModal
+                visible={infoBreedPickerOpen}
+                breeds={infoSpecies === 'cat' ? CAT_BREEDS : DOG_BREEDS}
+                onClose={() => setInfoBreedPickerOpen(false)}
+                onSelect={(b) => {
+                  if (b === CUSTOM_BREED) { setInfoCustomBreed(true); setInfoBreed(''); }
+                  else setInfoBreed(b);
+                }}
+              />
+
+              {/* Color */}
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginTop: 10, marginBottom: 8 }}>Color</Text>
+              <TextInput
+                style={{ height: 48, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, fontSize: 15, color: '#1F2937', backgroundColor: 'white', marginBottom: 16 }}
+                placeholder="Dorado"
+                placeholderTextColor="#9CA3AF"
+                value={infoColor}
+                onChangeText={setInfoColor}
+              />
+
+              {/* Dates */}
+              <View style={{ flexDirection: 'row', gap: 12, marginBottom: 8 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 }}>Nacimiento</Text>
+                  <TouchableOpacity
+                    style={{ height: 48, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 12, backgroundColor: 'white', justifyContent: 'center' }}
+                    onPress={() => setInfoDatePicker(infoDatePicker === 'birth' ? null : 'birth')}
+                  >
+                    <Text style={{ fontSize: 13, color: infoBirthDate ? '#1F2937' : '#9CA3AF' }}>{infoBirthDate || 'Seleccionar'}</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 }}>En familia desde</Text>
+                  <TouchableOpacity
+                    style={{ height: 48, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 12, backgroundColor: 'white', justifyContent: 'center' }}
+                    onPress={() => setInfoDatePicker(infoDatePicker === 'family' ? null : 'family')}
+                  >
+                    <Text style={{ fontSize: 13, color: infoFamilyDate ? '#1F2937' : '#9CA3AF' }}>{infoFamilyDate || 'Seleccionar'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              {infoDatePicker && (
+                <View style={{ marginBottom: 16, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 16, overflow: 'hidden' }}>
+                  <YearCalendar
+                    onDayPress={(day: { dateString: string }) => {
+                      if (infoDatePicker === 'birth') setInfoBirthDate(day.dateString);
+                      else setInfoFamilyDate(day.dateString);
+                      setInfoDatePicker(null);
+                    }}
+                    maxDate={new Date().toISOString().split('T')[0]}
+                    initialDate={(infoDatePicker === 'birth' ? infoBirthDate : infoFamilyDate) || undefined}
+                    markedDates={{}}
+                    color="#2D6A4F"
+                  />
+                </View>
+              )}
+
+              {/* Chip + Instagram */}
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 }}>Número de chip (opcional)</Text>
+              <TextInput
+                style={{ height: 48, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, fontSize: 15, color: '#1F2937', backgroundColor: 'white', marginBottom: 16 }}
+                placeholder="985121234567890"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="number-pad"
+                value={infoChipNumber}
+                onChangeText={setInfoChipNumber}
+              />
+
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 }}>Instagram (opcional)</Text>
+              <TextInput
+                style={{ height: 48, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, fontSize: 15, color: '#1F2937', backgroundColor: 'white', marginBottom: 8 }}
+                placeholder="@usuario"
+                placeholderTextColor="#9CA3AF"
+                autoCapitalize="none"
+                value={infoInstagram}
+                onChangeText={(t) => setInfoInstagram(t.replace(/\s/g, ''))}
+              />
+
+              {infoError ? <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>{infoError}</Text> : null}
+
+              <TouchableOpacity
+                onPress={saveInfo}
+                disabled={savingInfo}
+                style={{ backgroundColor: savingInfo ? '#9CA3AF' : '#2D6A4F', borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 12 }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>{savingInfo ? 'Guardando...' : '✅ Guardar'}</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       <Modal visible={editingPhysical} animationType="slide" transparent onRequestClose={() => setEditingPhysical(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}>
           <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 }}>
@@ -674,7 +966,9 @@ export default function PetDetailScreen() {
           style={{ height: 256 }}
         >
           {pet.photos && pet.photos.length > 0 ? (
-            <Image source={{ uri: pet.photos[0] }} style={{ width: '100%', height: 256 }} contentFit="cover" />
+            <TouchableOpacity activeOpacity={0.9} onPress={() => setGalleryIndex(0)} style={{ width: '100%', height: 256 }}>
+              <Image source={{ uri: pet.photos[0] }} style={{ width: '100%', height: 256 }} contentFit="cover" />
+            </TouchableOpacity>
           ) : (
             <Text className="text-8xl">{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
           )}
@@ -723,7 +1017,10 @@ export default function PetDetailScreen() {
                   <Text className="text-3xl font-bold text-gray-800">{pet.name}</Text>
                   <Text style={{ fontSize: 14, color: '#9CA3AF', marginTop: 4 }}>✏️</Text>
                 </TouchableOpacity>
-                <Text className="text-gray-500 mt-1">{pet.breed} · {pet.color}</Text>
+                <TouchableOpacity onPress={openInfoEdit} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text className="text-gray-500 mt-1">{pet.breed} · {pet.color}</Text>
+                  <Text style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>✏️</Text>
+                </TouchableOpacity>
               </View>
               {/* Heart / Match button */}
               <TouchableOpacity
@@ -749,7 +1046,9 @@ export default function PetDetailScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
               <View className="flex-row gap-2">
                 {pet.photos.map((uri, i) => (
-                  <Image key={i} source={{ uri }} style={{ width: 80, height: 80, borderRadius: 12 }} contentFit="cover" />
+                  <TouchableOpacity key={i} activeOpacity={0.85} onPress={() => setGalleryIndex(i)}>
+                    <Image source={{ uri }} style={{ width: 80, height: 80, borderRadius: 12 }} contentFit="cover" />
+                  </TouchableOpacity>
                 ))}
               </View>
             </ScrollView>
@@ -802,7 +1101,7 @@ export default function PetDetailScreen() {
           )}
 
           {/* Info grid */}
-          <View className="flex-row gap-3 mb-3">
+          <TouchableOpacity activeOpacity={0.75} onPress={openInfoEdit} className="flex-row gap-3 mb-3">
             <View className="flex-1 bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
               <Text className="text-gray-400 text-xs">Nacimiento</Text>
               <Text className="font-semibold text-gray-800 mt-1">{pet.birthDate}</Text>
@@ -811,7 +1110,7 @@ export default function PetDetailScreen() {
               <Text className="text-gray-400 text-xs">En familia desde</Text>
               <Text className="font-semibold text-gray-800 mt-1">{pet.familyDate}</Text>
             </View>
-          </View>
+          </TouchableOpacity>
 
           {/* Sex / Weight / Allergic row */}
           <TouchableOpacity
