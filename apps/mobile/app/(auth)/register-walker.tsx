@@ -57,6 +57,7 @@ export default function RegisterWalkerScreen() {
   const { signUp } = useAuth();
   const [loading, setLoading] = useState(false);
   const [profileUri, setProfileUri] = useState<string | null>(null);
+  const [idImageUri, setIdImageUri] = useState<string | null>(null);
   const [region, setRegion] = useState('Metropolitana');
   const [regionOpen, setRegionOpen] = useState(false);
   const [sizesAccepted, setSizesAccepted] = useState<string[]>(['all']);
@@ -97,14 +98,31 @@ export default function RegisterWalkerScreen() {
         if (!result.canceled) setProfileUri(result.assets[0].uri);
       }},
       { text: 'Galería', onPress: async () => {
-        const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
+        const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.8 });
         if (!result.canceled) setProfileUri(result.assets[0].uri);
       }},
       { text: 'Cancelar', style: 'cancel' },
     ]);
   }
 
+  async function pickIdImage() {
+    Alert.alert('Carnet o cédula', '¿Cómo agregar la foto?', [
+      { text: 'Cámara', onPress: async () => {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') return;
+        const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+        if (!result.canceled) setIdImageUri(result.assets[0].uri);
+      }},
+      { text: 'Galería', onPress: async () => {
+        const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.8 });
+        if (!result.canceled) setIdImageUri(result.assets[0].uri);
+      }},
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  }
+
   async function onSubmit(data: FormData) {
+    if (!idImageUri) { Alert.alert('Requerido', 'Sube la foto del lado frontal de tu carnet o cédula.'); return; }
     if (!termsAccepted) { Alert.alert('Requerido', 'Debes aceptar los términos de uso para continuar.'); return; }
     setLoading(true);
     try {
@@ -120,9 +138,13 @@ export default function RegisterWalkerScreen() {
       });
 
       if (newUser) {
-        // Photo is a nice-to-have — don't let an upload failure leave the account
-        // half-created (auth user + no walker profile doc).
-        const photoUrl = profileUri ? await uploadImage(profileUri).catch(() => null) : null;
+        // ID card is mandatory for verification — a failed upload must still
+        // block registration. Profile photo is a nice-to-have, so its
+        // failure shouldn't leave the account half-created.
+        const [idImageUrl, photoUrl] = await Promise.all([
+          uploadImage(idImageUri),
+          profileUri ? uploadImage(profileUri).catch(() => null) : Promise.resolve(null),
+        ]);
         await setDoc(doc(db, 'walkers', newUser.uid), {
           userId: newUser.uid,
           name: data.name,
@@ -136,6 +158,7 @@ export default function RegisterWalkerScreen() {
           maxDogs: Number(data.maxDogs),
           sizesAccepted,
           photoUrl,
+          idImageUrl,
           status: 'pending',
           availability: {},
           rating: null,
@@ -365,6 +388,36 @@ export default function RegisterWalkerScreen() {
                 ))}
               </View>
             </View>
+          </View>
+
+          {/* ID card upload */}
+          <View style={{ marginTop: 20 }}>
+            <Text className="text-sm font-semibold text-gray-700 mb-1">🪪 Carnet o cédula (lado frontal) *</Text>
+            <Text className="text-gray-500 text-xs mb-2">Foto clara del lado frontal, para validar tu identidad.</Text>
+            <TouchableOpacity
+              onPress={pickIdImage}
+              style={{
+                borderWidth: 2, borderStyle: 'dashed',
+                borderColor: idImageUri ? '#059669' : '#86efac',
+                borderRadius: 14, overflow: 'hidden',
+                backgroundColor: idImageUri ? '#ECFDF5' : '#F0FDF4',
+                minHeight: 140, alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              {idImageUri ? (
+                <Image source={{ uri: idImageUri }} style={{ width: '100%', height: 160 }} contentFit="cover" />
+              ) : (
+                <View style={{ alignItems: 'center', padding: 24 }}>
+                  <Text style={{ fontSize: 36, marginBottom: 8 }}>🪪</Text>
+                  <Text className="text-primary-600 font-semibold text-sm">Toca para subir foto</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            {idImageUri && (
+              <TouchableOpacity onPress={pickIdImage} style={{ marginTop: 8, alignItems: 'center' }}>
+                <Text className="text-primary-600 text-xs font-semibold">Cambiar imagen</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Terms */}

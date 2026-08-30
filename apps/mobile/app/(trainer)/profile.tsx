@@ -8,6 +8,7 @@ import * as Location from 'expo-location';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
+import { PlanCard } from '../../components/PlanCard';
 import type { Trainer } from '@junglapp/types';
 
 const { db } = initFirebase();
@@ -27,6 +28,9 @@ export default function TrainerProfileScreen() {
   const [gettingLocation, setGettingLocation] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [backgroundCheckUrl, setBackgroundCheckUrl] = useState<string | null>(null);
+  const [uploadingBgCheck, setUploadingBgCheck] = useState(false);
+  const [serviceInstructions, setServiceInstructions] = useState('');
 
   useEffect(() => {
     if (!user) return;
@@ -41,6 +45,8 @@ export default function TrainerProfileScreen() {
         setExperience(t.experience || '');
         setServiceArea(t.serviceArea || '');
         if (t.location) setLocation(t.location);
+        setBackgroundCheckUrl(t.backgroundCheckUrl ?? null);
+        setServiceInstructions(t.serviceInstructions ?? '');
       }
     });
   }, [user]);
@@ -78,11 +84,30 @@ export default function TrainerProfileScreen() {
     }
   }
 
+  async function pickBackgroundCheck() {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.8 });
+    if (!result.canceled && docId) {
+      setUploadingBgCheck(true);
+      try {
+        const url = await uploadImage(result.assets[0].uri);
+        // Reviewed by support alongside the ID card during account approval —
+        // no separate status field, they just see the link is now present.
+        await updateDoc(doc(db, COLLECTIONS.TRAINERS, docId), { backgroundCheckUrl: url });
+        setBackgroundCheckUrl(url);
+        Alert.alert('✅ Certificado cargado', 'Quedó registrado y será revisado por soporte.');
+      } catch (e: any) {
+        Alert.alert('Error', e.message);
+      } finally {
+        setUploadingBgCheck(false);
+      }
+    }
+  }
+
   async function save() {
     if (!docId) return;
     setSaving(true);
     try {
-      const updates: any = { name, phone, address, experience, serviceArea, plan: 'free' };
+      const updates: any = { name, phone, address, experience, serviceArea, serviceInstructions: serviceInstructions.trim(), plan: 'free' };
       if (location) updates.location = location;
       await updateDoc(doc(db, COLLECTIONS.TRAINERS, docId), updates);
       Alert.alert('✅', 'Perfil actualizado correctamente');
@@ -112,6 +137,28 @@ export default function TrainerProfileScreen() {
             </Text>
           </View>
         )}
+
+        <View style={{ backgroundColor: backgroundCheckUrl ? '#ECFDF5' : '#EFF6FF', borderRadius: 16, borderWidth: 1, borderColor: backgroundCheckUrl ? '#A7F3D0' : '#BFDBFE', padding: 14, marginBottom: 16 }}>
+          <Text style={{ color: backgroundCheckUrl ? '#059669' : '#1D4ED8', fontWeight: '700', fontSize: 13 }}>
+            {backgroundCheckUrl ? '✅ Certificado de antecedentes cargado' : '📋 Falta tu certificado de antecedentes'}
+          </Text>
+          <Text style={{ color: backgroundCheckUrl ? '#059669' : '#1D4ED8', fontSize: 12, marginTop: 2, marginBottom: 10 }}>
+            {backgroundCheckUrl ? 'En revisión por soporte.' : 'Súbelo para completar tu verificación. Puedes seguir usando la app mientras tanto.'}
+          </Text>
+          <TouchableOpacity
+            onPress={pickBackgroundCheck}
+            disabled={uploadingBgCheck}
+            style={{ backgroundColor: '#fff', borderRadius: 10, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: backgroundCheckUrl ? '#A7F3D0' : '#BFDBFE' }}
+          >
+            {uploadingBgCheck
+              ? <ActivityIndicator size="small" color={backgroundCheckUrl ? '#059669' : '#1D4ED8'} />
+              : <Text style={{ color: backgroundCheckUrl ? '#059669' : '#1D4ED8', fontWeight: '600', fontSize: 13 }}>
+                  {backgroundCheckUrl ? '📤 Reemplazar certificado' : '📤 Subir certificado de antecedentes'}
+                </Text>}
+          </TouchableOpacity>
+        </View>
+
+        {user && <PlanCard uid={user.uid} />}
 
         {/* Avatar */}
         <View style={{ alignItems: 'center', marginBottom: 20 }}>
@@ -152,6 +199,7 @@ export default function TrainerProfileScreen() {
             { label: 'Dirección', value: address, set: setAddress },
             { label: 'Área de servicio', value: serviceArea, set: setServiceArea },
             { label: 'Experiencia', value: experience, set: setExperience, multiline: true },
+            { label: 'Indicaciones del servicio (el dueño las verá al agendar)', value: serviceInstructions, set: setServiceInstructions, multiline: true },
           ].map((f) => (
             <View key={f.label} style={{ marginBottom: 12 }}>
               <Text style={{ fontSize: 13, color: '#6B7280', marginBottom: 4, fontWeight: '500' }}>{f.label}</Text>

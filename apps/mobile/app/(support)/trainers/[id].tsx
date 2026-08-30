@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert, Modal, TextInput, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
@@ -170,7 +170,14 @@ export default function TrainerDetailScreen() {
             </View>
           )}
           {trainer.idImageUrl && (
-            <Text style={{ color: PURPLE, fontSize: 12, marginTop: 10 }}>🔗 Cédula de identidad cargada</Text>
+            <TouchableOpacity onPress={() => Linking.openURL(trainer.idImageUrl!)} style={{ marginTop: 10 }}>
+              <Text style={{ color: PURPLE, fontSize: 12, textDecorationLine: 'underline' }}>🪪 Ver carnet / cédula cargada</Text>
+            </TouchableOpacity>
+          )}
+          {(trainer as any).backgroundCheckUrl && (
+            <TouchableOpacity onPress={() => Linking.openURL((trainer as any).backgroundCheckUrl)} style={{ marginTop: 6 }}>
+              <Text style={{ color: PURPLE, fontSize: 12, textDecorationLine: 'underline' }}>📋 Ver certificado de antecedentes</Text>
+            </TouchableOpacity>
           )}
           {(trainer as any).rejectionReason && (
             <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 8 }}>Motivo de rechazo: {(trainer as any).rejectionReason}</Text>

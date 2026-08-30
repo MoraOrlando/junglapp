@@ -117,6 +117,10 @@ export interface Veterinarian {
   licenseNumber: string;
   photoUrl?: string;
   credentialUrl?: string;
+  // Carnet / cédula de identidad — required only for solo home-visit vets
+  // (isClinic falsy), same idImageUrl field name/purpose as Trainer, so
+  // soporte can verify identity before setting status to 'approved'.
+  idImageUrl?: string;
   status: 'pending' | 'approved' | 'rejected';
   specialties: string[];
   availability: VetAvailability;
@@ -131,6 +135,17 @@ export interface Veterinarian {
   openingHours?: string;
   clinicServices?: ClinicService[];
   location?: { lat: number; lng: number };
+  // Collaborator vet accounts (created from the web clinic portal, see
+  // createVetCollaborator) — same operational access to the clinic's agenda
+  // and patients as the owner, without being this doc's own userId. See
+  // isVetStaff() in firestore.rules. Only meaningful when isClinic is true.
+  staffUids?: string[];
+  // Customizable WhatsApp reminder copy for the Recordatorios module (see
+  // VetReminderSend below) — owner-editable only (not in isVetStaff's field
+  // whitelist in firestore.rules). Falls back to a hardcoded default in the
+  // UI when unset, same as consultationFee/slotDuration defaults elsewhere.
+  reminderMessageTemplate?: string;
+  reminderMedicalMessageTemplate?: string;
   createdAt: string;
 }
 
@@ -152,6 +167,14 @@ export interface Walker {
   maxDogs: number;
   sizesAccepted: string[];
   photoUrl?: string | null;
+  idImageUrl?: string;
+  // Uploaded from the profile screen after the account already exists —
+  // absent means "not requested yet", not "rejected". Reviewed by support
+  // alongside idImageUrl during account approval.
+  backgroundCheckUrl?: string | null;
+  // General instructions shown to the owner before booking (meeting point,
+  // what to bring, dogs not accepted, etc) — not a per-slot/per-booking note.
+  serviceInstructions?: string;
   status: 'pending' | 'approved' | 'rejected';
   availability: { [date: string]: string[] };
   slotDuration?: 30 | 45 | 60;
@@ -212,6 +235,13 @@ export interface Trainer {
   regionKey?: string;
   photoUrl?: string;
   idImageUrl?: string;
+  // Uploaded from the profile screen after the account already exists —
+  // absent means "not requested yet", not "rejected". Reviewed by support
+  // alongside idImageUrl during account approval.
+  backgroundCheckUrl?: string | null;
+  // General instructions shown to the owner before booking (meeting point,
+  // what to bring, etc) — not a per-slot/per-booking note.
+  serviceInstructions?: string;
   status: 'pending' | 'approved' | 'rejected';
   specialties: string[];
   certifications: string[];
@@ -296,6 +326,10 @@ export interface Appointment {
   status: 'pending' | 'confirmed' | 'arrived' | 'completed' | 'cancelled';
   arrivedAt?: string;
   consultation?: ConsultationNote;
+  // Who completed the appointment — the vet via their own app/portal, or
+  // the owner marking it done themselves when the vet never did. Mirrors
+  // the existing cancelledBy convention.
+  completedBy?: 'owner' | 'vet';
   reason?: string;
   createdAt: string;
 }
@@ -311,6 +345,11 @@ export interface ConsultationNote {
   // rather than a union so both entry points share one literal list without
   // this type having to be the source of truth for it.
   visitReason?: string;
+  // The field both the mobile vet screen (apps/mobile/app/(vet)/appointment/[id].tsx)
+  // and the web vet ERP (apps/web/app/vet/page.tsx) actually write for
+  // "what was done" — treatment/careInstructions above were never adopted
+  // by either implementation, which read this one with an `as any` fallback.
+  treatmentDone?: string;
   createdAt: string;
 }
 
@@ -527,6 +566,233 @@ export interface OrderItem {
   quantity: number;
   price: number;
   photoUrl?: string;
+}
+
+// One per professional account (stores, veterinarians, walkers, trainers,
+// groomers — never owners). Doc ID matches the profile's own doc ID (e.g.
+// subscriptions/{storeId} for a store). weekCount/weekStart back the
+// basic-plan weekly order/appointment cap, enforced server-side in
+// createOrder/createAppointment (Cloud Functions) — never trust a client
+// write here.
+export interface Subscription {
+  id: string;
+  profileType: 'store' | 'veterinarian' | 'walker' | 'trainer' | 'groomer';
+  plan: 'basic' | 'premium';
+  weekCount: number;
+  weekStart: string;
+  assignedBy?: string;
+  // Set by the requestPremiumUpgrade callable when a Basic profile asks to be
+  // upgraded; cleared whenever an admin changes the plan (approval or not).
+  upgradeRequestedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// In-store (physical) POS sale — see firestore.rules `posSales` and
+// confirmSale() in apps/web/app/store/page.tsx. buyerId is only set when the
+// store links the sale to a registered owner account (linkPosSaleToBuyer
+// Cloud Function, matched by the storeCustomer's email) — most sales have
+// neither customerId nor buyerId.
+export interface PosSale {
+  id: string;
+  storeId: string;
+  items: OrderItem[];
+  // Pre-discount total — absent on sales made before discounts existed, in
+  // which case it equals total (no discount was ever possible).
+  subtotal?: number;
+  discount?: {
+    scope: 'cart' | 'product';
+    productId?: string;
+    type: 'percent' | 'fixed';
+    value: number;
+    amount: number;
+  };
+  total: number;
+  neto: number;
+  iva: number;
+  paymentMethod?: string;
+  customerId?: string;
+  buyerId?: string;
+  createdAt: string;
+}
+
+// A store's own customer directory — created from the store portal (POS
+// checkout) so a walk-in sale can be tied to a person by name/RUT/email,
+// independent of whether they have a JunglApp account. Foundation for a
+// future loyalty program; today it's also what lets the store email a
+// receipt and, if the email matches a registered owner account, surface the
+// sale in that person's in-app purchase history (see posSales.buyerId).
+export interface StoreCustomer {
+  id: string;
+  storeId: string;
+  name: string;
+  rut: string;
+  email: string;
+  createdAt: string;
+}
+
+// A clinic's own price list for billable services (consultations already
+// have consultationFee on the Veterinarian doc itself — this is for
+// everything else: cleanings, procedures, etc.). Mirrors StoreService, kept
+// as its own top-level collection (vetId FK) rather than embedded, since
+// unlike a store's services this needs to be addable to a VetSale cart by
+// staff other than the clinic owner (see isVetStaff in firestore.rules).
+export interface VetService {
+  id: string;
+  vetId: string;
+  name: string;
+  description: string;
+  price: number;
+  isActive: boolean;
+  createdAt: string;
+}
+
+// An exam a vet ordered during a consultation — tracks the clinical
+// request/result lifecycle, deliberately separate from billing (see
+// VetSale below): requesting an exam and charging for it are two different
+// actions, and not every exam order necessarily has a matching charge line.
+export interface ExamOrder {
+  id: string;
+  appointmentId: string;
+  petId: string;
+  ownerId: string;
+  vetId: string;
+  requestedBy: string;
+  requestedByName: string;
+  examName: string;
+  notes?: string;
+  status: 'pending' | 'ready';
+  resultUrl?: string;
+  resultUploadedAt?: string;
+  createdAt: string;
+}
+
+export interface VetSaleItem {
+  serviceId?: string;
+  name: string;
+  price: number;
+  quantity: number;
+}
+
+// A clinic's per-visit charge — same shape/math as PosSale (reuses
+// computeDiscountAmount/netoFromTotal/ivaFromTotal from
+// apps/web/lib/pricing.ts and the same jsPDF receipt generator), but never
+// touches product stock the way a store sale does. The generated PDF is an
+// internal receipt, not a valid SII (Chilean tax authority) boleta — see
+// apps/web/lib/receipt.ts. discount.scope/productId keep PosSale's naming
+// (scope: 'product' means "one line", not literally a Product doc) so
+// CartDiscount/computeDiscountAmount can be reused unmodified — productId
+// here is a cart-local line key, not a Firestore doc id.
+export interface VetSale {
+  id: string;
+  vetId: string;
+  appointmentId?: string;
+  petId?: string;
+  ownerId?: string;
+  items: VetSaleItem[];
+  subtotal: number;
+  discount?: {
+    scope: 'cart' | 'product';
+    productId?: string;
+    type: 'percent' | 'fixed';
+    value: number;
+    amount: number;
+  };
+  total: number;
+  neto: number;
+  iva: number;
+  paymentMethod?: string;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+}
+
+// A clinic's manual expense entry for the Finanzas module — plain
+// bookkeeping, no link to the vetInventoryItems stock below (recording a
+// purchase as an expense doesn't move stock, and vice versa — the two are
+// tracked independently, at least for now) and no tax math, unlike VetSale.
+// Unlike VetSale (an immutable billing receipt), owner/staff can edit or
+// delete their own entries — this is an internal ledger, not a legal
+// document.
+export interface VetExpense {
+  id: string;
+  vetId: string;
+  category: string;
+  description?: string;
+  amount: number;
+  paymentMethod?: string;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+}
+
+// A clinic's inventory catalog entry — medications/supplies it stocks.
+// 'product' has a sale price (dispensed/sold to an owner, e.g. antiparasitic
+// pipettes); 'material' is internal consumable (syringes, gauze) that's
+// typically costed but not sold on its own. minStock drives the "bajo
+// stock" alert; cost (unit acquisition cost) drives the inventory valuation
+// stat — price is what's charged, cost is what it took to stock it, and
+// they can differ or either can be absent depending on the item.
+export interface VetInventoryItem {
+  id: string;
+  vetId: string;
+  kind: 'product' | 'material';
+  name: string;
+  sku?: string;
+  category: string;
+  unit: string;
+  stock: number;
+  minStock: number;
+  price?: number;
+  cost?: number;
+  expirationDate?: string; // YYYY-MM-DD
+  isActive: boolean;
+  createdAt: string;
+}
+
+export type VetInventoryMovementType = 'entrada' | 'salida' | 'ajuste';
+
+// A stock change on a VetInventoryItem — quantity is signed (positive for
+// entrada, negative for salida; ajuste can be either) so the item's running
+// stock is just the sum of its movements' quantities. itemName is
+// denormalized so the Movimientos log reads without a join, same reasoning
+// as VetSaleItem.name.
+export interface VetInventoryMovement {
+  id: string;
+  vetId: string;
+  itemId: string;
+  itemName: string;
+  type: VetInventoryMovementType;
+  quantity: number;
+  notes?: string;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+}
+
+// A click on "Enviar" in the Recordatorios (WhatsApp) module — opening the
+// wa.me deep link is fire-and-forget (there's no WhatsApp Business API
+// integration; the human presses Send inside WhatsApp themselves, see
+// buildWhatsappLink in apps/web/app/vet/page.tsx), so this only logs that
+// staff triggered a reminder for a given target. Drives the "ya enviado
+// hoy" state and the "quedan N por avisar" count — it is not proof the
+// message was actually delivered.
+export type VetReminderSendKind = 'appointment' | 'medical' | 'custom';
+export interface VetReminderSend {
+  id: string;
+  vetId: string;
+  kind: VetReminderSendKind;
+  // appointmentId for 'appointment', the reminders/{id} doc id for
+  // 'medical', or a synthetic id for 'custom' (no natural target to dedupe
+  // against).
+  targetId: string;
+  petName?: string;
+  ownerName?: string;
+  phone: string;
+  message: string;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
 }
 
 export interface AdminStats {

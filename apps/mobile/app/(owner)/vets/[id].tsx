@@ -3,13 +3,15 @@ import { View, Text, ScrollView, TouchableOpacity, Alert, TextInput, Image } fro
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
-  doc, getDoc, collection, query, where, getDocs, addDoc, writeBatch, serverTimestamp,
+  doc, getDoc, collection, query, where, getDocs, addDoc,
 } from 'firebase/firestore';
 import { ref, set } from 'firebase/database';
-import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
+import { initFirebase, COLLECTIONS, RTDB_PATHS, createAppointment } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import { addAppointmentToDeviceCalendar } from '../../../lib/calendar';
 import { logAppointmentBooked } from '../../../lib/analytics';
+import { getSortedAvailableSlots } from '../../../lib/distance';
+import FullScreenImageViewer from '../../../components/FullScreenImageViewer';
 import type { Veterinarian, Pet } from '@junglapp/types';
 
 const { db, rtdb } = initFirebase();
@@ -62,6 +64,7 @@ export default function VetDetailScreen() {
   }
 
   const [vet, setVet] = useState<Veterinarian | null>(null);
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
   const [pets, setPets] = useState<Pet[]>([]);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
@@ -119,7 +122,7 @@ export default function VetDetailScreen() {
   }, [id, user]);
 
   function getAvailableSlotsForDate(date: string): string[] {
-    return vet?.availability?.[date] || [];
+    return getSortedAvailableSlots(vet?.availability, date);
   }
 
   function confirmBookAppointment() {
@@ -146,36 +149,16 @@ export default function VetDetailScreen() {
     bookingInProgress.current = true;
     setBooking(true);
     try {
-      // Both writes commit atomically — if the clientLinks write is
-      // rejected, the appointment must not be left orphaned either,
-      // otherwise retrying after the error re-creates it (duplicate
-      // agenda entries every retry).
-      const apptRef = doc(collection(db, COLLECTIONS.APPOINTMENTS));
-      const batch = writeBatch(db);
-      batch.set(apptRef, {
-        petId: selectedPet,
-        ownerId: user.uid,
-        ownerName: user.name || 'Dueño',
+      // createAppointment (Cloud Function) writes the appointment and the
+      // clientLinks grant atomically server-side, and enforces the Premium
+      // plan's weekly quota — see functions/src/index.ts.
+      const apptId = await createAppointment({
         vetId: vet.id,
+        petId: selectedPet,
         date: selectedDate,
         time: selectedTime,
         reason,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
       });
-      // Grants the vet scoped read access to this owner's profile (see
-      // firestore.rules `users/{uid}` read rule) — only for owners they've
-      // actually booked with, not every owner in the app. Must be keyed by
-      // the vet's auth UID (vet.userId), not the veterinarians doc ID
-      // (vet.id) — the read-side rule checks request.auth.uid. merge:true
-      // keeps repeat bookings with the same vet idempotent instead of
-      // failing (the doc already exists after the first booking).
-      batch.set(doc(db, COLLECTIONS.CLIENT_LINKS, `${vet.userId}_${user.uid}`), {
-        professionalId: vet.userId,
-        ownerId: user.uid,
-        createdAt: new Date().toISOString(),
-      }, { merge: true });
-      await batch.commit();
       logAppointmentBooked('vet');
 
       // Add to the owner's device calendar — non-critical, failure must not block the booking
@@ -184,10 +167,10 @@ export default function VetDetailScreen() {
       // Notify vet via RTDB — non-critical, failure must not block the booking
       try {
         if (vet.userId && rtdb) {
-          const notifKey = `appt_${apptRef.id}`;
+          const notifKey = `appt_${apptId}`;
           await set(ref(rtdb, `${RTDB_PATHS.NOTIFICATIONS}/${vet.userId}/${notifKey}`), {
             type: 'new_appointment',
-            appointmentId: apptRef.id,
+            appointmentId: apptId,
             ownerName: user.name || 'Dueño',
             date: selectedDate,
             time: selectedTime,
@@ -257,10 +240,12 @@ export default function VetDetailScreen() {
         {/* Blue header */}
         <View style={{ backgroundColor: '#1D4ED8', height: 180, alignItems: 'center', justifyContent: 'center' }}>
           {vet.photoUrl ? (
-            <Image
-              source={{ uri: vet.photoUrl }}
-              style={{ width: 96, height: 96, borderRadius: 48, borderWidth: 3, borderColor: '#FFFFFF' }}
-            />
+            <TouchableOpacity activeOpacity={0.9} onPress={() => setViewerUri(vet.photoUrl!)}>
+              <Image
+                source={{ uri: vet.photoUrl }}
+                style={{ width: 96, height: 96, borderRadius: 48, borderWidth: 3, borderColor: '#FFFFFF' }}
+              />
+            </TouchableOpacity>
           ) : (
             <View style={{
               width: 96, height: 96, borderRadius: 48,
@@ -272,6 +257,7 @@ export default function VetDetailScreen() {
             </View>
           )}
         </View>
+        <FullScreenImageViewer uri={viewerUri} onClose={() => setViewerUri(null)} />
 
         {/* Back button */}
         <TouchableOpacity

@@ -6,10 +6,11 @@ import {
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, getDocs, collection, query, where, addDoc } from 'firebase/firestore';
-import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
+import { doc, getDoc, getDocs, collection, query, where } from 'firebase/firestore';
+import { initFirebase, COLLECTIONS, createOrder } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import { logOrderPlaced } from '../../../lib/analytics';
+import FullScreenImageViewer from '../../../components/FullScreenImageViewer';
 import type { Store, Product, StoreService } from '@junglapp/types';
 
 const { db } = initFirebase();
@@ -30,6 +31,7 @@ export default function StoreDetailScreen() {
     else router.push('/(owner)/near' as any);
   }
   const [store, setStore] = useState<Store | null>(null);
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [activeTab, setActiveTab] = useState<'products' | 'services'>('products');
 
@@ -75,10 +77,7 @@ export default function StoreDetailScreen() {
     }
     setOrdering(true);
     try {
-      await addDoc(collection(db, COLLECTIONS.ORDERS), {
-        buyerId: user.uid,
-        buyerName: user.name || '',
-        buyerPhone: user.phone || '',
+      await createOrder({
         storeId: orderProduct.storeId,
         products: [{
           productId: orderProduct.id,
@@ -87,11 +86,8 @@ export default function StoreDetailScreen() {
           price: orderProduct.price,
           photoUrl: orderProduct.photos?.[0] || null,
         }],
-        total: orderProduct.price * quantity,
-        status: 'pending',
         deliveryMethod: effectiveDeliveryMethod,
         shippingAddress: effectiveDeliveryMethod === 'pickup' ? '' : user.address,
-        createdAt: new Date().toISOString(),
       });
       logOrderPlaced();
       setOrderProduct(null);
@@ -107,12 +103,8 @@ export default function StoreDetailScreen() {
     if (!bookService || !user || !store) return;
     setBooking(true);
     try {
-      await addDoc(collection(db, COLLECTIONS.ORDERS), {
-        buyerId: user.uid,
-        buyerName: user.name || '',
-        buyerPhone: user.phone || '',
+      await createOrder({
         storeId: store.id,
-        type: 'service',
         service: {
           serviceId: bookService.id,
           serviceName: bookService.name,
@@ -120,10 +112,7 @@ export default function StoreDetailScreen() {
           duration: bookService.duration,
           note: bookNote.trim(),
         },
-        total: bookService.price,
-        status: 'pending',
         shippingAddress: user.address,
-        createdAt: new Date().toISOString(),
       });
       logOrderPlaced();
       setBookService(null);
@@ -151,12 +140,15 @@ export default function StoreDetailScreen() {
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
         {/* Hero */}
         {((store as any).photoUrl || store.logoUrl) ? (
-          <Image source={{ uri: (store as any).photoUrl || store.logoUrl }} style={{ width: '100%', height: 180 }} contentFit="cover" />
+          <TouchableOpacity activeOpacity={0.9} onPress={() => setViewerUri((store as any).photoUrl || store.logoUrl)}>
+            <Image source={{ uri: (store as any).photoUrl || store.logoUrl }} style={{ width: '100%', height: 180 }} contentFit="cover" />
+          </TouchableOpacity>
         ) : (
           <View style={{ width: '100%', height: 160, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: 56 }}>🏪</Text>
           </View>
         )}
+        <FullScreenImageViewer uri={viewerUri} onClose={() => setViewerUri(null)} />
 
         <TouchableOpacity
           onPress={goBack}

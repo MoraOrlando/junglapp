@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert, Modal, TextInput, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
@@ -155,6 +155,16 @@ export default function WalkerDetailScreen() {
                 ))}
               </View>
             </View>
+          )}
+          {(walker as any).idImageUrl && (
+            <TouchableOpacity onPress={() => Linking.openURL((walker as any).idImageUrl)} style={{ marginTop: 10 }}>
+              <Text style={{ color: PURPLE, fontSize: 12, textDecorationLine: 'underline' }}>🪪 Ver carnet / cédula cargada</Text>
+            </TouchableOpacity>
+          )}
+          {(walker as any).backgroundCheckUrl && (
+            <TouchableOpacity onPress={() => Linking.openURL((walker as any).backgroundCheckUrl)} style={{ marginTop: 6 }}>
+              <Text style={{ color: PURPLE, fontSize: 12, textDecorationLine: 'underline' }}>📋 Ver certificado de antecedentes</Text>
+            </TouchableOpacity>
           )}
           {(walker as any).rejectionReason && (
             <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 8 }}>Motivo de rechazo: {(walker as any).rejectionReason}</Text>

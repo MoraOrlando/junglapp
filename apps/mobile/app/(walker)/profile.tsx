@@ -11,6 +11,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { locationKeys } from '../../lib/locationKey';
+import { PlanCard } from '../../components/PlanCard';
 import type { Walker } from '@junglapp/types';
 
 const { db } = initFirebase();
@@ -54,6 +55,9 @@ export default function WalkerProfileScreen() {
   const [gettingLocation, setGettingLocation] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [backgroundCheckUrl, setBackgroundCheckUrl] = useState<string | null>(null);
+  const [uploadingBgCheck, setUploadingBgCheck] = useState(false);
+  const [serviceInstructions, setServiceInstructions] = useState('');
 
   useEffect(() => {
     if (!user) return;
@@ -70,6 +74,8 @@ export default function WalkerProfileScreen() {
         setExperience(data.experience != null ? String(data.experience) : '');
         setMaxDogs(data.maxDogs != null ? String(data.maxDogs) : '');
         if (data.location) setLocation(data.location);
+        setBackgroundCheckUrl(data.backgroundCheckUrl ?? null);
+        setServiceInstructions(data.serviceInstructions ?? '');
       }
     }).catch(() => {});
   }, [user?.uid]);
@@ -93,6 +99,25 @@ export default function WalkerProfileScreen() {
         Alert.alert('Error', e.message);
       } finally {
         setUploadingPhoto(false);
+      }
+    }
+  }
+
+  async function pickBackgroundCheck() {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.8 });
+    if (!result.canceled && user) {
+      setUploadingBgCheck(true);
+      try {
+        const url = await uploadImage(result.assets[0].uri);
+        // Reviewed by support alongside the ID card during account approval —
+        // no separate status field, they just see the link is now present.
+        await updateDoc(doc(db, COLLECTIONS.WALKERS, user.uid), { backgroundCheckUrl: url });
+        setBackgroundCheckUrl(url);
+        Alert.alert('✅ Certificado cargado', 'Quedó registrado y será revisado por soporte.');
+      } catch (e: any) {
+        Alert.alert('Error', e.message);
+      } finally {
+        setUploadingBgCheck(false);
       }
     }
   }
@@ -176,6 +201,7 @@ export default function WalkerProfileScreen() {
         ...locationKeys(city.trim(), region),
         experience: expNum,
         maxDogs: maxDogsNum,
+        serviceInstructions: serviceInstructions.trim(),
         updatedAt: new Date().toISOString(),
       };
       if (location) updates.location = location;
@@ -212,6 +238,28 @@ export default function WalkerProfileScreen() {
             </Text>
           </View>
         )}
+
+        <View style={{ backgroundColor: backgroundCheckUrl ? '#ECFDF5' : '#EFF6FF', borderRadius: 16, borderWidth: 1, borderColor: backgroundCheckUrl ? '#A7F3D0' : '#BFDBFE', padding: 14, marginBottom: 16 }}>
+          <Text style={{ color: backgroundCheckUrl ? '#059669' : '#1D4ED8', fontWeight: '700', fontSize: 13 }}>
+            {backgroundCheckUrl ? '✅ Certificado de antecedentes cargado' : '📋 Falta tu certificado de antecedentes'}
+          </Text>
+          <Text style={{ color: backgroundCheckUrl ? '#059669' : '#1D4ED8', fontSize: 12, marginTop: 2, marginBottom: 10 }}>
+            {backgroundCheckUrl ? 'En revisión por soporte.' : 'Súbelo para completar tu verificación. Puedes seguir usando la app mientras tanto.'}
+          </Text>
+          <TouchableOpacity
+            onPress={pickBackgroundCheck}
+            disabled={uploadingBgCheck}
+            style={{ backgroundColor: '#fff', borderRadius: 10, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: backgroundCheckUrl ? '#A7F3D0' : '#BFDBFE' }}
+          >
+            {uploadingBgCheck
+              ? <ActivityIndicator size="small" color={backgroundCheckUrl ? '#059669' : '#1D4ED8'} />
+              : <Text style={{ color: backgroundCheckUrl ? '#059669' : '#1D4ED8', fontWeight: '600', fontSize: 13 }}>
+                  {backgroundCheckUrl ? '📤 Reemplazar certificado' : '📤 Subir certificado de antecedentes'}
+                </Text>}
+          </TouchableOpacity>
+        </View>
+
+        {user && <PlanCard uid={user.uid} />}
 
         {/* Avatar */}
         <View style={{ alignItems: 'center', marginBottom: 20 }}>
@@ -302,6 +350,23 @@ export default function WalkerProfileScreen() {
                 <Text style={{ color: '#374151', fontSize: 13, fontWeight: '500', marginBottom: 6 }}>Máx. perros</Text>
                 <TextInput style={fieldStyle()} value={maxDogs} onChangeText={setMaxDogs} keyboardType="number-pad" placeholder="Ej: 3" placeholderTextColor="#9CA3AF" />
               </View>
+            </View>
+
+            <View style={{ marginTop: 12 }}>
+              <Text style={{ color: '#374151', fontSize: 13, fontWeight: '500', marginBottom: 6 }}>Indicaciones del servicio (opcional)</Text>
+              <Text style={{ color: '#9CA3AF', fontSize: 11, marginBottom: 6 }}>El dueño las verá al momento de agendar. Ej: punto de encuentro, qué traer, perros que no aceptas.</Text>
+              <TextInput
+                style={{
+                  borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
+                  paddingHorizontal: 16, paddingVertical: 12, fontSize: 14, color: '#1F2937',
+                  backgroundColor: '#fff', minHeight: 72, textAlignVertical: 'top',
+                }}
+                placeholder="Ej: Nos encontramos en la entrada del parque. Trae correa y bolsas."
+                placeholderTextColor="#9CA3AF"
+                multiline
+                value={serviceInstructions}
+                onChangeText={setServiceInstructions}
+              />
             </View>
           </View>
         )}

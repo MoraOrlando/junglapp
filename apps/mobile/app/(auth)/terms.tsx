@@ -27,7 +27,7 @@ export default function TermsScreen() {
       <ScrollView className="px-6" contentContainerStyle={{ paddingBottom: 40 }}>
         <Text className="text-3xl font-bold text-primary-700 mt-2">Documentos Legales</Text>
         <P>JunglApp — Plataforma de gestión de mascotas, servicios veterinarios a domicilio y comercio. Conforme a la Ley N° 21.719 sobre Protección y Tratamiento de los Datos Personales y a la legislación chilena vigente.</P>
-        <P>Última actualización: 29 de mayo de 2026.</P>
+        <P>Última actualización: 30 de agosto de 2026.</P>
 
         <H1>1. Política de Privacidad</H1>
         <P>JunglApp informa a sus usuarios cómo recopila, usa, almacena, comparte y protege sus datos personales, en cumplimiento de la Ley N° 21.719, la Ley N° 19.496 sobre protección de los derechos de los consumidores y demás normativa aplicable.</P>
@@ -39,11 +39,13 @@ export default function TermsScreen() {
         <LI>Encargado: tercero que trata datos por cuenta del Responsable (proveedores de nube, pasarela de pago, notificaciones).</LI>
 
         <H2>1.3. Datos que recopilamos</H2>
-        <P>La App distingue cuatro categorías de usuarios: dueños de mascotas, veterinarios, tiendas y veterinarias.</P>
+        <P>La App distingue varias categorías de usuarios: dueños de mascotas, veterinarios, tiendas, veterinarias, paseadores y adiestradores.</P>
         <LI>Dueños: nombre, RUT, dirección, correo y teléfono; datos de las mascotas (nombre, color, raza, chip, fotografías); ficha médica de la mascota; datos de transacciones.</LI>
         <LI>El RUT se utiliza exclusivamente como identificador único para asociar al dueño con su(s) mascota(s). No se publica ni se usa para otros fines.</LI>
         <LI>Veterinarios: nombre, RUT, contacto, antecedentes profesionales, agenda, precios y datos para recepción de pagos.</LI>
         <LI>Tiendas: datos de la tienda, catálogo, ofertas y pedidos.</LI>
+        <LI>Paseadores y adiestradores: nombre, RUT, contacto, dirección, ubicación geográfica (para mostrar cercanía en las búsquedas), fotografía de carnet o cédula de identidad y certificado de antecedentes.</LI>
+        <LI>El carnet/cédula y el certificado de antecedentes de paseadores y adiestradores se utilizan exclusivamente para el proceso de validación de su cuenta y, una vez completada la revisión, son eliminados de nuestros sistemas.</LI>
         <LI>Automáticos: identificadores del dispositivo, IP, sistema operativo, logs y geolocalización (cuando se autoriza).</LI>
 
         <H2>1.4. Finalidades del tratamiento</H2>

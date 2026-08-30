@@ -205,10 +205,10 @@ export default function RegisterTrainerScreen() {
           {/* Foto cédula/DNI */}
           <View style={{ marginTop: 20 }}>
             <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 }}>
-              📄 Cédula / Documento de identidad *
+              🪪 Carnet o cédula (lado frontal) *
             </Text>
             <Text style={{ color: '#6B7280', fontSize: 12, marginBottom: 10 }}>
-              Sube una foto clara de tu cédula o DNI para validar tu identidad.
+              Sube una foto clara del lado frontal, para validar tu identidad.
             </Text>
             <TouchableOpacity
               onPress={pickIdImage}

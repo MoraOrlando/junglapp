@@ -6,11 +6,13 @@ import {
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, getDocs, collection, query, where, addDoc, writeBatch } from 'firebase/firestore';
-import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
+import { doc, getDoc, getDocs, collection, query, where, addDoc } from 'firebase/firestore';
+import { initFirebase, COLLECTIONS, createAppointment } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import { addAppointmentToDeviceCalendar } from '../../../lib/calendar';
 import { logAppointmentBooked } from '../../../lib/analytics';
+import { getSortedAvailableSlots } from '../../../lib/distance';
+import FullScreenImageViewer from '../../../components/FullScreenImageViewer';
 import type { Groomer, Pet, GroomingService } from '@junglapp/types';
 
 const { db } = initFirebase();
@@ -48,6 +50,7 @@ export default function GroomerDetailScreen() {
     else router.push('/(owner)/near' as any);
   }
   const [groomer, setGroomer] = useState<Groomer | null>(null);
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
   const [reviews, setReviews] = useState<any[]>([]);
   const [pets, setPets] = useState<Pet[]>([]);
   const [selectedPet, setSelectedPet] = useState<string | null>(null);
@@ -103,7 +106,7 @@ export default function GroomerDetailScreen() {
   });
 
   const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-  const availableSlots = groomer?.availability?.[selectedDate] || [];
+  const availableSlots = getSortedAvailableSlots(groomer?.availability, selectedDate);
 
   const hasServiceOfferings = (groomer?.serviceOfferings?.length ?? 0) > 0;
 
@@ -113,42 +116,22 @@ export default function GroomerDetailScreen() {
     if (!user || !groomer) return;
     setBooking(true);
     try {
-      // Both writes commit atomically — if the clientLinks write is
-      // rejected, the appointment must not be left orphaned either,
-      // otherwise retrying after the error re-creates it (duplicate
-      // agenda entries every retry).
-      const apptRef = doc(collection(db, COLLECTIONS.APPOINTMENTS));
-      const batch = writeBatch(db);
-      batch.set(apptRef, {
+      // createAppointment (Cloud Function) writes the appointment and the
+      // clientLinks grant atomically server-side, and enforces the Premium
+      // plan's weekly quota — see functions/src/index.ts.
+      await createAppointment({
         vetId: groomer.id,
-        ownerId: user.uid,
-        ownerName: user.name || 'Dueño',
         petId: selectedPet,
         date: selectedDate,
         time: selectedTime,
         reason: bookNote.trim() || selectedService?.name || 'Servicio de peluquería',
-        status: 'pending',
         type: 'grooming',
         ...(selectedService ? {
           serviceId: selectedService.id,
           serviceName: selectedService.name,
           servicePrice: selectedService.price,
         } : {}),
-        createdAt: new Date().toISOString(),
       });
-      // Grants the groomer scoped read access to this owner's profile (see
-      // firestore.rules `users/{uid}` read rule) — only for owners they've
-      // actually booked with, not every owner in the app. Must be keyed by
-      // the groomer's auth UID (groomer.userId), not the groomers doc ID
-      // (groomer.id) — the read-side rule checks request.auth.uid. merge:true
-      // keeps repeat bookings with the same groomer idempotent instead of
-      // failing (the doc already exists after the first booking).
-      batch.set(doc(db, COLLECTIONS.CLIENT_LINKS, `${groomer.userId}_${user.uid}`), {
-        professionalId: groomer.userId,
-        ownerId: user.uid,
-        createdAt: new Date().toISOString(),
-      }, { merge: true });
-      await batch.commit();
       logAppointmentBooked('groomer');
 
       // Add to the owner's device calendar — non-critical, failure must not block the booking
@@ -203,13 +186,18 @@ export default function GroomerDetailScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Hero */}
-        <View style={{ backgroundColor: PURPLE, height: 160, alignItems: 'center', justifyContent: 'center' }}>
+        <TouchableOpacity
+          activeOpacity={groomer.photoUrl ? 0.9 : 1}
+          onPress={() => groomer.photoUrl && setViewerUri(groomer.photoUrl)}
+          style={{ backgroundColor: PURPLE, height: 160, alignItems: 'center', justifyContent: 'center' }}
+        >
           {groomer.photoUrl ? (
             <Image source={{ uri: groomer.photoUrl }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
           ) : (
             <Text style={{ fontSize: 64 }}>✂️</Text>
           )}
-        </View>
+        </TouchableOpacity>
+        <FullScreenImageViewer uri={viewerUri} onClose={() => setViewerUri(null)} />
         <TouchableOpacity onPress={goBack} style={{ position: 'absolute', top: 16, left: 16, backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 20, padding: 8 }}>
           <Text style={{ color: '#374151', fontSize: 16, paddingHorizontal: 4 }}>←</Text>
         </TouchableOpacity>

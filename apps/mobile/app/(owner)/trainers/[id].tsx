@@ -6,11 +6,13 @@ import {
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, getDocs, collection, query, where, addDoc, writeBatch } from 'firebase/firestore';
-import { initFirebase, COLLECTIONS } from '@junglapp/firebase';
+import { doc, getDoc, getDocs, collection, query, where, addDoc } from 'firebase/firestore';
+import { initFirebase, COLLECTIONS, createAppointment } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import { addAppointmentToDeviceCalendar } from '../../../lib/calendar';
 import { logAppointmentBooked } from '../../../lib/analytics';
+import { getSortedAvailableSlots } from '../../../lib/distance';
+import FullScreenImageViewer from '../../../components/FullScreenImageViewer';
 import type { Trainer } from '@junglapp/types';
 
 const { db } = initFirebase();
@@ -40,6 +42,7 @@ export default function TrainerDetailScreen() {
     else router.push('/(owner)/near' as any);
   }
   const [trainer, setTrainer] = useState<Trainer | null>(null);
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
   const [reviews, setReviews] = useState<any[]>([]);
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
@@ -78,44 +81,24 @@ export default function TrainerDetailScreen() {
   });
 
   const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-  const availableSlots = trainer?.availability?.[selectedDate] || [];
+  const availableSlots = getSortedAvailableSlots(trainer?.availability, selectedDate);
 
   async function placeBooking() {
     if (!selectedDate || !selectedTime) { Alert.alert('Selecciona', 'Elige fecha y hora'); return; }
     if (!user || !trainer) return;
     setBooking(true);
     try {
-      // Both writes commit atomically — if the clientLinks write is
-      // rejected, the appointment must not be left orphaned either,
-      // otherwise retrying after the error re-creates it (duplicate
-      // agenda entries every retry).
-      const apptRef = doc(collection(db, COLLECTIONS.APPOINTMENTS));
-      const batch = writeBatch(db);
-      batch.set(apptRef, {
+      // createAppointment (Cloud Function) writes the appointment and the
+      // clientLinks grant atomically server-side, and enforces the Premium
+      // plan's weekly quota — see functions/src/index.ts.
+      await createAppointment({
         vetId: trainer.id,
-        ownerId: user.uid,
-        ownerName: user.name || 'Dueño',
         petId: '',
         date: selectedDate,
         time: selectedTime,
         reason: bookNote.trim() || 'Sesión de adiestramiento',
-        status: 'pending',
         type: 'training',
-        createdAt: new Date().toISOString(),
       });
-      // Grants the trainer scoped read access to this owner's profile (see
-      // firestore.rules `users/{uid}` read rule) — only for owners they've
-      // actually booked with, not every owner in the app. Must be keyed by
-      // the trainer's auth UID (trainer.userId), not the trainers doc ID
-      // (trainer.id) — the read-side rule checks request.auth.uid. merge:true
-      // keeps repeat bookings with the same trainer idempotent instead of
-      // failing (the doc already exists after the first booking).
-      batch.set(doc(db, COLLECTIONS.CLIENT_LINKS, `${trainer.userId}_${user.uid}`), {
-        professionalId: trainer.userId,
-        ownerId: user.uid,
-        createdAt: new Date().toISOString(),
-      }, { merge: true });
-      await batch.commit();
       logAppointmentBooked('trainer');
 
       // Add to the owner's device calendar — non-critical, failure must not block the booking
@@ -172,13 +155,18 @@ export default function TrainerDetailScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Hero */}
-        <View style={{ backgroundColor: INDIGO, height: 160, alignItems: 'center', justifyContent: 'center' }}>
+        <TouchableOpacity
+          activeOpacity={trainer.photoUrl ? 0.9 : 1}
+          onPress={() => trainer.photoUrl && setViewerUri(trainer.photoUrl)}
+          style={{ backgroundColor: INDIGO, height: 160, alignItems: 'center', justifyContent: 'center' }}
+        >
           {trainer.photoUrl ? (
             <Image source={{ uri: trainer.photoUrl }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
           ) : (
             <Text style={{ fontSize: 64 }}>🐕</Text>
           )}
-        </View>
+        </TouchableOpacity>
+        <FullScreenImageViewer uri={viewerUri} onClose={() => setViewerUri(null)} />
         <TouchableOpacity onPress={goBack} style={{ position: 'absolute', top: 16, left: 16, backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 20, padding: 8 }}>
           <Text style={{ color: '#374151', fontSize: 16, paddingHorizontal: 4 }}>←</Text>
         </TouchableOpacity>
@@ -215,6 +203,13 @@ export default function TrainerDetailScreen() {
               </View>
             )}
           </View>
+
+          {!!trainer.serviceInstructions && (
+            <View style={{ backgroundColor: '#EEF2FF', borderRadius: 16, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#C7D2FE' }}>
+              <Text style={{ color: INDIGO, fontWeight: '700', fontSize: 13, marginBottom: 6 }}>📋 Indicaciones del servicio</Text>
+              <Text style={{ color: '#374151', fontSize: 13, lineHeight: 19 }}>{trainer.serviceInstructions}</Text>
+            </View>
+          )}
 
           {/* Book button */}
           <TouchableOpacity
