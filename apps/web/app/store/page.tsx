@@ -450,6 +450,9 @@ export default function StorePortalPage() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [storeName, setStoreName] = useState<string>('JunglApp');
   const [storeLogoUrl, setStoreLogoUrl] = useState<string | undefined>(undefined);
+  const [storeAddress, setStoreAddress] = useState<string | undefined>(undefined);
+  const [storePhone, setStorePhone] = useState<string | undefined>(undefined);
+  const [storeEmail, setStoreEmail] = useState<string | undefined>(undefined);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
@@ -592,6 +595,9 @@ export default function StorePortalPage() {
           setStoreId(sid);
           setStoreLogoUrl(storeData.photoUrl);
           if (storeData.name) setStoreName(storeData.name);
+          setStoreAddress(storeData.address || undefined);
+          setStorePhone(storeData.phone || undefined);
+          setStoreEmail(storeData.email || undefined);
           setIsStoreOwner(owner);
           setStaffUids(storeData.staffUids || []);
           await loadStoreData(sid);
@@ -861,6 +867,9 @@ export default function StorePortalPage() {
         await generateReceiptPdf({
           storeName,
           storeLogoUrl,
+          storeAddress,
+          storePhone,
+          storeEmail,
           items: committedItems,
           discount: committedDiscountAmount > 0 ? { label: discountLabel, amount: committedDiscountAmount } : undefined,
           neto: netoFromTotal(committedTotal),
@@ -886,6 +895,9 @@ export default function StorePortalPage() {
           const pdfBase64 = await generateReceiptPdfBase64({
             storeName,
             storeLogoUrl,
+            storeAddress,
+            storePhone,
+            storeEmail,
             items: committedItems,
             discount: committedDiscountAmount > 0 ? { label: discountLabel, amount: committedDiscountAmount } : undefined,
             neto: netoFromTotal(committedTotal),

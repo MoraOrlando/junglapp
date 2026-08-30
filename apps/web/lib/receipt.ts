@@ -9,6 +9,9 @@ export interface ReceiptItem {
 export interface ReceiptData {
   storeName: string;
   storeLogoUrl?: string;
+  storeAddress?: string;
+  storePhone?: string;
+  storeEmail?: string;
   items: ReceiptItem[];
   // Shown as a line item between the products and the Neto/IVA breakdown —
   // amount and iva/neto below are already post-discount.
@@ -56,7 +59,9 @@ async function buildReceiptDoc(data: ReceiptData): Promise<jsPDF> {
   const width = 80;
   const lineHeight = 5;
   const baseHeight = 65;
-  const height = baseHeight + data.items.length * lineHeight + (data.storeLogoUrl ? 22 : 0) + (data.discount && data.discount.amount > 0 ? lineHeight : 0);
+  const contactLines = [data.storeAddress, data.storePhone, data.storeEmail].filter(Boolean).length;
+  const height = baseHeight + data.items.length * lineHeight + (data.storeLogoUrl ? 22 : 0)
+    + (data.discount && data.discount.amount > 0 ? lineHeight : 0) + contactLines * 4 + 5;
 
   const doc = new jsPDF({ unit: 'mm', format: [width, height] });
   const margin = 4;
@@ -80,7 +85,18 @@ async function buildReceiptDoc(data: ReceiptData): Promise<jsPDF> {
   doc.text(data.storeName, centerX, y, { align: 'center' });
   y += 5;
 
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.text('REGISTRO DE VENTA', centerX, y, { align: 'center' });
+  y += 4;
+
   doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  if (data.storeAddress) { doc.text(data.storeAddress, centerX, y, { align: 'center' }); y += 3.5; }
+  if (data.storePhone) { doc.text(data.storePhone, centerX, y, { align: 'center' }); y += 3.5; }
+  if (data.storeEmail) { doc.text(data.storeEmail, centerX, y, { align: 'center' }); y += 3.5; }
+  y += 1.5;
+
   doc.setFontSize(8);
   doc.text(new Date(data.createdAt).toLocaleString('es-CL'), centerX, y, { align: 'center' });
   y += 4;
