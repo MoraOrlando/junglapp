@@ -175,6 +175,21 @@ export default function TrainerDetailScreen() {
           {/* Info card */}
           <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 20, marginTop: -24, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, elevation: 4, marginBottom: 20 }}>
             <Text style={{ fontSize: 22, fontWeight: '800', color: '#1F2937' }}>{trainer.name}</Text>
+            <View style={{ flexDirection: 'row', marginTop: 6 }}>
+              {trainer.status === 'approved' ? (
+                <View style={{ backgroundColor: '#DCFCE7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                  <Text style={{ fontSize: 11, color: '#16A34A', fontWeight: '700' }}>✅ Verificado</Text>
+                </View>
+              ) : trainer.status === 'rejected' ? (
+                <View style={{ backgroundColor: '#FEE2E2', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                  <Text style={{ fontSize: 11, color: '#DC2626', fontWeight: '700' }}>❌ Verificación rechazada</Text>
+                </View>
+              ) : (
+                <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                  <Text style={{ fontSize: 11, color: '#B45309', fontWeight: '700' }}>⏳ En proceso</Text>
+                </View>
+              )}
+            </View>
             {(trainer.rating ?? 0) > 0 && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
                 <Stars rating={trainer.rating!} />

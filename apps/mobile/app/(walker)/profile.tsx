@@ -280,6 +280,16 @@ export default function WalkerProfileScreen() {
               <Text style={{ color: '#DC2626', fontSize: 12, fontWeight: '600' }}>Eliminar foto</Text>
             </TouchableOpacity>
           )}
+          {walker && (
+            <View style={{
+              borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4, marginTop: 8,
+              backgroundColor: walker.status === 'approved' ? '#ECFDF5' : walker.status === 'pending' ? '#FFFBEB' : '#FEF2F2',
+            }}>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: walker.status === 'approved' ? '#059669' : walker.status === 'pending' ? '#D97706' : '#EF4444' }}>
+                {walker.status === 'approved' ? '✅ Verificado' : walker.status === 'pending' ? '⏳ En revisión' : '❌ Rechazado'}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Info card */}

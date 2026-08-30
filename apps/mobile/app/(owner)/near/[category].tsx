@@ -3,12 +3,16 @@ import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndic
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { getDocs } from 'firebase/firestore';
+import { getDocs, collection } from 'firebase/firestore';
 import * as Location from 'expo-location';
-import { COLLECTIONS } from '@junglapp/firebase';
+import { COLLECTIONS, initFirebase } from '@junglapp/firebase';
+import type { Subscription } from '@junglapp/types';
+
+const { db } = initFirebase();
 import { useAuth } from '../../../context/AuthContext';
 import { distanceKm, hasUpcomingAvailability } from '../../../lib/distance';
 import { regionScopedQuery } from '../../../lib/nearbyQuery';
+import { getQuickPosition } from '../../../lib/location';
 import { ownerFilterRegionKey } from '../../../lib/locationKey';
 import { logNearCategoryViewed, logNearResultOpened } from '../../../lib/analytics';
 import type { Veterinarian, Store } from '@junglapp/types';
@@ -50,6 +54,13 @@ interface NearItem {
   location?: { lat: number; lng: number };
   hasAvailability?: boolean;
   distanceKm?: number;
+  plan?: 'basic' | 'premium';
+  // Set for kind 'vet'/'veterinaria'/'walker'/'trainer' — whether the
+  // account's documents were reviewed and approved by soporte. Ranks above
+  // unverified results, same tier as the premium-plan boost. Undefined for
+  // 'store'/'groomer', which don't have this review flow — both sides tie
+  // and the sort falls through to distance/rating as before.
+  isVerified?: boolean;
 }
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
@@ -78,7 +89,7 @@ export default function NearCategoryScreen() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const pos = await getQuickPosition();
         coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         if (!city) {
           const [geo] = await Location.reverseGeocodeAsync({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
@@ -115,12 +126,30 @@ export default function NearCategoryScreen() {
 
   async function loadData() {
     if (!user) return;
-    const { city, region, coords, filterRegionKey } = await detectOwnerLocation();
+    const filterRegionKey = ownerFilterRegionKey(user);
+    // cat is one of exactly these 7 values (see Category type above) — the
+    // final branch covers 'trainer', not a fallback default.
+    const dataQuery =
+      cat === 'vet' || cat === 'veterinaria' || cat === 'urgencias' ? regionScopedQuery(COLLECTIONS.VETERINARIANS, filterRegionKey) :
+      cat === 'store' ? regionScopedQuery(COLLECTIONS.STORES, filterRegionKey) :
+      cat === 'groomer' ? regionScopedQuery(COLLECTIONS.GROOMERS, filterRegionKey) :
+      cat === 'walker' ? regionScopedQuery(COLLECTIONS.WALKERS, filterRegionKey) :
+      regionScopedQuery(COLLECTIONS.TRAINERS, filterRegionKey);
+
+    // GPS/reverse-geocode and the Firestore reads don't depend on each
+    // other — filterRegionKey comes from saved address data, not GPS — so
+    // run them concurrently instead of one after another (this sequential
+    // chain was the 2-3s delay on every category load).
+    const [{ city, region, coords }, dataSnap, subsSnap] = await Promise.all([
+      detectOwnerLocation(),
+      getDocs(dataQuery),
+      getDocs(collection(db, COLLECTIONS.SUBSCRIPTIONS)),
+    ]);
 
     let list: NearItem[] = [];
 
     if (cat === 'vet' || cat === 'veterinaria' || cat === 'urgencias') {
-      const snap = await getDocs(regionScopedQuery(COLLECTIONS.VETERINARIANS, filterRegionKey));
+      const snap = dataSnap;
       list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as Veterinarian))
         .filter((v) => {
@@ -155,10 +184,11 @@ export default function NearCategoryScreen() {
             clinicServices: v.clinicServices,
             location: v.location,
             hasAvailability: !!v.is24_7 || hasUpcomingAvailability(v.availability as any),
+            isVerified: (v as any).status === 'approved',
           };
         });
     } else if (cat === 'store') {
-      const snap = await getDocs(regionScopedQuery(COLLECTIONS.STORES, filterRegionKey));
+      const snap = dataSnap;
       list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as Store))
         .filter((s) => {
@@ -177,7 +207,7 @@ export default function NearCategoryScreen() {
           location: (s as any).location,
         }));
     } else if (cat === 'groomer') {
-      const snap = await getDocs(regionScopedQuery(COLLECTIONS.GROOMERS, filterRegionKey));
+      const snap = dataSnap;
       list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as any))
         .filter((g) => (g.status === 'approved' || isRecent(g)) && matchesLocation(g.city ?? '', g.region, city, region))
@@ -195,10 +225,13 @@ export default function NearCategoryScreen() {
           location: g.location,
         }));
     } else if (cat === 'walker') {
-      const snap = await getDocs(regionScopedQuery(COLLECTIONS.WALKERS, filterRegionKey));
+      const snap = dataSnap;
       list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as any))
-        .filter((w) => (w.status === 'approved' || isRecent(w)) && matchesLocation(w.city ?? '', w.region, city, region))
+        // Rejected accounts must never appear, even inside the "recent
+        // signup" grace period below — that period exists so a brand-new
+        // pending walker isn't invisible for days, not to leak rejections.
+        .filter((w) => (w.status === 'approved' || (w.status !== 'rejected' && isRecent(w))) && matchesLocation(w.city ?? '', w.region, city, region))
         .map((w) => ({
           id: w.id,
           kind: 'walker' as const,
@@ -211,12 +244,15 @@ export default function NearCategoryScreen() {
           rating: w.rating,
           reviewCount: w.reviewCount,
           location: w.location,
+          isVerified: w.status === 'approved',
         }));
     } else if (cat === 'trainer') {
-      const snap = await getDocs(regionScopedQuery(COLLECTIONS.TRAINERS, filterRegionKey));
+      const snap = dataSnap;
       list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as any))
-        .filter((t) => (t.status === 'approved' || isRecent(t)) && matchesLocation(t.city ?? '', t.region, city, region))
+        // Same rule as walkers above — rejected never shows, regardless of
+        // how recently the account was created.
+        .filter((t) => (t.status === 'approved' || (t.status !== 'rejected' && isRecent(t))) && matchesLocation(t.city ?? '', t.region, city, region))
         .map((t) => ({
           id: t.id,
           kind: 'trainer' as const,
@@ -229,16 +265,36 @@ export default function NearCategoryScreen() {
           rating: t.rating,
           reviewCount: t.reviewCount,
           location: t.location,
+          isVerified: t.status === 'approved',
         }));
     }
+
+    // Premium accounts appear first in every category — see subscriptions/{id}
+    // (Cloud Functions write plan changes are support-only, see
+    // firestore.rules). Fetched as a flat map rather than an `in` query
+    // scoped to this category's ids: simpler, and the collection is small
+    // enough that downloading it whole isn't a real cost.
+    const planById = new Map<string, 'basic' | 'premium'>();
+    subsSnap.docs.forEach((d) => planById.set(d.id, (d.data() as Subscription).plan));
 
     // Distance from the owner's live GPS position to each provider's captured location
     const withDistance = list.map((it) => ({
       ...it,
+      plan: planById.get(it.id) ?? 'premium',
       distanceKm: (coords && it.location) ? distanceKm(coords.lat, coords.lng, it.location.lat, it.location.lng) : undefined,
     }));
 
-    function byDistanceThenRating(a: NearItem, b: NearItem) {
+    function byPlanThenDistanceThenRating(a: NearItem, b: NearItem) {
+      const planA = a.plan === 'premium' ? 0 : 1;
+      const planB = b.plan === 'premium' ? 0 : 1;
+      if (planA !== planB) return planA - planB;
+      // Verified accounts (soporte-approved: vets/clinics, walkers,
+      // trainers) rank above unverified/pending — undefined on categories
+      // without a review flow (store, groomer), where both sides tie at 1
+      // and this tier is a no-op, falling through to distance/rating.
+      const verifiedA = a.isVerified ? 0 : 1;
+      const verifiedB = b.isVerified ? 0 : 1;
+      if (verifiedA !== verifiedB) return verifiedA - verifiedB;
       if (a.distanceKm != null && b.distanceKm != null) {
         if (a.distanceKm !== b.distanceKm) return a.distanceKm - b.distanceKm;
         return (b.rating ?? 0) - (a.rating ?? 0);
@@ -249,11 +305,11 @@ export default function NearCategoryScreen() {
     }
 
     if (cat === 'vet' || cat === 'veterinaria' || cat === 'urgencias') {
-      const available = withDistance.filter((it) => it.hasAvailability).sort(byDistanceThenRating);
-      const unavailable = withDistance.filter((it) => !it.hasAvailability).sort(byDistanceThenRating);
+      const available = withDistance.filter((it) => it.hasAvailability).sort(byPlanThenDistanceThenRating);
+      const unavailable = withDistance.filter((it) => !it.hasAvailability).sort(byPlanThenDistanceThenRating);
       setItems([...available, ...unavailable]);
     } else {
-      setItems([...withDistance].sort(byDistanceThenRating));
+      setItems([...withDistance].sort(byPlanThenDistanceThenRating));
     }
   }
 
@@ -347,6 +403,16 @@ export default function NearCategoryScreen() {
                       <Text style={{ color: '#64748B', fontSize: 12, marginBottom: 4 }}>{it.address}</Text>
 
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
+                        {it.isVerified && (
+                          <View style={{ backgroundColor: '#DCFCE7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                            <Text style={{ fontSize: 11, color: '#16A34A', fontWeight: '700' }}>✅ Verificado</Text>
+                          </View>
+                        )}
+                        {!it.isVerified && (it.kind === 'walker' || it.kind === 'trainer') && (
+                          <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                            <Text style={{ fontSize: 11, color: '#B45309', fontWeight: '700' }}>⏳ En proceso</Text>
+                          </View>
+                        )}
                         {it.distanceKm != null && (
                           <View style={{ backgroundColor: '#EFF6FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
                             <Text style={{ fontSize: 11, color: '#1D4ED8', fontWeight: '700' }}>📍 {formatDistance(it.distanceKm)}</Text>
