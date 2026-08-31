@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Alert,
-  ActivityIndicator, Linking,
+  ActivityIndicator, Linking, Modal, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy } from 'firebase/firestore';
-import { ref, set } from 'firebase/database';
-import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
+import { initFirebase, COLLECTIONS, joinChat, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import { logAppointmentCompleted, logAppointmentCancelled } from '../../../lib/analytics';
 import type { Appointment, Pet, Veterinarian } from '@junglapp/types';
 
-const { db, rtdb } = initFirebase();
+const { db } = initFirebase();
 
 const PRIMARY = '#1D4ED8';
 const GREEN = '#16A34A';
@@ -34,6 +34,9 @@ const STATUS_LABELS: Record<string, string> = {
 const VISIT_REASON_ICONS: Record<string, string> = {
   Vacunas: '💉', Control: '🩺', Operación: '🔬', Otro: '📋',
 };
+// Same list as apps/mobile/app/(owner)/pets/add-visit.tsx — kept identical
+// so a visit's reason means the same thing regardless of who logged it.
+const VISIT_REASONS = ['Vacunas', 'Control', 'Operación', 'Otro'];
 
 interface MedicalVisit {
   id: string;
@@ -60,6 +63,13 @@ export default function AppointmentDetailScreen() {
   const [saving, setSaving] = useState(false);
   const [openingChat, setOpeningChat] = useState(false);
   const [showFullHistory, setShowFullHistory] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const [visitReason, setVisitReason] = useState('');
+  const [showReasonDropdown, setShowReasonDropdown] = useState(false);
+  const [visitDiagnosis, setVisitDiagnosis] = useState('');
+  const [visitTreatment, setVisitTreatment] = useState('');
+  const [visitPhotoUrl, setVisitPhotoUrl] = useState<string | null>(null);
+  const [uploadingVisitPhoto, setUploadingVisitPhoto] = useState(false);
 
   useEffect(() => {
     if (!id || !user) return;
@@ -69,10 +79,13 @@ export default function AppointmentDetailScreen() {
   async function loadAll() {
     setLoading(true);
     try {
-      // Load vet profile first to get vet doc ID
-      const vetSnap = await getDocs(
-        query(collection(db, COLLECTIONS.VETERINARIANS), where('userId', '==', user!.uid))
-      );
+      // Vet profile and the appointment don't depend on each other — only
+      // the ownership guard right after needs both — so fetch them together
+      // instead of one-after-the-other.
+      const [vetSnap, apptSnap] = await Promise.all([
+        getDocs(query(collection(db, COLLECTIONS.VETERINARIANS), where('userId', '==', user!.uid))),
+        getDoc(doc(db, COLLECTIONS.APPOINTMENTS, id!)),
+      ]);
       if (vetSnap.empty) {
         Alert.alert('Error', 'No se encontró tu perfil de veterinario.');
         router.canGoBack() ? router.back() : router.replace('/(vet)' as any);
@@ -81,8 +94,6 @@ export default function AppointmentDetailScreen() {
       const vet = { id: vetSnap.docs[0].id, ...vetSnap.docs[0].data() } as Veterinarian;
       setVetProfile(vet);
 
-      // Load appointment
-      const apptSnap = await getDoc(doc(db, COLLECTIONS.APPOINTMENTS, id!));
       if (!apptSnap.exists()) {
         Alert.alert('Error', 'Cita no encontrada.');
         router.canGoBack() ? router.back() : router.replace('/(vet)' as any);
@@ -106,18 +117,22 @@ export default function AppointmentDetailScreen() {
       // the rule allows *create* but not update, so re-writing an existing
       // link would just be a denied no-op. Non-critical either way. Must be
       // keyed by the vet's auth UID (user.uid), not the veterinarians doc ID
-      // (vet.id) — the read-side rule checks request.auth.uid.
-      try {
-        const linkRef = doc(db, COLLECTIONS.CLIENT_LINKS, `${user!.uid}_${appt.ownerId}`);
-        const linkSnap = await getDoc(linkRef);
-        if (!linkSnap.exists()) {
-          await setDoc(linkRef, {
-            professionalId: user!.uid,
-            ownerId: appt.ownerId,
-            createdAt: new Date().toISOString(),
-          });
-        }
-      } catch {}
+      // (vet.id) — the read-side rule checks request.auth.uid. Kicked off
+      // here without awaiting — it only gates the owner-profile read further
+      // below, not the pet/medical-history load, so it runs alongside that
+      // instead of adding its own round trip up front.
+      const linkRef = doc(db, COLLECTIONS.CLIENT_LINKS, `${user!.uid}_${appt.ownerId}`);
+      const linkHeal = getDoc(linkRef)
+        .then((linkSnap) => {
+          if (!linkSnap.exists()) {
+            return setDoc(linkRef, {
+              professionalId: user!.uid,
+              ownerId: appt.ownerId,
+              createdAt: new Date().toISOString(),
+            });
+          }
+        })
+        .catch(() => {});
 
       // Load pet and medical history — vets always have blanket read access
       // to these (see firestore.rules), so they must render even if the
@@ -148,6 +163,7 @@ export default function AppointmentDetailScreen() {
       // have caught up yet) — load it separately so a denial here doesn't
       // block pet/medical data that just rendered above.
       try {
+        await linkHeal;
         const ownerSnap = await getDoc(doc(db, 'users', appt.ownerId));
         if (ownerSnap.exists()) setOwnerProfile({ id: ownerSnap.id, ...ownerSnap.data() });
       } catch {}
@@ -175,6 +191,50 @@ export default function AppointmentDetailScreen() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function pickVisitPhoto() {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.8 });
+    if (result.canceled || !result.assets[0]) return;
+    setUploadingVisitPhoto(true);
+    try {
+      const url = await uploadImage(result.assets[0].uri);
+      setVisitPhotoUrl(url);
+    } catch {
+      Alert.alert('Error', 'No se pudo subir la foto');
+    } finally {
+      setUploadingVisitPhoto(false);
+    }
+  }
+
+  // Writes consultation onto the appointment doc itself (not a separate
+  // medicalVisits doc) — apps/mobile/app/(owner)/pets/[id].tsx already reads
+  // completed appointments with a `consultation` field and shows them in the
+  // pet's history automatically, so this is the existing, already-consumed
+  // shape rather than a new one.
+  async function submitCompleteVisit() {
+    if (!visitReason) {
+      Alert.alert('Falta información', 'Selecciona el motivo de la visita.');
+      return;
+    }
+    if (!visitTreatment.trim()) {
+      Alert.alert('Falta información', 'Describe brevemente lo realizado en la consulta.');
+      return;
+    }
+    await changeStatus('completed', {
+      vetName: vetProfile?.name || user?.name || 'Veterinario',
+      consultation: {
+        visitReason,
+        ...(visitDiagnosis.trim() ? { diagnosis: visitDiagnosis.trim() } : {}),
+        treatmentDone: visitTreatment.trim(),
+        ...(visitPhotoUrl ? { prescriptionImageUrl: visitPhotoUrl } : {}),
+      },
+    });
+    setCompleting(false);
+    setVisitReason('');
+    setVisitDiagnosis('');
+    setVisitTreatment('');
+    setVisitPhotoUrl(null);
   }
 
   function confirmCancel() {
@@ -216,10 +276,7 @@ export default function AppointmentDetailScreen() {
         chatId = newChat.id;
       }
 
-      // Write vet's own entry first (always allowed), then owner's entry
-      // (allowed because vet is now a member of the chat)
-      await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${user.uid}`), true);
-      await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${appointment.ownerId}`), true);
+      await joinChat(chatId).catch(() => {});
 
       router.push(`/(vet)/chat/${chatId}` as any);
     } catch {
@@ -486,11 +543,43 @@ export default function AppointmentDetailScreen() {
             </>
           )}
 
-          {/* Estado: completada */}
+          {/* Estado: completada — muestra lo que el veterinario registró, no
+              solo un badge, para que quede como bitácora consultable. */}
           {isCompleted && (
-            <View style={{ backgroundColor: '#F0FDF4', borderRadius: 16, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#BBF7D0', alignItems: 'center' }}>
-              <Text style={{ fontSize: 28, marginBottom: 4 }}>✅</Text>
-              <Text style={{ fontWeight: '700', color: GREEN, fontSize: 15 }}>Consulta finalizada</Text>
+            <View style={{ backgroundColor: '#F0FDF4', borderRadius: 16, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#BBF7D0' }}>
+              <View style={{ alignItems: 'center', marginBottom: appointment?.consultation ? 12 : 0 }}>
+                <Text style={{ fontSize: 28, marginBottom: 4 }}>✅</Text>
+                <Text style={{ fontWeight: '700', color: GREEN, fontSize: 15 }}>Consulta finalizada</Text>
+              </View>
+              {appointment?.consultation && (
+                <View style={{ borderTopWidth: 1, borderTopColor: '#BBF7D0', paddingTop: 12, gap: 8 }}>
+                  {appointment.consultation.visitReason && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ fontSize: 15 }}>{VISIT_REASON_ICONS[appointment.consultation.visitReason] ?? '📋'}</Text>
+                      <Text style={{ fontWeight: '700', color: DARK, fontSize: 13 }}>{appointment.consultation.visitReason}</Text>
+                    </View>
+                  )}
+                  {appointment.consultation.diagnosis && (
+                    <View>
+                      <Text style={{ color: GRAY, fontSize: 12 }}>Diagnóstico</Text>
+                      <Text style={{ color: DARK, fontSize: 13 }}>{appointment.consultation.diagnosis}</Text>
+                    </View>
+                  )}
+                  {(appointment.consultation as any).treatmentDone || appointment.consultation.treatment ? (
+                    <View>
+                      <Text style={{ color: GRAY, fontSize: 12 }}>Tratamiento / notas</Text>
+                      <Text style={{ color: DARK, fontSize: 13 }}>
+                        {(appointment.consultation as any).treatmentDone || appointment.consultation.treatment}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {appointment.consultation.prescriptionImageUrl && (
+                    <TouchableOpacity onPress={() => Linking.openURL(appointment.consultation!.prescriptionImageUrl!)}>
+                      <Text style={{ color: PRIMARY, fontSize: 12, fontWeight: '600' }}>📄 Ver foto de receta</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
             </View>
           )}
 
@@ -509,9 +598,19 @@ export default function AppointmentDetailScreen() {
               )}
 
               {isConfirmed && (
-                <View style={{ backgroundColor: '#F0FDF4', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#BBF7D0', alignItems: 'center' }}>
-                  <Text style={{ color: GREEN, fontWeight: '600', fontSize: 14 }}>✅ Cita confirmada</Text>
-                </View>
+                <>
+                  <View style={{ backgroundColor: '#F0FDF4', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#BBF7D0', alignItems: 'center' }}>
+                    <Text style={{ color: GREEN, fontWeight: '600', fontSize: 14 }}>✅ Cita confirmada</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={{ backgroundColor: saving ? '#93C5FD' : PRIMARY, borderRadius: 16, paddingVertical: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+                    onPress={() => setCompleting(true)}
+                    disabled={saving}
+                  >
+                    <Text style={{ fontSize: 18 }}>🏁</Text>
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Marcar como realizada</Text>
+                  </TouchableOpacity>
+                </>
               )}
 
               <TouchableOpacity
@@ -535,6 +634,96 @@ export default function AppointmentDetailScreen() {
 
         </View>
       </ScrollView>
+
+      <Modal visible={completing} transparent animationType="fade" onRequestClose={() => setCompleting(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', paddingHorizontal: 24 }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 24, maxHeight: '85%' }}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={{ fontWeight: '700', fontSize: 16, color: DARK, marginBottom: 4 }}>🏁 Completar consulta</Text>
+              <Text style={{ color: GRAY, fontSize: 13, marginBottom: 16 }}>
+                Esto queda visible automáticamente en la ficha de la mascota, en el perfil del dueño.
+              </Text>
+
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 }}>Motivo de la visita</Text>
+              <TouchableOpacity
+                onPress={() => setShowReasonDropdown(!showReasonDropdown)}
+                style={{ borderWidth: 1, borderColor: visitReason ? PRIMARY : BORDER, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: showReasonDropdown ? 4 : 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+              >
+                <Text style={{ fontSize: 14, color: visitReason ? DARK : '#9CA3AF', fontWeight: visitReason ? '600' : '400' }}>
+                  {visitReason ? `${VISIT_REASON_ICONS[visitReason] ?? '📋'} ${visitReason}` : 'Seleccionar motivo...'}
+                </Text>
+                <Text style={{ color: '#9CA3AF' }}>{showReasonDropdown ? '▲' : '▼'}</Text>
+              </TouchableOpacity>
+              {showReasonDropdown && (
+                <View style={{ borderWidth: 1, borderColor: BORDER, borderRadius: 12, marginBottom: 14, overflow: 'hidden' }}>
+                  {VISIT_REASONS.map((r) => (
+                    <TouchableOpacity
+                      key={r}
+                      onPress={() => { setVisitReason(r); setShowReasonDropdown(false); }}
+                      style={{ paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: visitReason === r ? '#EFF6FF' : '#fff' }}
+                    >
+                      <Text style={{ fontSize: 16 }}>{VISIT_REASON_ICONS[r] ?? '📋'}</Text>
+                      <Text style={{ fontSize: 14, color: visitReason === r ? PRIMARY : '#374151', fontWeight: visitReason === r ? '600' : '400' }}>{r}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 }}>Diagnóstico (opcional)</Text>
+              <TextInput
+                value={visitDiagnosis}
+                onChangeText={setVisitDiagnosis}
+                placeholder="Ej: Otitis leve"
+                placeholderTextColor="#9CA3AF"
+                style={{ borderWidth: 1, borderColor: BORDER, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, marginBottom: 14 }}
+              />
+
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 }}>Tratamiento / notas de la consulta</Text>
+              <TextInput
+                value={visitTreatment}
+                onChangeText={setVisitTreatment}
+                placeholder="Qué se hizo, medicamentos recetados, indicaciones..."
+                placeholderTextColor="#9CA3AF"
+                multiline
+                numberOfLines={4}
+                style={{ borderWidth: 1, borderColor: BORDER, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, minHeight: 90, textAlignVertical: 'top', marginBottom: 14 }}
+              />
+
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 }}>Foto de receta (opcional)</Text>
+              <TouchableOpacity
+                onPress={pickVisitPhoto}
+                disabled={uploadingVisitPhoto}
+                style={{ height: 120, borderRadius: 14, borderWidth: 1, borderColor: BORDER, borderStyle: visitPhotoUrl ? 'solid' : 'dashed', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: 18 }}
+              >
+                {uploadingVisitPhoto ? (
+                  <ActivityIndicator color={PRIMARY} />
+                ) : visitPhotoUrl ? (
+                  <Image source={{ uri: visitPhotoUrl }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+                ) : (
+                  <Text style={{ color: '#9CA3AF', fontSize: 13 }}>📄 Toca para agregar una foto</Text>
+                )}
+              </TouchableOpacity>
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  onPress={() => setCompleting(false)}
+                  disabled={saving}
+                  style={{ flex: 1, borderWidth: 1, borderColor: BORDER, borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}
+                >
+                  <Text style={{ color: '#374151', fontWeight: '600' }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={submitCompleteVisit}
+                  disabled={saving || uploadingVisitPhoto}
+                  style={{ flex: 1, backgroundColor: saving ? '#93C5FD' : PRIMARY, borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}
+                >
+                  {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Guardar</Text>}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }

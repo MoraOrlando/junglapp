@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Modal } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Modal, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 
 function StarRating({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (
@@ -52,39 +52,43 @@ export default function PendingReviewModal({ visible, providerName, kind, onSubm
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onPostpone}>
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
-        <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 }}>
-          <Text style={{ fontSize: 17, fontWeight: '800', color: '#1E293B', marginBottom: 6 }}>
-            {kind === 'walker' ? '🦮' : '🩺'} ¿Cómo fue con {providerName}?
-          </Text>
-          <Text style={{ color: '#6B7280', fontSize: 13, marginBottom: 16 }}>
-            Completaste un servicio con este {roleLabel}. Tu reseña ayuda a otros dueños de mascota.
-          </Text>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: '90%' }}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={{ fontSize: 17, fontWeight: '800', color: '#1E293B', marginBottom: 6 }}>
+                {kind === 'walker' ? '🦮' : '🩺'} ¿Cómo fue con {providerName}?
+              </Text>
+              <Text style={{ color: '#6B7280', fontSize: 13, marginBottom: 16 }}>
+                Completaste un servicio con este {roleLabel}. Tu reseña ayuda a otros dueños de mascota.
+              </Text>
 
-          <StarRating value={rating} onChange={setRating} />
+              <StarRating value={rating} onChange={setRating} />
 
-          <TextInput
-            style={{ marginTop: 16, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, padding: 12, fontSize: 13, color: '#1E293B', minHeight: 80, textAlignVertical: 'top' }}
-            placeholder="Cuéntanos cómo fue la atención..."
-            placeholderTextColor="#9CA3AF"
-            multiline
-            value={comment}
-            onChangeText={setComment}
-          />
+              <TextInput
+                style={{ marginTop: 16, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, padding: 12, fontSize: 13, color: '#1E293B', minHeight: 80, textAlignVertical: 'top' }}
+                placeholder="Cuéntanos cómo fue la atención..."
+                placeholderTextColor="#9CA3AF"
+                multiline
+                value={comment}
+                onChangeText={setComment}
+              />
 
-          <TouchableOpacity
-            onPress={handleSubmit}
-            disabled={submitting || rating === 0}
-            style={{ marginTop: 16, backgroundColor: rating === 0 ? '#D1D5DB' : submitting ? '#93C5FD' : '#2D6A4F', borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
-          >
-            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>
-              {submitting ? 'Enviando...' : 'Enviar reseña'}
-            </Text>
-          </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSubmit}
+                disabled={submitting || rating === 0}
+                style={{ marginTop: 16, backgroundColor: rating === 0 ? '#D1D5DB' : submitting ? '#93C5FD' : '#2D6A4F', borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>
+                  {submitting ? 'Enviando...' : 'Enviar reseña'}
+                </Text>
+              </TouchableOpacity>
 
-          <TouchableOpacity onPress={onPostpone} disabled={submitting} style={{ marginTop: 10, paddingVertical: 10, alignItems: 'center' }}>
-            <Text style={{ color: '#6B7280', fontWeight: '600', fontSize: 13 }}>Ahora no</Text>
-          </TouchableOpacity>
-        </View>
+              <TouchableOpacity onPress={onPostpone} disabled={submitting} style={{ marginTop: 10, paddingVertical: 10, alignItems: 'center' }}>
+                <Text style={{ color: '#6B7280', fontWeight: '600', fontSize: 13 }}>Ahora no</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );

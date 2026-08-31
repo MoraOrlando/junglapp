@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Alert,
-  ActivityIndicator, Linking,
+  ActivityIndicator, Linking, Modal, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
-import { ref, set } from 'firebase/database';
-import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
+import { initFirebase, COLLECTIONS, joinChat, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import { logAppointmentCompleted, logAppointmentCancelled } from '../../../lib/analytics';
 import type { Appointment, Pet, Walker } from '@junglapp/types';
@@ -19,7 +19,7 @@ function appointmentCategory(type: string | undefined): 'walker' | 'groomer' | '
   return 'walker';
 }
 
-const { db, rtdb } = initFirebase();
+const { db } = initFirebase();
 
 const GREEN = '#2D6A4F';
 const BORDER = '#E2E8F0';
@@ -50,6 +50,10 @@ export default function WalkerAppointmentDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [openingChat, setOpeningChat] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const [visitTreatment, setVisitTreatment] = useState('');
+  const [visitPhotoUrl, setVisitPhotoUrl] = useState<string | null>(null);
+  const [uploadingVisitPhoto, setUploadingVisitPhoto] = useState(false);
 
   useEffect(() => {
     if (!id || !user) return;
@@ -150,11 +154,39 @@ export default function WalkerAppointmentDetailScreen() {
     ]);
   }
 
-  function confirmComplete() {
-    Alert.alert('Marcar como completada', '¿El paseo/cuidado ya se realizó?', [
-      { text: 'No', style: 'cancel' },
-      { text: 'Sí, completar', onPress: () => changeStatus('completed') },
-    ]);
+  async function pickVisitPhoto() {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.8 });
+    if (result.canceled || !result.assets[0]) return;
+    setUploadingVisitPhoto(true);
+    try {
+      const url = await uploadImage(result.assets[0].uri);
+      setVisitPhotoUrl(url);
+    } catch {
+      Alert.alert('Error', 'No se pudo subir la foto');
+    } finally {
+      setUploadingVisitPhoto(false);
+    }
+  }
+
+  // Writes consultation onto the appointment doc itself (not a separate
+  // medicalVisits doc) — apps/mobile/app/(owner)/pets/[id].tsx already reads
+  // completed appointments with a `consultation` field and shows them in the
+  // pet's history automatically, so this reuses that existing shape.
+  async function submitCompleteVisit() {
+    if (!visitTreatment.trim()) {
+      Alert.alert('Falta información', 'Cuéntale al dueño cómo estuvo el servicio.');
+      return;
+    }
+    await changeStatus('completed', {
+      vetName: walkerProfile?.name || user?.name || 'Paseador',
+      consultation: {
+        treatmentDone: visitTreatment.trim(),
+        ...(visitPhotoUrl ? { prescriptionImageUrl: visitPhotoUrl } : {}),
+      },
+    });
+    setCompleting(false);
+    setVisitTreatment('');
+    setVisitPhotoUrl(null);
   }
 
   async function openChat() {
@@ -184,8 +216,7 @@ export default function WalkerAppointmentDetailScreen() {
         chatId = newChat.id;
       }
 
-      await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${user.uid}`), true);
-      await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${appointment.ownerId}`), true);
+      await joinChat(chatId).catch(() => {});
 
       router.push(`/(walker)/chat/${chatId}` as any);
     } catch {
@@ -372,10 +403,10 @@ export default function WalkerAppointmentDetailScreen() {
                 <>
                   <TouchableOpacity
                     style={{ backgroundColor: saving ? '#86efac' : GREEN, borderRadius: 16, paddingVertical: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
-                    onPress={confirmComplete}
+                    onPress={() => setCompleting(true)}
                     disabled={saving}
                   >
-                    {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ fontSize: 18 }}>🏆</Text>}
+                    <Text style={{ fontSize: 18 }}>🏆</Text>
                     <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Marcar como completada</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -401,6 +432,62 @@ export default function WalkerAppointmentDetailScreen() {
 
         </View>
       </ScrollView>
+
+      <Modal visible={completing} transparent animationType="fade" onRequestClose={() => setCompleting(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', paddingHorizontal: 24 }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 24, maxHeight: '85%' }}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={{ fontWeight: '700', fontSize: 16, color: DARK, marginBottom: 4 }}>🏆 Completar servicio</Text>
+              <Text style={{ color: GRAY, fontSize: 13, marginBottom: 16 }}>
+                Esto queda visible automáticamente en la ficha de la mascota, en el perfil del dueño.
+              </Text>
+
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 }}>¿Cómo estuvo?</Text>
+              <TextInput
+                value={visitTreatment}
+                onChangeText={setVisitTreatment}
+                placeholder="Cómo se comportó, novedades, indicaciones para el dueño..."
+                placeholderTextColor="#9CA3AF"
+                multiline
+                numberOfLines={4}
+                style={{ borderWidth: 1, borderColor: BORDER, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, minHeight: 90, textAlignVertical: 'top', marginBottom: 14 }}
+              />
+
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 }}>Foto (opcional)</Text>
+              <TouchableOpacity
+                onPress={pickVisitPhoto}
+                disabled={uploadingVisitPhoto}
+                style={{ height: 120, borderRadius: 14, borderWidth: 1, borderColor: BORDER, borderStyle: visitPhotoUrl ? 'solid' : 'dashed', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: 18 }}
+              >
+                {uploadingVisitPhoto ? (
+                  <ActivityIndicator color={GREEN} />
+                ) : visitPhotoUrl ? (
+                  <Image source={{ uri: visitPhotoUrl }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+                ) : (
+                  <Text style={{ color: '#9CA3AF', fontSize: 13 }}>📷 Toca para agregar una foto</Text>
+                )}
+              </TouchableOpacity>
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  onPress={() => setCompleting(false)}
+                  disabled={saving}
+                  style={{ flex: 1, borderWidth: 1, borderColor: BORDER, borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}
+                >
+                  <Text style={{ color: '#374151', fontWeight: '600' }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={submitCompleteVisit}
+                  disabled={saving || uploadingVisitPhoto}
+                  style={{ flex: 1, backgroundColor: saving ? '#86efac' : GREEN, borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}
+                >
+                  {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Guardar</Text>}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }

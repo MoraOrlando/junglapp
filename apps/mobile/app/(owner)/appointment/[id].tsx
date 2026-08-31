@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, Alert,
-  ActivityIndicator, Linking,
+  ActivityIndicator, Linking, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -359,7 +359,8 @@ export default function OwnerAppointmentDetailScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
-      <ScrollView style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
 
         {/* Header */}
         <View style={{ backgroundColor: GREEN, paddingTop: 16, paddingBottom: 28, paddingHorizontal: 20 }}>
@@ -809,6 +810,7 @@ export default function OwnerAppointmentDetailScreen() {
 
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
