@@ -35,6 +35,9 @@ interface CreateAppointmentInput {
   serviceId?: string;
   serviceName?: string;
   servicePrice?: number;
+  // Set to cash in a walk from an already-purchased WalkPlanPurchase
+  // instead of a one-off paid booking — see Walker.planEnabled.
+  planPurchaseId?: string;
 }
 
 // Same rationale as createOrder — atomically enforces the weekly

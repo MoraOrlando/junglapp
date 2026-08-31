@@ -41,6 +41,16 @@ function generateTempPassword(): string {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Escapes user-supplied text before it's interpolated into an HTML email —
+// report fields (reason, reportedUserName) come straight from a client-writable
+// Firestore doc, so without this a report could inject HTML/links into the
+// admin notification.
+function escapeHtml(value: unknown): string {
+  return String(value ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
+  ));
+}
+
 export const sendTempPassword = onCall({ secrets: [resendApiKey] }, async (request) => {
   const { email } = request.data;
 
@@ -251,6 +261,102 @@ export const createStoreCollaborator = onCall({ secrets: [resendApiKey] }, async
   return { uid: newUser.uid, tempPassword };
 });
 
+// Lets a veterinary clinic owner (isClinic: true) create a "collaborator"
+// vet account that shares the clinic's agenda/patients — see isVetStaff() in
+// firestore.rules. Mirrors createStoreCollaborator above field-for-field;
+// must run server-side for the same reason (creating a second Firebase Auth
+// account from the client SDK would sign the caller out of their own session).
+export const createVetCollaborator = onCall({ secrets: [resendApiKey] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  // The veterinarians doc's ID is the owner's own uid (see
+  // apps/web/app/acceso/crear-cuenta/page.tsx), so this doubles as the "is
+  // this caller actually the clinic owner" check.
+  const vetDoc = await admin.firestore().collection('veterinarians').doc(request.auth.uid).get();
+  if (!vetDoc.exists) {
+    throw new HttpsError('permission-denied', 'Solo el dueño de una veterinaria puede agregar colaboradores.');
+  }
+  const vetData = vetDoc.data()!;
+  if (!vetData.isClinic) {
+    throw new HttpsError('permission-denied', 'Solo las veterinarias establecidas pueden agregar veterinarios colaboradores.');
+  }
+
+  const { name, email, phone } = request.data as { name?: string; email?: string; phone?: string };
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    throw new HttpsError('invalid-argument', 'Falta el nombre del colaborador.');
+  }
+  if (!email || typeof email !== 'string' || email.length > 320 || !EMAIL_REGEX.test(email)) {
+    throw new HttpsError('invalid-argument', 'Correo inválido.');
+  }
+  const normalizedEmail = email.trim().toLowerCase();
+  const trimmedName = name.trim();
+
+  const existing = await admin.auth().getUserByEmail(normalizedEmail).catch(() => null);
+  if (existing) {
+    throw new HttpsError('already-exists', 'Ya existe una cuenta con ese correo.');
+  }
+
+  const tempPassword = generateTempPassword();
+  const newUser = await admin.auth().createUser({
+    email: normalizedEmail,
+    password: tempPassword,
+    displayName: trimmedName,
+  });
+
+  await admin.firestore().collection('users').doc(newUser.uid).set({
+    uid: newUser.uid,
+    role: 'vet',
+    name: trimmedName,
+    email: normalizedEmail,
+    phone: typeof phone === 'string' ? phone.trim() : '',
+    rut: '',
+    address: '',
+    region: '',
+    city: '',
+    mustChangePassword: true,
+    createdAt: new Date().toISOString(),
+  });
+
+  await vetDoc.ref.update({
+    staffUids: admin.firestore.FieldValue.arrayUnion(newUser.uid),
+  });
+
+  // Best-effort — the temp password is also returned below so the owner can
+  // relay it manually (WhatsApp, in person) if this email doesn't arrive,
+  // same fallback createStoreCollaborator above relies on.
+  try {
+    const resend = new Resend(resendApiKey.value());
+    await resend.emails.send({
+      from: MAIL_FROM,
+      to: normalizedEmail,
+      subject: `🔑 Te agregaron como veterinario/a colaborador de ${vetData.name || 'una veterinaria'} en JunglApp`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #f9fafb; border-radius: 12px;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="color: #2D6A4F; font-size: 28px; margin: 0;">🐾 JunglApp</h1>
+          </div>
+          <div style="background: white; border-radius: 12px; padding: 24px; border: 1px solid #e5e7eb;">
+            <p style="color: #374151; font-size: 16px;">Hola <strong>${trimmedName}</strong>,</p>
+            <p style="color: #6B7280;">${vetData.name || 'Una veterinaria'} te agregó como veterinario/a colaborador en JunglApp. Ya puedes acceder al panel de veterinaria con estos datos:</p>
+            <p style="color: #374151; margin-top: 16px;"><strong>Correo:</strong> ${normalizedEmail}</p>
+            <p style="color: #374151;">Tu <strong>contraseña temporal</strong> es:</p>
+            <div style="background: #f0fdf4; border: 2px dashed #2D6A4F; border-radius: 10px; padding: 16px; text-align: center; margin: 16px 0;">
+              <span style="font-size: 28px; font-weight: bold; color: #2D6A4F; letter-spacing: 4px;">${tempPassword}</span>
+            </div>
+            <p style="color: #6B7280; font-size: 13px;">Al ingresar, la aplicación te pedirá crear una nueva contraseña.</p>
+          </div>
+        </div>
+      `,
+    });
+  } catch {
+    // Swallow — the caller still gets tempPassword back to relay manually.
+  }
+
+  return { uid: newUser.uid, tempPassword };
+});
+
 const ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
 const IMAGE_MIME_TYPES: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf',
@@ -277,7 +383,7 @@ export const uploadUserImage = onCall(async (request) => {
     throw new HttpsError('unauthenticated', 'Debes iniciar sesión para subir archivos.');
   }
 
-  const { base64, ext, contentType } = request.data as { base64?: string; ext?: string; contentType?: string };
+  const { base64, ext } = request.data as { base64?: string; ext?: string };
   if (!base64 || typeof base64 !== 'string') {
     throw new HttpsError('invalid-argument', 'Falta el contenido de la imagen.');
   }
@@ -285,7 +391,12 @@ export const uploadUserImage = onCall(async (request) => {
   const resolvedExt = ALLOWED_IMAGE_EXTENSIONS.includes((ext || '').toLowerCase())
     ? (ext as string).toLowerCase()
     : 'jpg';
-  const resolvedContentType = contentType || IMAGE_MIME_TYPES[resolvedExt];
+  // Content-Type is derived from the validated extension, never taken from the
+  // client — this function writes via the Admin SDK, which bypasses
+  // storage.rules' isImageOrPdf() check, so an attacker-controlled contentType
+  // (e.g. 'text/html') would otherwise let arbitrary bytes be served from our
+  // bucket with a browser-executable content type.
+  const resolvedContentType = IMAGE_MIME_TYPES[resolvedExt];
 
   if (!BASE64_REGEX.test(base64)) {
     // Buffer.from(str, 'base64') silently drops invalid characters instead of
@@ -320,6 +431,231 @@ export const uploadUserImage = onCall(async (request) => {
   return { url };
 });
 
+// Registers the caller as a member of a chat in Realtime Database, gated on
+// actually being a participant per the Firestore chats/{chatId} doc. RTDB
+// rules can't read Firestore, so chatMembers/{chatId}/{uid} is write:false
+// there and this callable (Admin SDK, bypasses RTDB rules) is the only path
+// to it — closes the gap where a client could self-register into ANY
+// chatId's chatMembers just by knowing it, with no membership check at all.
+export const joinChat = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+  const { chatId } = request.data as { chatId?: string };
+  if (!chatId || typeof chatId !== 'string') {
+    throw new HttpsError('invalid-argument', 'Falta el chat.');
+  }
+
+  const chatDoc = await admin.firestore().collection('chats').doc(chatId).get();
+  if (!chatDoc.exists) {
+    throw new HttpsError('not-found', 'Chat no encontrado.');
+  }
+  const participants: string[] = chatDoc.data()?.participants || [];
+  if (!participants.includes(request.auth.uid)) {
+    throw new HttpsError('permission-denied', 'No eres parte de este chat.');
+  }
+
+  // Registers every participant, not just the caller — mirrors what client
+  // code already did before this fix (so whichever side opens the chat first
+  // unblocks the other side's read/write too), but now done atomically and
+  // with the membership check above instead of trusting the client.
+  const updates: Record<string, boolean> = {};
+  for (const uid of participants) {
+    updates[`chatMembers/${chatId}/${uid}`] = true;
+  }
+  await admin.database().ref().update(updates);
+
+  return { success: true };
+});
+
+type ProfileType = 'store' | 'veterinarian' | 'walker' | 'trainer' | 'groomer';
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Atomically enforces the Premium plan feature: a 'basic' subscription may
+// create at most 1 order/appointment per rolling week; 'premium' is
+// unlimited. Every profile is born Premium (see the onXCreated triggers
+// below, one per profile collection), so this "no subscription doc yet"
+// branch is only a safety net — a pre-existing profile from before that
+// trigger shipped, or a race where an order lands before the trigger
+// finishes — and it now defaults to 'premium' too, consistent with that
+// policy, rather than failing closed or silently downgrading anyone.
+async function checkAndConsumeQuota(profileId: string, profileType: ProfileType): Promise<void> {
+  const subRef = admin.firestore().collection('subscriptions').doc(profileId);
+  await admin.firestore().runTransaction(async (tx) => {
+    const subSnap = await tx.get(subRef);
+    const nowIso = new Date().toISOString();
+
+    if (!subSnap.exists) {
+      tx.set(subRef, {
+        profileType, plan: 'premium', weekCount: 0, weekStart: nowIso,
+        createdAt: nowIso, updatedAt: nowIso,
+      });
+      return;
+    }
+
+    const sub = subSnap.data()!;
+    if (sub.plan === 'premium') return;
+
+    let weekCount = sub.weekCount ?? 0;
+    let weekStart = sub.weekStart ?? nowIso;
+    if (Date.now() - new Date(weekStart).getTime() >= WEEK_MS) {
+      weekCount = 0;
+      weekStart = nowIso;
+    }
+    if (weekCount >= 1) {
+      throw new HttpsError(
+        'resource-exhausted',
+        'Esta tienda o profesional ya alcanzó su límite de pedidos/citas de la semana. Intenta de nuevo la próxima semana.'
+      );
+    }
+    tx.update(subRef, { weekCount: weekCount + 1, weekStart, updatedAt: nowIso });
+  });
+}
+
+// Replaces the client's direct addDoc(orders/...) — moved server-side so
+// checkAndConsumeQuota above can count reliably (firestore.rules can't do
+// atomic cross-request counters). Covers both product orders and the
+// service-booking flow from the store portal (order.type === 'service').
+export const createOrder = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+  const { storeId, products, service, deliveryMethod, shippingAddress } = request.data as {
+    storeId?: string;
+    products?: { productId: string; productName: string; quantity: number; price: number; photoUrl?: string | null }[];
+    service?: { serviceId?: string; serviceName: string; price?: number; duration?: string; note?: string };
+    deliveryMethod?: 'delivery' | 'pickup';
+    shippingAddress?: string;
+  };
+  if (!storeId || typeof storeId !== 'string') {
+    throw new HttpsError('invalid-argument', 'Falta la tienda.');
+  }
+  const isService = !!service;
+  if (!isService && (!Array.isArray(products) || products.length === 0)) {
+    throw new HttpsError('invalid-argument', 'Falta el detalle del pedido.');
+  }
+
+  await checkAndConsumeQuota(storeId, 'store');
+
+  const buyerDoc = await admin.firestore().collection('users').doc(request.auth.uid).get();
+  const buyer = buyerDoc.data() ?? {};
+
+  const total = isService
+    ? Number(service!.price || 0)
+    : products!.reduce((sum, p) => sum + Number(p.price || 0) * Number(p.quantity || 0), 0);
+
+  const orderData: Record<string, unknown> = {
+    buyerId: request.auth.uid,
+    buyerName: buyer.name || '',
+    buyerPhone: buyer.phone || '',
+    storeId,
+    total,
+    status: 'pending',
+    shippingAddress: shippingAddress || '',
+    createdAt: new Date().toISOString(),
+  };
+  if (isService) {
+    orderData.type = 'service';
+    orderData.service = service;
+  } else {
+    orderData.products = products;
+    if (deliveryMethod) orderData.deliveryMethod = deliveryMethod;
+  }
+
+  const ref = await admin.firestore().collection('orders').add(orderData);
+  return { id: ref.id };
+});
+
+// Links a POS sale to a registered owner account by email, so it shows up in
+// that person's in-app purchase history (apps/mobile/app/(owner)/historial.tsx)
+// — matching by email requires an Admin SDK lookup across all `users`, which
+// the client can't do (Firestore rules only let a user read their own doc).
+// Best-effort from the caller's side: a non-matching email is not an error,
+// it just means this particular customer doesn't have a JunglApp account.
+export const linkPosSaleToBuyer = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+  const { saleId, email } = request.data as { saleId?: string; email?: string };
+  if (!saleId || typeof saleId !== 'string' || !email || typeof email !== 'string') {
+    throw new HttpsError('invalid-argument', 'Falta la venta o el correo.');
+  }
+
+  const saleRef = admin.firestore().collection('posSales').doc(saleId);
+  const saleSnap = await saleRef.get();
+  if (!saleSnap.exists) {
+    throw new HttpsError('not-found', 'Venta no encontrada.');
+  }
+  const storeId = saleSnap.data()?.storeId as string | undefined;
+  if (!storeId) {
+    throw new HttpsError('failed-precondition', 'Venta sin tienda asociada.');
+  }
+  const storeDoc = await admin.firestore().collection('stores').doc(storeId).get();
+  const isOwner = storeDoc.data()?.userId === request.auth.uid;
+  const isStaff = ((storeDoc.data()?.staffUids as string[] | undefined) ?? []).includes(request.auth.uid);
+  if (!isOwner && !isStaff) {
+    throw new HttpsError('permission-denied', 'No eres parte de esta tienda.');
+  }
+
+  let userRecord;
+  try {
+    userRecord = await admin.auth().getUserByEmail(email.trim().toLowerCase());
+  } catch {
+    return { linked: false };
+  }
+  const userDoc = await admin.firestore().collection('users').doc(userRecord.uid).get();
+  if (userDoc.data()?.role !== 'owner') {
+    return { linked: false };
+  }
+
+  await saleRef.update({ buyerId: userRecord.uid });
+  return { linked: true };
+});
+
+// Emails the already-generated receipt PDF (apps/web/lib/receipt.ts, jsPDF —
+// generated client-side, this only handles delivery) to a store customer.
+export const sendReceiptEmail = onCall({ secrets: [resendApiKey] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+  const { to, storeName, pdfBase64, total } = request.data as {
+    to?: string; storeName?: string; pdfBase64?: string; total?: number;
+  };
+  if (!to || typeof to !== 'string' || !EMAIL_REGEX.test(to)) {
+    throw new HttpsError('invalid-argument', 'Correo inválido.');
+  }
+  if (!pdfBase64 || typeof pdfBase64 !== 'string') {
+    throw new HttpsError('invalid-argument', 'Falta la boleta.');
+  }
+
+  const resend = new Resend(resendApiKey.value());
+  const { error } = await resend.emails.send({
+    from: MAIL_FROM,
+    to: to.trim().toLowerCase(),
+    subject: `🧾 Tu boleta de ${escapeHtml(storeName || 'tu compra')} — JunglApp`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #f9fafb; border-radius: 12px;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <h1 style="color: #2D6A4F; font-size: 28px; margin: 0;">🐾 JunglApp</h1>
+        </div>
+        <div style="background: white; border-radius: 12px; padding: 24px; border: 1px solid #e5e7eb;">
+          <p style="color: #374151; font-size: 16px;">Gracias por tu compra en <strong>${escapeHtml(storeName || 'la tienda')}</strong>.</p>
+          ${total != null ? `<p style="color: #6B7280;">Total: <strong>$${Number(total).toLocaleString('es-CL')} CLP</strong></p>` : ''}
+          <p style="color: #6B7280; font-size: 13px;">Tu boleta va adjunta en PDF a este correo.</p>
+        </div>
+      </div>
+    `,
+    attachments: [
+      { filename: 'boleta.pdf', content: pdfBase64 },
+    ],
+  });
+  if (error) {
+    throw new HttpsError('internal', 'No se pudo enviar el correo. Intenta de nuevo más tarde.');
+  }
+
+  return { success: true };
+});
+
 const expo = new Expo();
 
 async function sendPush(pushToken: string, title: string, body: string) {
@@ -332,22 +668,261 @@ async function getUserPushToken(uid: string): Promise<string | null> {
   return doc.data()?.pushToken ?? null;
 }
 
-// Notifica al vet cuando se crea una nueva cita
-export const onAppointmentCreated = onDocumentCreated('appointments/{appointmentId}', async (event) => {
+// appointments/{id}.vetId is the Firestore doc ID of whichever provider type
+// booked it — vet, trainer, walker or groomer all write into the same
+// collection (see firestore.rules isVetOfAppointment/isTrainerOfAppointment/
+// isWalkerOfAppointment/isGroomerOfAppointment). This used to only check
+// 'veterinarians', so trainer/walker/groomer bookings silently got no
+// notification at all.
+async function resolveProvider(providerId: string): Promise<{ userId: string; name: string; email: string; phone?: string; address?: string; profileType: ProfileType } | null> {
+  const collections: Array<[ProfileType, string]> = [
+    ['veterinarian', 'veterinarians'],
+    ['trainer', 'trainers'],
+    ['walker', 'walkers'],
+    ['groomer', 'groomers'],
+  ];
+  const snaps = await Promise.all(collections.map(([, col]) => admin.firestore().collection(col).doc(providerId).get()));
+  const idx = snaps.findIndex((s) => s.exists);
+  if (idx === -1) return null;
+  const data = snaps[idx].data()!;
+  if (!data.userId || !data.email) return null;
+  return {
+    userId: data.userId, name: data.name || 'Profesional', email: data.email,
+    phone: data.phone, address: data.address,
+    profileType: collections[idx][0],
+  };
+}
+
+// Replaces the client's direct writeBatch(appointments/..., clientLinks/...)
+// used by vets/trainers/walkers/groomers booking screens — moved
+// server-side for the same reason as createOrder above (atomic quota
+// counting). resolveProvider also gives us provider.userId, needed for the
+// clientLinks grant that used to be written by the client itself.
+export const createAppointment = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+  const { vetId, petId, date, time, reason, type, serviceId, serviceName, servicePrice, planPurchaseId } = request.data as {
+    vetId?: string; petId?: string; date?: string; time?: string; reason?: string;
+    type?: string; serviceId?: string; serviceName?: string; servicePrice?: number;
+    planPurchaseId?: string;
+  };
+  if (!vetId || typeof vetId !== 'string') {
+    throw new HttpsError('invalid-argument', 'Falta el profesional.');
+  }
+  if (!date || typeof date !== 'string' || !time || typeof time !== 'string') {
+    throw new HttpsError('invalid-argument', 'Falta la fecha u hora.');
+  }
+
+  const provider = await resolveProvider(vetId);
+  if (!provider) {
+    throw new HttpsError('not-found', 'Profesional no encontrado.');
+  }
+
+  // Booking against a walk-plan purchase skips the weekly quota — it's the
+  // owner cashing in a walk they already paid for, not a new booking that
+  // should count against the walker's plan limits.
+  if (planPurchaseId) {
+    const purchaseSnap = await admin.firestore().collection('walkPlanPurchases').doc(planPurchaseId).get();
+    const purchase = purchaseSnap.data();
+    if (!purchase || purchase.ownerId !== request.auth.uid || purchase.walkerId !== vetId) {
+      throw new HttpsError('not-found', 'Plan de paseos no encontrado.');
+    }
+    if (purchase.status !== 'active' || (purchase.walksRemaining ?? 0) <= 0) {
+      throw new HttpsError('failed-precondition', 'Tu plan de paseos no tiene paseos disponibles.');
+    }
+  } else {
+    await checkAndConsumeQuota(vetId, provider.profileType);
+  }
+
+  const ownerDoc = await admin.firestore().collection('users').doc(request.auth.uid).get();
+  const ownerName = ownerDoc.data()?.name || 'Dueño';
+
+  const apptData: Record<string, unknown> = {
+    ownerId: request.auth.uid,
+    ownerName,
+    vetId,
+    petId: petId || '',
+    date,
+    time,
+    reason: reason || '',
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+  };
+  if (type) apptData.type = type;
+  if (serviceId) apptData.serviceId = serviceId;
+  if (serviceName) apptData.serviceName = serviceName;
+  if (servicePrice != null) apptData.servicePrice = servicePrice;
+  if (planPurchaseId) apptData.planPurchaseId = planPurchaseId;
+
+  const apptRef = admin.firestore().collection('appointments').doc();
+  const batch = admin.firestore().batch();
+  batch.set(apptRef, apptData);
+  batch.set(
+    admin.firestore().collection('clientLinks').doc(`${provider.userId}_${request.auth.uid}`),
+    { professionalId: provider.userId, ownerId: request.auth.uid },
+    { merge: true }
+  );
+  await batch.commit();
+
+  return { id: apptRef.id };
+});
+
+// Notifica (push + email) al profesional cuando se crea una nueva cita —
+// como recordatorio, ya que no siempre revisan la app al momento.
+export const onAppointmentCreated = onDocumentCreated({ document: 'appointments/{appointmentId}', secrets: [resendApiKey] }, async (event) => {
   const snap = event.data;
   if (!snap) return;
   const appt = snap.data();
-  const { vetId, ownerName, date, time } = appt;
+  const { vetId, ownerId, ownerName, date, time, reason, petId } = appt;
   if (!vetId) return;
 
-  const vetSnap = await admin.firestore().collection('veterinarians').doc(vetId).get();
-  const vetUserId = vetSnap.data()?.userId;
-  if (!vetUserId) return;
+  const provider = await resolveProvider(vetId);
+  if (!provider) return;
 
-  const token = await getUserPushToken(vetUserId);
-  if (!token) return;
+  const [token, petSnap, ownerDoc] = await Promise.all([
+    getUserPushToken(provider.userId),
+    petId ? admin.firestore().collection('pets').doc(petId).get() : Promise.resolve(null),
+    ownerId ? admin.firestore().collection('users').doc(ownerId).get() : Promise.resolve(null),
+  ]);
+  const petName = petSnap?.exists ? (petSnap.data()?.name as string | undefined) : undefined;
+  const ownerEmail = ownerDoc?.exists ? (ownerDoc.data()?.email as string | undefined) : undefined;
 
-  await sendPush(token, 'Nueva reserva', `${ownerName} agendó una cita para el ${date} a las ${time}`);
+  if (token) {
+    await sendPush(token, 'Nueva reserva', `${ownerName} agendó una cita para el ${date} a las ${time}`);
+  }
+
+  const detailsHtml = `
+    <div style="background: #f0fdf4; border-radius: 10px; padding: 16px; margin: 16px 0;">
+      <p style="margin: 4px 0;"><strong>Fecha:</strong> ${escapeHtml(date)}</p>
+      <p style="margin: 4px 0;"><strong>Hora:</strong> ${escapeHtml(time)}</p>
+      ${reason ? `<p style="margin: 4px 0;"><strong>Motivo:</strong> ${escapeHtml(reason)}</p>` : ''}
+    </div>
+  `;
+
+  try {
+    const resend = new Resend(resendApiKey.value());
+    const { error: providerMailError } = await resend.emails.send({
+      from: MAIL_FROM,
+      to: provider.email,
+      subject: `📅 Nueva reserva — ${escapeHtml(ownerName || 'un cliente')}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #f9fafb; border-radius: 12px;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="color: #2D6A4F; font-size: 28px; margin: 0;">🐾 JunglApp</h1>
+          </div>
+          <div style="background: white; border-radius: 12px; padding: 24px; border: 1px solid #e5e7eb;">
+            <p style="color: #374151; font-size: 16px;">Hola <strong>${escapeHtml(provider.name)}</strong>,</p>
+            <p style="color: #6B7280;">Tienes una nueva reserva agendada en JunglApp, como recordatorio te enviamos los detalles:</p>
+            <div style="background: #f0fdf4; border-radius: 10px; padding: 16px; margin: 16px 0;">
+              <p style="margin: 4px 0;"><strong>Cliente:</strong> ${escapeHtml(ownerName || 'No especificado')}</p>
+              ${petName ? `<p style="margin: 4px 0;"><strong>Mascota:</strong> ${escapeHtml(petName)}</p>` : ''}
+              <p style="margin: 4px 0;"><strong>Fecha:</strong> ${escapeHtml(date)}</p>
+              <p style="margin: 4px 0;"><strong>Hora:</strong> ${escapeHtml(time)}</p>
+              ${reason ? `<p style="margin: 4px 0;"><strong>Motivo:</strong> ${escapeHtml(reason)}</p>` : ''}
+            </div>
+            <p style="color: #6B7280; font-size: 13px;">Revisa y confirma la cita desde la app de JunglApp.</p>
+          </div>
+        </div>
+      `,
+    });
+    if (providerMailError) console.error('onAppointmentCreated: provider email failed', providerMailError);
+  } catch (e) {
+    // Best-effort — the push notification above already went out.
+    console.error('onAppointmentCreated: provider email threw', e);
+  }
+
+  // Confirmation to the pet owner, with the provider's contact info — same
+  // best-effort pattern, doesn't affect the provider notification above.
+  if (ownerEmail) {
+    try {
+      const resend = new Resend(resendApiKey.value());
+      const { error: ownerMailError } = await resend.emails.send({
+        from: MAIL_FROM,
+        to: ownerEmail,
+        subject: `📅 Tu cita quedó agendada — ${escapeHtml(provider.name)}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #f9fafb; border-radius: 12px;">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <h1 style="color: #2D6A4F; font-size: 28px; margin: 0;">🐾 JunglApp</h1>
+            </div>
+            <div style="background: white; border-radius: 12px; padding: 24px; border: 1px solid #e5e7eb;">
+              <p style="color: #374151; font-size: 16px;">Hola <strong>${escapeHtml(ownerName || 'Dueño')}</strong>,</p>
+              <p style="color: #6B7280;">Tu cita con <strong>${escapeHtml(provider.name)}</strong> quedó agendada. Estos son los detalles:</p>
+              ${detailsHtml}
+              <div style="border-top: 1px solid #e5e7eb; padding-top: 12px; margin-top: 4px;">
+                <p style="margin: 4px 0; color: #6B7280; font-size: 13px;">Datos de contacto</p>
+                ${provider.phone ? `<p style="margin: 4px 0;"><strong>Teléfono:</strong> ${escapeHtml(provider.phone)}</p>` : ''}
+                ${provider.address ? `<p style="margin: 4px 0;"><strong>Dirección:</strong> ${escapeHtml(provider.address)}</p>` : ''}
+              </div>
+              <p style="color: #6B7280; font-size: 13px; margin-top: 12px;">Revisa el estado de tu cita desde la app de JunglApp.</p>
+            </div>
+          </div>
+        `,
+      });
+      if (ownerMailError) console.error('onAppointmentCreated: owner email failed', ownerMailError);
+    } catch (e) {
+      // Best-effort — the provider notification above already went out.
+      console.error('onAppointmentCreated: owner email threw', e);
+    }
+  }
+});
+
+// Notifica por email a la tienda cuando llega un pedido de productos o una
+// reserva de servicio, como recordatorio (no hay ningún otro aviso
+// automático hoy — el dueño tenía que revisar el portal manualmente).
+export const onOrderCreated = onDocumentCreated({ document: 'orders/{orderId}', secrets: [resendApiKey] }, async (event) => {
+  const snap = event.data;
+  if (!snap) return;
+  const order = snap.data();
+  const { storeId, buyerName, buyerPhone, shippingAddress, deliveryMethod, products, total, type, service } = order;
+  if (!storeId) return;
+
+  const storeDoc = await admin.firestore().collection('stores').doc(storeId).get();
+  if (!storeDoc.exists) return;
+  const store = storeDoc.data()!;
+  if (!store.email) return;
+
+  const isService = type === 'service' && service;
+  const itemsHtml = isService
+    ? `<p style="margin: 4px 0;"><strong>Servicio:</strong> ${escapeHtml(service.serviceName)}</p>`
+      + (service.note ? `<p style="margin: 4px 0;"><strong>Nota:</strong> ${escapeHtml(service.note)}</p>` : '')
+    : ((products || []) as { quantity?: number; productName?: string }[])
+        .map((p) => `<p style="margin: 4px 0;">• ${escapeHtml(p.quantity ?? '')}x ${escapeHtml(p.productName ?? '')}</p>`)
+        .join('');
+
+  try {
+    const resend = new Resend(resendApiKey.value());
+    const { error: orderMailError } = await resend.emails.send({
+      from: MAIL_FROM,
+      to: store.email,
+      subject: isService ? '📅 Nueva reserva de servicio — JunglApp' : '🛒 Nuevo pedido — JunglApp',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #f9fafb; border-radius: 12px;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="color: #2D6A4F; font-size: 28px; margin: 0;">🐾 JunglApp</h1>
+          </div>
+          <div style="background: white; border-radius: 12px; padding: 24px; border: 1px solid #e5e7eb;">
+            <p style="color: #374151; font-size: 16px;">Hola <strong>${escapeHtml(store.name || 'Tienda')}</strong>,</p>
+            <p style="color: #6B7280;">${isService ? 'Tienes una nueva reserva de servicio' : 'Tienes un nuevo pedido'} en JunglApp. Como recordatorio, estos son los detalles:</p>
+            <div style="background: #f0fdf4; border-radius: 10px; padding: 16px; margin: 16px 0;">
+              <p style="margin: 4px 0;"><strong>Cliente:</strong> ${escapeHtml(buyerName || 'No especificado')}</p>
+              ${buyerPhone ? `<p style="margin: 4px 0;"><strong>Teléfono:</strong> ${escapeHtml(buyerPhone)}</p>` : ''}
+              ${itemsHtml}
+              <p style="margin: 4px 0;"><strong>Total:</strong> $${Number(total || 0).toLocaleString('es-CL')} CLP</p>
+              ${deliveryMethod ? `<p style="margin: 4px 0;"><strong>Entrega:</strong> ${deliveryMethod === 'pickup' ? 'Retiro en tienda' : 'Despacho'}</p>` : ''}
+              ${shippingAddress ? `<p style="margin: 4px 0;"><strong>Dirección:</strong> ${escapeHtml(shippingAddress)}</p>` : ''}
+            </div>
+            <p style="color: #6B7280; font-size: 13px;">Revisa y gestiona esta solicitud desde el portal de tienda de JunglApp.</p>
+          </div>
+        </div>
+      `,
+    });
+    if (orderMailError) console.error('onOrderCreated: store email failed', orderMailError);
+  } catch (e) {
+    // Best-effort — don't fail the trigger if email delivery fails.
+    console.error('onOrderCreated: store email threw', e);
+  }
 });
 
 // Notifica al owner cuando cambia el estado de su cita
@@ -356,6 +931,28 @@ export const onAppointmentUpdated = onDocumentUpdated('appointments/{appointment
   const after = event.data?.after.data();
   if (!before || !after) return;
   if (before.status === after.status) return;
+
+  // Consumes one walk from the linked WalkPlanPurchase the moment a
+  // plan-booked appointment completes — whoever marks it done (owner or
+  // walker both just updateDoc the same appointment client-side, see
+  // apps/mobile/app/(owner)/appointment/[id].tsx and (walker)/appointment/[id].tsx).
+  // planDecremented guards against double-consuming if this trigger ever
+  // re-runs for the same completion.
+  if (after.status === 'completed' && after.planPurchaseId && !after.planDecremented) {
+    const apptRef = event.data!.after.ref;
+    const purchaseRef = admin.firestore().collection('walkPlanPurchases').doc(after.planPurchaseId);
+    await admin.firestore().runTransaction(async (tx) => {
+      const [purchaseSnap, apptSnap] = await Promise.all([tx.get(purchaseRef), tx.get(apptRef)]);
+      if (apptSnap.data()?.planDecremented) return; // already handled by a concurrent run
+      if (!purchaseSnap.exists) { tx.update(apptRef, { planDecremented: true }); return; }
+      const remaining = Math.max((purchaseSnap.data()!.walksRemaining ?? 0) - 1, 0);
+      tx.update(purchaseRef, {
+        walksRemaining: remaining,
+        ...(remaining === 0 ? { status: 'exhausted' } : {}),
+      });
+      tx.update(apptRef, { planDecremented: true });
+    });
+  }
 
   const { ownerId, date, time } = after;
   if (!ownerId) return;
@@ -637,12 +1234,129 @@ export const onReportCreated = onDocumentCreated({ document: 'reports/{reportId}
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
         <h2 style="color: #DC2626;">Nuevo reporte de contenido</h2>
-        <p><strong>Reportado por:</strong> ${report.reporterId}</p>
-        <p><strong>Usuario reportado:</strong> ${report.reportedUserName || report.reportedUserId} (${report.reportedUserId})</p>
-        <p><strong>Chat:</strong> ${report.chatId}</p>
-        <p><strong>Motivo:</strong> ${report.reason}</p>
+        <p><strong>Reportado por:</strong> ${escapeHtml(report.reporterId)}</p>
+        <p><strong>Usuario reportado:</strong> ${escapeHtml(report.reportedUserName || report.reportedUserId)} (${escapeHtml(report.reportedUserId)})</p>
+        <p><strong>Chat:</strong> ${escapeHtml(report.chatId)}</p>
+        <p><strong>Motivo:</strong> ${escapeHtml(report.reason)}</p>
         <p style="color: #6B7280; font-size: 13px; margin-top: 24px;">Revisa y actúa dentro de 24 horas desde Firebase Console → Firestore → reports.</p>
       </div>
     `,
   });
+});
+
+// Every professional profile is born on the Premium plan — support can
+// still downgrade it later from the admin dashboard, but nobody should have
+// to wait on a manual assignment (or place a first order/appointment,
+// which is what used to lazily provision a 'basic' subscription doc) just
+// to stop being capped. One trigger per collection since Firestore
+// document triggers can't wildcard across unrelated collections.
+function createPremiumSubscription(profileType: ProfileType) {
+  return async (event: { params: { id: string }; data?: FirebaseFirestore.DocumentSnapshot }) => {
+    if (!event.data) return;
+    const subRef = admin.firestore().collection('subscriptions').doc(event.params.id);
+    if ((await subRef.get()).exists) return;
+    const nowIso = new Date().toISOString();
+    await subRef.set({
+      profileType, plan: 'premium', weekCount: 0, weekStart: nowIso,
+      createdAt: nowIso, updatedAt: nowIso,
+    });
+  };
+}
+
+export const onStoreCreated = onDocumentCreated('stores/{id}', createPremiumSubscription('store'));
+export const onVeterinarianCreated = onDocumentCreated('veterinarians/{id}', createPremiumSubscription('veterinarian'));
+export const onWalkerCreated = onDocumentCreated('walkers/{id}', createPremiumSubscription('walker'));
+export const onTrainerCreated = onDocumentCreated('trainers/{id}', createPremiumSubscription('trainer'));
+export const onGroomerCreated = onDocumentCreated('groomers/{id}', createPremiumSubscription('groomer'));
+
+const PROFILE_COLLECTIONS: Record<ProfileType, string> = {
+  store: 'stores',
+  veterinarian: 'veterinarians',
+  walker: 'walkers',
+  trainer: 'trainers',
+  groomer: 'groomers',
+};
+
+// Profiles created before the onXCreated triggers above shipped (or a trigger
+// run that raced/failed) can reach requestPremiumUpgrade/downgradeToBasic
+// with no subscriptions/{uid} doc yet. Resolve which collection actually
+// owns this uid so callers below can backfill the doc on the spot instead of
+// failing closed — consistent with the "every profile is born Premium"
+// policy the triggers already enforce for new signups.
+async function resolveProfileType(uid: string): Promise<ProfileType | null> {
+  const entries = Object.entries(PROFILE_COLLECTIONS) as [ProfileType, string][];
+  const snaps = await Promise.all(
+    entries.map(([, collection]) => admin.firestore().collection(collection).doc(uid).get())
+  );
+  const idx = snaps.findIndex((snap) => snap.exists);
+  return idx === -1 ? null : entries[idx][0];
+}
+
+// Lets a Basic profile ask for Premium from its own app. Doesn't grant it —
+// only flags subscriptions/{uid}.upgradeRequestedAt so the admin dashboard's
+// "Solicitudes de upgrade" section can surface it; the actual plan change
+// still only ever happens through the isSupport()-gated dashboard write.
+export const requestPremiumUpgrade = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+  const subRef = admin.firestore().collection('subscriptions').doc(request.auth.uid);
+  const subSnap = await subRef.get();
+  if (!subSnap.exists) {
+    const profileType = await resolveProfileType(request.auth.uid);
+    if (!profileType) {
+      throw new HttpsError('not-found', 'No se encontró tu perfil.');
+    }
+    // No subscription doc means this profile predates the onXCreated
+    // trigger — it's already Premium by policy, so back the doc into
+    // existence and tell the caller there's nothing to request.
+    const nowIso = new Date().toISOString();
+    await subRef.set({
+      profileType, plan: 'premium', weekCount: 0, weekStart: nowIso,
+      createdAt: nowIso, updatedAt: nowIso,
+    });
+    throw new HttpsError('failed-precondition', 'Ya tienes el plan Premium.');
+  }
+  if (subSnap.data()?.plan === 'premium') {
+    throw new HttpsError('failed-precondition', 'Ya tienes el plan Premium.');
+  }
+  await subRef.update({ upgradeRequestedAt: new Date().toISOString() });
+  return { success: true };
+});
+
+// Lets a Premium profile opt itself back down to Basic from its own app —
+// unlike requestPremiumUpgrade this applies immediately, no admin approval
+// needed, since a profile lowering its own privilege can't be abused the
+// way self-granting Premium could. Resets the weekly counter so the
+// profile doesn't inherit a stale weekCount from whenever it was last on
+// Basic.
+export const downgradeToBasic = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+  const subRef = admin.firestore().collection('subscriptions').doc(request.auth.uid);
+  const subSnap = await subRef.get();
+  const nowIso = new Date().toISOString();
+  if (!subSnap.exists) {
+    // No subscription doc means this profile predates the onXCreated
+    // trigger — back it into existence directly on 'basic' instead of
+    // failing, since that's the plan the caller is asking for anyway.
+    const profileType = await resolveProfileType(request.auth.uid);
+    if (!profileType) {
+      throw new HttpsError('not-found', 'No se encontró tu perfil.');
+    }
+    await subRef.set({
+      profileType, plan: 'basic', weekCount: 0, weekStart: nowIso,
+      createdAt: nowIso, updatedAt: nowIso,
+    });
+    return { success: true };
+  }
+  if (subSnap.data()?.plan === 'basic') {
+    throw new HttpsError('failed-precondition', 'Ya tienes el plan Basic.');
+  }
+  await subRef.update({
+    plan: 'basic', weekCount: 0, weekStart: nowIso, updatedAt: nowIso,
+    upgradeRequestedAt: admin.firestore.FieldValue.delete(),
+  });
+  return { success: true };
 });

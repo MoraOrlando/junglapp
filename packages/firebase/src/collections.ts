@@ -11,6 +11,7 @@ export const COLLECTIONS = {
   ORDERS: 'orders',
   MEDICAL_VISITS: 'medicalVisits',
   WALKERS: 'walkers',
+  WALK_PLAN_PURCHASES: 'walkPlanPurchases',
   GROOMERS: 'groomers',
   REVIEWS: 'reviews',
   TRAINERS: 'trainers',
@@ -26,6 +27,13 @@ export const COLLECTIONS = {
   POS_SALES: 'posSales',
   SUBSCRIPTIONS: 'subscriptions',
   STORE_CUSTOMERS: 'storeCustomers',
+  EXAM_ORDERS: 'examOrders',
+  VET_SERVICES: 'vetServices',
+  VET_SALES: 'vetSales',
+  VET_EXPENSES: 'vetExpenses',
+  VET_INVENTORY_ITEMS: 'vetInventoryItems',
+  VET_INVENTORY_MOVEMENTS: 'vetInventoryMovements',
+  VET_REMINDER_SENDS: 'vetReminderSends',
 } as const;
 
 export const RTDB_PATHS = {

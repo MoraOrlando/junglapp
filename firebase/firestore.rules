@@ -51,11 +51,21 @@ service cloud.firestore {
       return isAuth() && uid in get(/databases/$(database)/documents/stores/$(request.auth.uid)).data.get('staffUids', []);
     }
 
+    // Same pattern as isStoreStaff/isMyStoreStaffMember above, for a
+    // veterinary clinic's collaborator vets (see createVetCollaborator).
+    function isVetStaff(vetId) {
+      return isAuth() && request.auth.uid in get(/databases/$(database)/documents/veterinarians/$(vetId)).data.get('staffUids', []);
+    }
+    function isMyVetStaffMember(uid) {
+      return isAuth() && uid in get(/databases/$(database)/documents/veterinarians/$(request.auth.uid)).data.get('staffUids', []);
+    }
+
     // ── Users ──────────────────────────────────────────────────────────────
     match /users/{uid} {
       allow read: if isSelf(uid) || isSupport()
         || (isAuth() && getRole() in ['vet', 'walker', 'grooming', 'trainer'] && isLinkedClient(uid))
-        || isMyStoreStaffMember(uid);
+        || isMyStoreStaffMember(uid)
+        || isMyVetStaffMember(uid);
       allow create: if (isSelf(uid)
           && request.resource.data.uid == uid
           && request.resource.data.role in ['owner', 'vet', 'store', 'trainer', 'walker', 'grooming'])
@@ -96,6 +106,13 @@ service cloud.firestore {
           && fieldUnchanged('status')
           && fieldUnchanged('rating')
           && fieldUnchanged('reviewCount'))
+        // A clinic's collaborator vets (isVetStaff) can only touch the
+        // shared agenda fields — never identity fields, status, or
+        // staffUids itself (that's only ever written by
+        // createVetCollaborator via the Admin SDK, or removed by the owner
+        // through the unrestricted owner branch above).
+        || (isVetStaff(vetId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability', 'slotDuration', 'consultationFee']))
         || isSupport()
       );
       allow delete: if isSupport();
@@ -230,8 +247,14 @@ service cloud.firestore {
     }
 
     // ── Reminders (próximos controles veterinarios) ────────────────────────
+    // Read also allowed for role vet/support — same broad precedent as
+    // pets/medicalVisits above (getRole() doesn't depend on resource.data,
+    // so it's provable for list queries too) — needed for the vet web
+    // portal's Recordatorios module (see apps/web/app/vet/page.tsx) to show
+    // a clinic's patients' due reminders. Creation/updates stay owner-only —
+    // the vet portal only reads this collection, never writes it.
     match /reminders/{reminderId} {
-      allow read: if isAuth() && resource.data.ownerId == request.auth.uid;
+      allow read: if isAuth() && (resource.data.ownerId == request.auth.uid || getRole() in ['vet', 'support']);
       allow create: if isAuth() && request.resource.data.ownerId == request.auth.uid;
       allow update, delete: if isAuth() && resource.data.ownerId == request.auth.uid;
     }
@@ -260,6 +283,13 @@ service cloud.firestore {
     }
 
     // ── Products ───────────────────────────────────────────────────────────
+    // A store may only request a promotion slot (promotionStatus: 'pending')
+    // if it's on the Premium plan — see subscriptions/{storeId} below.
+    function isPremiumStore(storeId) {
+      return exists(/databases/$(database)/documents/subscriptions/$(storeId)) &&
+        get(/databases/$(database)/documents/subscriptions/$(storeId)).data.plan == 'premium';
+    }
+
     match /products/{productId} {
       allow read: if isAuth();
       allow create: if isAuth() && (
@@ -269,10 +299,12 @@ service cloud.firestore {
       );
       // The owning store can change anything except it may never set
       // promotionStatus to 'approved' itself — only support can approve (or
-      // later revoke by setting it back to 'rejected') a promo banner slot.
+      // later revoke by setting it back to 'rejected') a promo banner slot —
+      // and it may only request 'pending' if it's Premium.
       allow update: if isAuth() && (
         ((resource.data.userId == request.auth.uid || isStoreStaff(resource.data.storeId))
-          && request.resource.data.get('promotionStatus', null) != 'approved')
+          && request.resource.data.get('promotionStatus', null) != 'approved'
+          && (request.resource.data.get('promotionStatus', null) != 'pending' || isPremiumStore(resource.data.storeId)))
         || isSupport()
       );
       allow delete: if isAuth() && (
@@ -287,7 +319,8 @@ service cloud.firestore {
     // not the auth UID. We resolve ownership via get() on the matching provider collection.
     function isVetOfAppointment(vetDocId) {
       return vetDocId != null &&
-        get(/databases/$(database)/documents/veterinarians/$(vetDocId)).data.userId == request.auth.uid;
+        (get(/databases/$(database)/documents/veterinarians/$(vetDocId)).data.userId == request.auth.uid
+          || isVetStaff(vetDocId));
     }
     function isTrainerOfAppointment(providerDocId) {
       return providerDocId != null &&
@@ -314,8 +347,10 @@ service cloud.firestore {
         isGroomerOfAppointment(resource.data.vetId) ||
         isSupport()
       );
-      allow create: if isAuth()
-        && request.resource.data.ownerId == request.auth.uid;
+      // Creation moved server-side to the createAppointment Cloud Function —
+      // it needs to atomically enforce the Premium plan's weekly quota
+      // (subscriptions/{vetId}), which a client-side rule can't do.
+      allow create: if false;
       allow update: if isAuth() && (
         resource.data.ownerId == request.auth.uid ||
         isVetOfAppointment(resource.data.vetId) ||
@@ -327,6 +362,34 @@ service cloud.firestore {
       allow delete: if isAuth() && (
         resource.data.ownerId == request.auth.uid || isSupport()
       );
+    }
+
+    // ── Walk plan purchases ─────────────────────────────────────────────────
+    // A pet owner's purchase of a walker's fixed-quantity walk package (see
+    // Walker.planEnabled). Created directly by the client (no real payment
+    // happens — this just records the purchase, same as every other price
+    // in the app). walksRemaining is only ever decremented by the
+    // onAppointmentUpdated Cloud Function, never by a client write.
+    match /walkPlanPurchases/{purchaseId} {
+      allow read: if isAuth() && (
+        resource.data.ownerId == request.auth.uid ||
+        isWalkerOfAppointment(resource.data.walkerId) ||
+        isSupport()
+      );
+      allow create: if isSelf(request.resource.data.ownerId)
+        && request.resource.data.walksIncluded is int && request.resource.data.walksIncluded > 0
+        && request.resource.data.walksRemaining == request.resource.data.walksIncluded
+        && request.resource.data.status == 'active';
+      // The owner may only cancel their own still-active plan — walksRemaining/
+      // walksIncluded/ownerId/walkerId/price are otherwise immutable from the
+      // client (walksRemaining changes only via the Cloud Function above,
+      // which uses the Admin SDK and bypasses these rules entirely).
+      allow update: if isSelf(resource.data.ownerId)
+        && resource.data.status == 'active'
+        && request.resource.data.status == 'cancelled'
+        && fieldUnchanged('walksRemaining') && fieldUnchanged('walksIncluded')
+        && fieldUnchanged('ownerId') && fieldUnchanged('walkerId') && fieldUnchanged('price');
+      allow delete: if false;
     }
 
     // ── Trainer Appointments ───────────────────────────────────────────────
@@ -404,8 +467,9 @@ service cloud.firestore {
         isStoreStaff(resource.data.storeId) ||
         isSupport()
       );
-      allow create: if isAuth()
-        && request.resource.data.buyerId == request.auth.uid;
+      // Creation moved server-side to the createOrder Cloud Function — same
+      // reason as appointments above (atomic Premium weekly-quota check).
+      allow create: if false;
       // Store owner (or staff) can only update status + updatedAt. The buyer
       // may only cancel their own order (while it's still pending or while
       // an alternative is being negotiated) or accept an offered alternative
@@ -434,14 +498,112 @@ service cloud.firestore {
     // Deliberately separate from /orders (no buyer, no shipping, no status
     // flow) — immutable once created, only the owning store can read/create.
     match /posSales/{saleId} {
+      // buyerId is only ever set server-side by the linkPosSaleToBuyer Cloud
+      // Function (Admin SDK, bypasses this rule) when a storeCustomer's email
+      // matches a registered owner account — this just lets that owner read
+      // their own linked in-store purchases (apps/mobile historial.tsx).
       allow read: if isAuth() && (
         get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.userId == request.auth.uid
         || isStoreStaff(resource.data.storeId)
         || isSupport()
+        || resource.data.buyerId == request.auth.uid
       );
       allow create: if isAuth()
         && (get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.userId == request.auth.uid
           || isStoreStaff(request.resource.data.storeId));
+      allow update, delete: if isSupport();
+    }
+
+    // ── Store Customers (POS checkout — name/RUT/email on file) ────────────
+    // Foundation for a future loyalty program; also what lets a sale be
+    // linked to a registered owner account (see posSales.buyerId above) and
+    // the receipt emailed. Store-scoped, same owner/staff pattern as posSales.
+    match /storeCustomers/{customerId} {
+      allow read, update: if isAuth() && (
+        get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.userId == request.auth.uid
+        || isStoreStaff(resource.data.storeId)
+      );
+      allow create: if isAuth()
+        && (get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.userId == request.auth.uid
+          || isStoreStaff(request.resource.data.storeId));
+      allow delete: if isSupport();
+    }
+
+    // ── Vet Services (clinic price list for the Fase 3 ERP billing flow) ───
+    // Same owner/staff pattern as products — publicly readable (isAuth())
+    // since these will eventually surface in a booking/browsing flow too.
+    function isVetOwnerOrStaff(vetId) {
+      return isAuth() && (
+        get(/databases/$(database)/documents/veterinarians/$(vetId)).data.userId == request.auth.uid
+        || isVetStaff(vetId)
+      );
+    }
+    match /vetServices/{serviceId} {
+      allow read: if isAuth();
+      allow create: if isVetOwnerOrStaff(request.resource.data.vetId);
+      allow update, delete: if isVetOwnerOrStaff(resource.data.vetId) || isSupport();
+    }
+
+    // ── Exam Orders (Fase 3: solicitar examen + subir resultado) ───────────
+    // Clinical record, not billing — see vetSales below for charges.
+    // Read is owner-of-the-pet OR the requesting clinic OR support; only the
+    // clinic (owner/staff) can create/update (mark ready, attach resultUrl).
+    match /examOrders/{orderId} {
+      allow read: if isAuth() && (
+        resource.data.ownerId == request.auth.uid
+        || isVetOwnerOrStaff(resource.data.vetId)
+        || isSupport()
+      );
+      allow create: if isVetOwnerOrStaff(request.resource.data.vetId);
+      allow update: if isVetOwnerOrStaff(resource.data.vetId) || isSupport();
+      allow delete: if isSupport();
+    }
+
+    // ── Vet Sales (Fase 3: cobro de servicios/exámenes por atención) ───────
+    // Same immutable-once-created pattern as posSales — a charge record
+    // shouldn't be editable after the fact; only support can fix mistakes.
+    match /vetSales/{saleId} {
+      allow read: if isAuth() && (
+        resource.data.ownerId == request.auth.uid
+        || isVetOwnerOrStaff(resource.data.vetId)
+        || isSupport()
+      );
+      allow create: if isVetOwnerOrStaff(request.resource.data.vetId);
+      allow update, delete: if isSupport();
+    }
+
+    // ── Vet Expenses (Finanzas module: manual bookkeeping entries) ─────────
+    // Internal ledger, not a billing receipt — unlike vetSales, owner/staff
+    // may edit or delete their own entries (e.g. to fix a typo'd amount).
+    match /vetExpenses/{expenseId} {
+      allow read: if isVetOwnerOrStaff(resource.data.vetId) || isSupport();
+      allow create: if isVetOwnerOrStaff(request.resource.data.vetId);
+      allow update, delete: if isVetOwnerOrStaff(resource.data.vetId) || isSupport();
+    }
+
+    // ── Vet Inventory (Inventario module: catalog + stock movements) ───────
+    // Same owner/staff pattern as vetServices/vetExpenses — staff needs
+    // write access too since they're the ones checking/using stock day to
+    // day, not just the clinic owner.
+    match /vetInventoryItems/{itemId} {
+      allow read: if isVetOwnerOrStaff(resource.data.vetId) || isSupport();
+      allow create: if isVetOwnerOrStaff(request.resource.data.vetId);
+      allow update, delete: if isVetOwnerOrStaff(resource.data.vetId) || isSupport();
+    }
+    match /vetInventoryMovements/{movementId} {
+      allow read: if isVetOwnerOrStaff(resource.data.vetId) || isSupport();
+      allow create: if isVetOwnerOrStaff(request.resource.data.vetId);
+      // Movements are an append-only log (mirrors vetSales) — a mistaken
+      // entry gets corrected with an opposite adjustment, not edited away.
+      allow update, delete: if isSupport();
+    }
+
+    // ── Vet Reminder Sends (Recordatorios/WhatsApp module — click log) ─────
+    // Append-only, same reasoning as vetInventoryMovements: it's a log of
+    // "Enviar" clicks, not something staff should be able to rewrite.
+    match /vetReminderSends/{sendId} {
+      allow read: if isVetOwnerOrStaff(resource.data.vetId) || isSupport();
+      allow create: if isVetOwnerOrStaff(request.resource.data.vetId);
       allow update, delete: if isSupport();
     }
 
@@ -462,6 +624,8 @@ service cloud.firestore {
         && (request.resource.data.chatId is string || request.resource.data.placeId is string || request.resource.data.eventId is string)
         && request.resource.data.reason is string
         && request.resource.data.reason.size() > 0
+        && request.resource.data.reason.size() <= 2000
+        && (!('reportedUserName' in request.resource.data) || (request.resource.data.reportedUserName is string && request.resource.data.reportedUserName.size() <= 200))
         && request.resource.data.status == 'pending';
       allow update: if isSupport();
       allow delete: if false;
@@ -492,6 +656,23 @@ service cloud.firestore {
         && request.resource.data.professionalId is string
         && (request.auth.uid == request.resource.data.ownerId || request.auth.uid == request.resource.data.professionalId)
         && linkId == request.resource.data.professionalId + '_' + request.resource.data.ownerId;
+      allow delete: if false;
+    }
+
+    // ── Subscriptions (Premium plan) ────────────────────────────────────────
+    // Doc ID matches the profile's own doc ID, which is the owner's auth uid
+    // for all 5 professional types (stores/vets/trainers/walkers/groomers all
+    // setDoc(..., ownerUid) at registration). Readable by any authenticated
+    // user (not just isSelf/support) — plan tier ranks "Cerca de ti" search
+    // results, so every owner's client needs to read it, same as
+    // products/stores/veterinarians are all isAuth()-readable.
+    // weekCount/weekStart are only ever written by checkAndConsumeQuota
+    // (Cloud Function, Admin SDK, bypasses these rules) — plan is only ever
+    // written by support here, never by the professional itself (that would
+    // let a store grant itself Premium for free).
+    match /subscriptions/{profileId} {
+      allow read: if isAuth();
+      allow create, update: if isSupport();
       allow delete: if false;
     }
 

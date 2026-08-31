@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, ActionSheetIOS,
+  View, Text, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, ActionSheetIOS, Switch,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -58,6 +58,9 @@ export default function WalkerProfileScreen() {
   const [backgroundCheckUrl, setBackgroundCheckUrl] = useState<string | null>(null);
   const [uploadingBgCheck, setUploadingBgCheck] = useState(false);
   const [serviceInstructions, setServiceInstructions] = useState('');
+  const [planEnabled, setPlanEnabled] = useState(false);
+  const [planWalksIncluded, setPlanWalksIncluded] = useState('');
+  const [planPrice, setPlanPrice] = useState('');
 
   useEffect(() => {
     if (!user) return;
@@ -76,6 +79,9 @@ export default function WalkerProfileScreen() {
         if (data.location) setLocation(data.location);
         setBackgroundCheckUrl(data.backgroundCheckUrl ?? null);
         setServiceInstructions(data.serviceInstructions ?? '');
+        setPlanEnabled(data.planEnabled ?? false);
+        setPlanWalksIncluded(data.planWalksIncluded != null ? String(data.planWalksIncluded) : '');
+        setPlanPrice(data.planPrice != null ? String(data.planPrice) : '');
       }
     }).catch(() => {});
   }, [user?.uid]);
@@ -189,6 +195,18 @@ export default function WalkerProfileScreen() {
       Alert.alert('Error', 'Ingresa un valor válido para máx. perros');
       return;
     }
+    const planWalksNum = Number(planWalksIncluded);
+    const planPriceNum = Number(planPrice);
+    if (planEnabled) {
+      if (!planWalksIncluded || isNaN(planWalksNum) || planWalksNum < 1) {
+        Alert.alert('Error', 'Ingresa cuántos paseos incluye el plan');
+        return;
+      }
+      if (!planPrice || isNaN(planPriceNum) || planPriceNum <= 0) {
+        Alert.alert('Error', 'Ingresa el precio del plan');
+        return;
+      }
+    }
     setSaving(true);
     try {
       const updates: any = {
@@ -202,6 +220,9 @@ export default function WalkerProfileScreen() {
         experience: expNum,
         maxDogs: maxDogsNum,
         serviceInstructions: serviceInstructions.trim(),
+        planEnabled,
+        planWalksIncluded: planEnabled ? planWalksNum : null,
+        planPrice: planEnabled ? planPriceNum : null,
         updatedAt: new Date().toISOString(),
       };
       if (location) updates.location = location;
@@ -418,6 +439,57 @@ export default function WalkerProfileScreen() {
               onChangeText={setCareFee}
             />
           </View>
+        </View>
+
+        {/* Walk plan card — a fixed-quantity package owners can buy (e.g.
+            "4 paseos por $28.000"), separate from JunglApp's own Plan
+            Premium above. No real payment: buying it just records the
+            purchase, same as every other price shown in the app. */}
+        <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 20 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: planEnabled ? 16 : 4 }}>
+            <View style={{ flex: 1, marginRight: 12 }}>
+              <Text style={{ fontWeight: '700', color: '#1E293B', fontSize: 15 }}>📦 Plan de paseos</Text>
+              <Text style={{ color: '#9CA3AF', fontSize: 12, marginTop: 2 }}>Ofrece un paquete de paseos que el dueño contrata por adelantado.</Text>
+            </View>
+            <Switch
+              value={planEnabled}
+              onValueChange={setPlanEnabled}
+              trackColor={{ false: '#D1D5DB', true: '#86efac' }}
+              thumbColor={planEnabled ? GREEN : '#F3F4F6'}
+            />
+          </View>
+          {planEnabled && (
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#374151', fontSize: 13, fontWeight: '500', marginBottom: 6 }}>Paseos incluidos</Text>
+                <TextInput
+                  style={{
+                    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
+                    paddingHorizontal: 16, height: 50, fontSize: 16, color: '#1F2937', backgroundColor: '#fff',
+                  }}
+                  placeholder="Ej: 4"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="number-pad"
+                  value={planWalksIncluded}
+                  onChangeText={setPlanWalksIncluded}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#374151', fontSize: 13, fontWeight: '500', marginBottom: 6 }}>Precio del plan (CLP)</Text>
+                <TextInput
+                  style={{
+                    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
+                    paddingHorizontal: 16, height: 50, fontSize: 16, color: '#1F2937', backgroundColor: '#fff',
+                  }}
+                  placeholder="Ej: 28000"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="number-pad"
+                  value={planPrice}
+                  onChangeText={setPlanPrice}
+                />
+              </View>
+            </View>
+          )}
         </View>
 
         <TouchableOpacity

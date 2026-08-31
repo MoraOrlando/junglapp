@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Alert,
-  Modal, TextInput, KeyboardAvoidingView, Platform,
+  Modal, TextInput, KeyboardAvoidingView, Platform, Switch,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,7 +13,7 @@ import { addAppointmentToDeviceCalendar } from '../../../lib/calendar';
 import { logAppointmentBooked } from '../../../lib/analytics';
 import { getSortedAvailableSlots } from '../../../lib/distance';
 import FullScreenImageViewer from '../../../components/FullScreenImageViewer';
-import type { Walker, Pet } from '@junglapp/types';
+import type { Walker, Pet, WalkPlanPurchase } from '@junglapp/types';
 
 const { db } = initFirebase();
 const GREEN = '#2D6A4F';
@@ -51,6 +51,9 @@ export default function WalkerDetailScreen() {
   const [bookNote, setBookNote] = useState('');
   const [booking, setBooking] = useState(false);
   const [bookModal, setBookModal] = useState(false);
+  const [activePlan, setActivePlan] = useState<WalkPlanPurchase | null>(null);
+  const [purchasingPlan, setPurchasingPlan] = useState(false);
+  const [usePlanForBooking, setUsePlanForBooking] = useState(false);
 
   // Review modal
   const [reviewModal, setReviewModal] = useState(false);
@@ -87,8 +90,50 @@ export default function WalkerDetailScreen() {
         setHasReviewed(!reviewSnap.empty);
         if (!apptSnap.empty && reviewSnap.empty) setCanReview(true);
       }).catch(() => {});
+
+      loadActivePlan();
     }
   }, [id, user]);
+
+  function loadActivePlan() {
+    if (!id || !user?.uid) return;
+    getDocs(query(
+      collection(db, COLLECTIONS.WALK_PLAN_PURCHASES),
+      where('walkerId', '==', id),
+      where('ownerId', '==', user.uid),
+      where('status', '==', 'active'),
+    )).then((snap) => {
+      // A owner could in theory have more than one active purchase (bought
+      // another before finishing the last) — use whichever still has walks.
+      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as WalkPlanPurchase));
+      setActivePlan(docs.find((p) => p.walksRemaining > 0) ?? docs[0] ?? null);
+    }).catch(() => {});
+  }
+
+  async function purchasePlan() {
+    if (!user || !walker || !walker.planWalksIncluded || !walker.planPrice) return;
+    setPurchasingPlan(true);
+    try {
+      await addDoc(collection(db, COLLECTIONS.WALK_PLAN_PURCHASES), {
+        ownerId: user.uid,
+        walkerId: walker.id,
+        walksIncluded: walker.planWalksIncluded,
+        walksRemaining: walker.planWalksIncluded,
+        price: walker.planPrice,
+        status: 'active',
+        purchasedAt: new Date().toISOString(),
+      });
+      loadActivePlan();
+      Alert.alert(
+        '✅ Plan contratado',
+        `Ya tienes ${walker.planWalksIncluded} paseos disponibles con ${walker.name}. Coordina el pago directamente con el paseador.`
+      );
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setPurchasingPlan(false);
+    }
+  }
 
   const dates = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
@@ -107,6 +152,7 @@ export default function WalkerDetailScreen() {
       // createAppointment (Cloud Function) writes the appointment and the
       // clientLinks grant atomically server-side, and enforces the Premium
       // plan's weekly quota — see functions/src/index.ts.
+      const usingPlan = usePlanForBooking && serviceType === 'walk' && !!activePlan;
       await createAppointment({
         vetId: walker.id,
         petId: selectedPet,
@@ -114,6 +160,7 @@ export default function WalkerDetailScreen() {
         time: selectedTime,
         reason: bookNote.trim() || (serviceType === 'walk' ? 'Paseo de perro' : 'Cuidado / hospedaje'),
         type: serviceType === 'walk' ? 'walk' : 'pet_care',
+        ...(usingPlan ? { planPurchaseId: activePlan!.id } : {}),
       });
       logAppointmentBooked('walker');
 
@@ -125,9 +172,12 @@ export default function WalkerDetailScreen() {
       );
 
       setBookModal(false);
+      setUsePlanForBooking(false);
       Alert.alert(
         '¡Servicio agendado! 🦮',
-        `Reservaste el ${selectedDate} a las ${selectedTime} con ${walker.name}.`,
+        usingPlan
+          ? `Reservaste el ${selectedDate} a las ${selectedTime} con ${walker.name}. El paseo se descontará de tu plan cuando se marque como realizado.`
+          : `Reservaste el ${selectedDate} a las ${selectedTime} con ${walker.name}.`,
         [{ text: 'OK', onPress: () => router.replace('/(owner)' as any) }]
       );
     } catch (e: any) {
@@ -249,6 +299,39 @@ export default function WalkerDetailScreen() {
             </View>
           )}
 
+          {/* Walk plan — a fixed-quantity package, not real in-app payment.
+              Buying it just records the purchase; the price is coordinated
+              directly with the walker like every other booking. */}
+          {walker.planEnabled && !!walker.planWalksIncluded && !!walker.planPrice && (
+            <View style={{ backgroundColor: '#EFF6FF', borderRadius: 16, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#BFDBFE' }}>
+              <Text style={{ color: '#1D4ED8', fontWeight: '700', fontSize: 13, marginBottom: 6 }}>📦 Plan de paseos</Text>
+              {activePlan && activePlan.walksRemaining > 0 ? (
+                <>
+                  <Text style={{ color: '#1E3A8A', fontSize: 13 }}>
+                    Te quedan <Text style={{ fontWeight: '800' }}>{activePlan.walksRemaining}</Text> de {activePlan.walksIncluded} paseos contratados.
+                  </Text>
+                  <Text style={{ color: '#6B7280', fontSize: 11, marginTop: 4 }}>Se descuentan cuando el paseo se marca como realizado.</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={{ color: '#1E3A8A', fontSize: 13, marginBottom: 10 }}>
+                    {walker.planWalksIncluded} paseos por ${walker.planPrice.toLocaleString('es-CL')}.
+                    {activePlan ? ' Ya usaste todos los de tu plan anterior.' : ''}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={purchasePlan}
+                    disabled={purchasingPlan}
+                    style={{ backgroundColor: '#1D4ED8', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>
+                      {purchasingPlan ? 'Contratando...' : 'Contratar plan'}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          )}
+
           {/* Book button */}
           <TouchableOpacity
             onPress={() => setBookModal(true)}
@@ -310,6 +393,24 @@ export default function WalkerDetailScreen() {
                   <Text style={{ fontWeight: '600', color: serviceType === 'care' ? '#1D4ED8' : '#6B7280' }}>🏠 Cuidado</Text>
                 </TouchableOpacity>
               </View>
+
+              {/* Use walk plan — only offered for 'walk' bookings with walks
+                  actually left, matches Walker.planEnabled scope (walks only,
+                  not care). */}
+              {serviceType === 'walk' && activePlan && activePlan.walksRemaining > 0 && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#EFF6FF', borderRadius: 12, padding: 12, marginBottom: 16 }}>
+                  <View style={{ flex: 1, marginRight: 10 }}>
+                    <Text style={{ color: '#1E3A8A', fontWeight: '600', fontSize: 13 }}>Usar mi plan de paseos</Text>
+                    <Text style={{ color: '#1E3A8A', fontSize: 11, marginTop: 2 }}>Te quedan {activePlan.walksRemaining} paseos</Text>
+                  </View>
+                  <Switch
+                    value={usePlanForBooking}
+                    onValueChange={setUsePlanForBooking}
+                    trackColor={{ false: '#D1D5DB', true: '#93C5FD' }}
+                    thumbColor={usePlanForBooking ? '#1D4ED8' : '#F3F4F6'}
+                  />
+                </View>
+              )}
 
               {/* Pet selector */}
               <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 }}>Selecciona tu mascota</Text>

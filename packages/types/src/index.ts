@@ -182,9 +182,31 @@ export interface Walker {
   reviewCount?: number;
   walkFee?: number | null;
   careFee?: number | null;
+  // A single fixed-quantity walk package the walker offers (e.g. "4 paseos
+  // por $28.000") — bought once via walkPlanPurchases, no auto-renewal.
+  // Not real payment processing: the app only records the purchase and
+  // tracks remaining walks, same as every other price shown in the app.
+  planEnabled?: boolean;
+  planWalksIncluded?: number;
+  planPrice?: number;
   location?: { lat: number; lng: number };
   createdAt: string;
   updatedAt?: string;
+}
+
+// A pet owner's purchase of a walker's walk package (see Walker.planEnabled).
+// walksRemaining is only ever decremented server-side (functions/src/index.ts
+// onAppointmentUpdated), when an appointment referencing this purchase
+// transitions to status 'completed' — never written by the client.
+export interface WalkPlanPurchase {
+  id: string;
+  ownerId: string;
+  walkerId: string;
+  walksIncluded: number;
+  walksRemaining: number;
+  price: number;
+  status: 'active' | 'exhausted' | 'cancelled';
+  purchasedAt: string;
 }
 
 export interface GroomingService {
@@ -331,6 +353,16 @@ export interface Appointment {
   // the existing cancelledBy convention.
   completedBy?: 'owner' | 'vet';
   reason?: string;
+  // 'walk' | 'pet_care' for walker bookings — untyped since vet/trainer/
+  // groomer bookings don't set it and this isn't the source of truth for
+  // the full set of values.
+  type?: string;
+  // Set when the owner chose to use a WalkPlanPurchase's remaining walks
+  // instead of paying for this booking separately. planDecremented flips to
+  // true once onAppointmentUpdated has consumed one walk from that
+  // purchase — guards against double-decrementing on a retried trigger.
+  planPurchaseId?: string;
+  planDecremented?: boolean;
   createdAt: string;
 }
 
