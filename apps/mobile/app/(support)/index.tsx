@@ -8,6 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 
 const { db } = initFirebase();
 const PURPLE = '#7C3AED';
+const NEW_ACCOUNT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 export default function SupportDashboard() {
   const { user } = useAuth();
@@ -15,6 +16,7 @@ export default function SupportDashboard() {
   const [stats, setStats] = useState({
     users: 0, owners: 0, vetsSolo: 0, vetsClinic: 0, stores: 0, trainers: 0, walkers: 0, groomers: 0, places: 0,
     pendingVets: 0, pendingStores: 0, pendingTrainers: 0, pendingWalkers: 0, pendingGroomers: 0, pendingReports: 0, pendingPromotions: 0,
+    newAccounts7d: 0,
   });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -40,6 +42,11 @@ export default function SupportDashboard() {
     // isClinic must be explicit — solo vets can also pick "servicios
     // ofrecidos", so clinicServices alone isn't a valid clinic signal.
     const isClinicOf = (v: any) => v.isClinic ?? false;
+    // Every account (owner or any provider role) gets a users/{uid} doc at
+    // signup — see signUp() in context/AuthContext.tsx — so counting off
+    // `users` alone already covers every role without extra reads.
+    const cutoff = Date.now() - NEW_ACCOUNT_WINDOW_MS;
+    const newAccounts7d = users.filter((u: any) => u.createdAt && new Date(u.createdAt).getTime() > cutoff).length;
     setStats({
       users: users.length,
       owners: users.filter((u: any) => u.role === 'owner').length,
@@ -57,6 +64,7 @@ export default function SupportDashboard() {
       pendingGroomers: groomers.filter((g: any) => g.status === 'pending').length,
       pendingReports: pendingReportsSnap.docs.length,
       pendingPromotions: pendingPromosSnap.docs.length,
+      newAccounts7d,
     });
   }
 
@@ -96,6 +104,24 @@ export default function SupportDashboard() {
         </View>
 
         <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
+          {/* New accounts highlight — the total-users counter below doesn't
+              tell you WHICH ones are recent, this does. Tapping goes to the
+              Usuarios list already sorted by most-recent-first. */}
+          <TouchableOpacity
+            onPress={() => router.push('/(support)/users?sort=recent' as any)}
+            activeOpacity={0.8}
+            style={{ backgroundColor: '#EEF2FF', borderRadius: 16, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#C7D2FE', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Text style={{ fontSize: 24 }}>🆕</Text>
+              <View>
+                <Text style={{ fontWeight: '800', color: PURPLE, fontSize: 20 }}>{stats.newAccounts7d}</Text>
+                <Text style={{ color: PURPLE, fontSize: 12 }}>Cuentas nuevas (últimos 7 días)</Text>
+              </View>
+            </View>
+            <Text style={{ color: PURPLE, fontSize: 20 }}>›</Text>
+          </TouchableOpacity>
+
           {/* Pending approvals — tappable cards */}
           {pendingTotal > 0 && (
             <View style={{ marginBottom: 20 }}>
