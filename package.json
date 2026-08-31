@@ -15,6 +15,7 @@
     "web": "cd apps/web && npm run dev",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "emulators": "cd functions && npm run build && cd .. && firebase emulators:start --import=./.emulator-data --export-on-exit",
     "postinstall": "node node_modules/patch-package/index.js"
   },
   "dependencies": {

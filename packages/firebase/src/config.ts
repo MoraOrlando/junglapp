@@ -1,9 +1,9 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { initializeAuth, getAuth, Auth } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
-import { getStorage, FirebaseStorage } from 'firebase/storage';
-import { getDatabase, Database } from 'firebase/database';
-import { getFunctions, Functions } from 'firebase/functions';
+import { initializeAuth, getAuth, connectAuthEmulator, Auth } from 'firebase/auth';
+import { getFirestore, connectFirestoreEmulator, Firestore } from 'firebase/firestore';
+import { getStorage, connectStorageEmulator, FirebaseStorage } from 'firebase/storage';
+import { getDatabase, connectDatabaseEmulator, Database } from 'firebase/database';
+import { getFunctions, connectFunctionsEmulator, Functions } from 'firebase/functions';
 
 // Static dot-notation access required so Metro/Babel can inline values at bundle time.
 // Dynamic process.env[variable] lookups are NOT replaced in Hermes production bundles.
@@ -49,6 +49,26 @@ function initFirebase() {
     functionsInstance = getFunctions(app, 'southamerica-west1');
     const databaseURL = process.env.EXPO_PUBLIC_FIREBASE_DATABASE_URL || process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || '';
     if (databaseURL) rtdb = getDatabase(app, databaseURL);
+
+    // Opt-in only — unset (the default) means every build, including local
+    // dev, talks to the real production project exactly as before. Set
+    // EXPO_PUBLIC_USE_FIREBASE_EMULATOR=true (mobile) or
+    // NEXT_PUBLIC_USE_FIREBASE_EMULATOR=true (web) in .env.local to redirect
+    // this app instance at `firebase emulators:start` instead. Host is
+    // configurable because "localhost" doesn't reach the dev machine from
+    // an Android emulator (needs 10.0.2.2) or a physical device (needs the
+    // machine's LAN IP) — only the iOS simulator and web can rely on the
+    // "localhost" default below.
+    const useEmulator = process.env.EXPO_PUBLIC_USE_FIREBASE_EMULATOR === 'true' || process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATOR === 'true';
+    if (useEmulator) {
+      const host = process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST || process.env.NEXT_PUBLIC_FIREBASE_EMULATOR_HOST || 'localhost';
+      connectAuthEmulator(auth, `http://${host}:9099`, { disableWarnings: true });
+      connectFirestoreEmulator(db, host, 8080);
+      connectFunctionsEmulator(functionsInstance, host, 5001);
+      connectStorageEmulator(storage, host, 9199);
+      if (rtdb) connectDatabaseEmulator(rtdb, host, 9000);
+      console.log(`[firebase] Using local emulators at ${host} — NOT talking to production.`);
+    }
   }
   // rtdb is only unset if EXPO_PUBLIC_FIREBASE_DATABASE_URL is missing from
   // the environment, which this app always sets — every call site already

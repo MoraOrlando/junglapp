@@ -20,11 +20,13 @@ apps/web/out
 .firebase
 firebase-debug.log
 firestore-debug.log
+ui-debug.log
 firebase/service-account.json
 firebase/*firebase-adminsdk*.json
 **/google-services.json
 **/GoogleService-Info.plist
 functions/lib
+.emulator-data
 
 # TypeScript
 *.tsbuildinfo
