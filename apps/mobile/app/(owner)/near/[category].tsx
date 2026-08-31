@@ -454,9 +454,10 @@ export default function NearCategoryScreen() {
                         </View>
                       )}
 
-                      {it.kind !== 'vet' && it.kind !== 'veterinaria' && it.rating != null && (
+                      {(it.kind === 'walker' || it.kind === 'trainer' || it.kind === 'groomer') && (
                         <Text style={{ fontSize: 12, color: '#F59E0B', fontWeight: '600' }}>
-                          ⭐ {it.rating.toFixed(1)}{it.reviewCount ? ` (${it.reviewCount})` : ''}
+                          ⭐ {it.rating ? it.rating.toFixed(1) : 'Sin reseñas'}
+                          {it.reviewCount ? ` (${it.reviewCount})` : ''}
                         </Text>
                       )}
 

@@ -1153,11 +1153,18 @@ export const onReviewCreated = onDocumentCreated('reviews/{reviewId}', async (ev
   const { vetId, rating } = review;
   if (!vetId || typeof rating !== 'number') return;
 
-  // Determine target collection (trainer or veterinarian)
+  // Determine target collection — REVIEWS.vetId is a generic provider-id
+  // field reused across every bookable provider type, not vet-specific
+  // (see (owner)/walkers/[id].tsx and (owner)/appointment/[id].tsx, which
+  // both write here for walkers too). Walkers/groomers were missing from
+  // this list, so their rating/reviewCount never got aggregated even
+  // though the review itself saved fine.
   const trainerRef = admin.firestore().collection('trainers').doc(vetId);
   const vetRef = admin.firestore().collection('veterinarians').doc(vetId);
+  const walkerRef = admin.firestore().collection('walkers').doc(vetId);
+  const groomerRef = admin.firestore().collection('groomers').doc(vetId);
 
-  for (const ref of [trainerRef, vetRef]) {
+  for (const ref of [trainerRef, vetRef, walkerRef, groomerRef]) {
     const target = await ref.get();
     if (!target.exists) continue;
 

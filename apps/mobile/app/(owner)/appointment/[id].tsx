@@ -7,7 +7,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, updateDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, where, getDocs, addDoc, writeBatch } from 'firebase/firestore';
 import { initFirebase, COLLECTIONS, joinChat, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
 import { VISIT_REASONS, VISIT_REASON_ICONS } from '../../../lib/visitReasons';
@@ -225,19 +225,25 @@ export default function OwnerAppointmentDetailScreen() {
             ...(prescriptionImageUrl ? { prescriptionImageUrl } : {}),
           };
 
-      await updateDoc(doc(db, COLLECTIONS.APPOINTMENTS, id!), {
+      // Batched so the appointment update and the review are committed
+      // atomically — writing them as two sequential awaits let the home
+      // screen's "pending review" listener (checkPendingReview in
+      // (owner)/index.tsx) observe a moment where the appointment was
+      // already `completed` but the review hadn't landed yet, triggering
+      // its own duplicate review prompt for the same provider.
+      const batch = writeBatch(db);
+      batch.update(doc(db, COLLECTIONS.APPOINTMENTS, id!), {
         status: 'completed',
-        // updateDoc rejects `undefined` field values outright — provider
-        // should always be loaded by the time this button is reachable, but
-        // guard it anyway rather than risk the write throwing.
+        // updateDoc/batch.update reject `undefined` field values outright —
+        // provider should always be loaded by the time this button is
+        // reachable, but guard it anyway rather than risk the write throwing.
         ...(provider?.name ? { vetName: provider.name } : {}),
         completedBy: 'owner',
         ...(consultation ? { consultation } : {}),
         updatedAt: new Date().toISOString(),
       });
-
       if (needsReview && user && provider) {
-        await addDoc(collection(db, COLLECTIONS.REVIEWS), {
+        batch.set(doc(collection(db, COLLECTIONS.REVIEWS)), {
           vetId: provider.id,
           ownerId: user.uid,
           ownerName: user.name || 'Usuario',
@@ -245,8 +251,9 @@ export default function OwnerAppointmentDetailScreen() {
           comment: completeComment.trim(),
           createdAt: new Date().toISOString(),
         });
-        setAlreadyReviewed(true);
       }
+      await batch.commit();
+      if (needsReview) setAlreadyReviewed(true);
 
       setAppointment((p) => p ? {
         ...p, status: 'completed' as any, completedBy: 'owner',
