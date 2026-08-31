@@ -1,18 +1,38 @@
 import { useEffect, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, Alert,
+  View, Text, ScrollView, TouchableOpacity, TextInput, Alert,
   ActivityIndicator, Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
-import { ref, set } from 'firebase/database';
-import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
+import { initFirebase, COLLECTIONS, joinChat, uploadImage } from '@junglapp/firebase';
 import { useAuth } from '../../../context/AuthContext';
+import { VISIT_REASONS, VISIT_REASON_ICONS } from '../../../lib/visitReasons';
 import type { Appointment, Pet, Veterinarian, Walker } from '@junglapp/types';
 
-const { db, rtdb } = initFirebase();
+function toLocalDateString(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function StarRating({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  return (
+    <View style={{ flexDirection: 'row', gap: 8 }}>
+      {[1, 2, 3, 4, 5].map((star) => (
+        <TouchableOpacity key={star} onPress={() => onChange(star)}>
+          <Text style={{ fontSize: 28 }}>{star <= value ? '⭐' : '☆'}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+const { db } = initFirebase();
 
 const GREEN = '#2D6A4F';
 const BORDER = '#E2E8F0';
@@ -45,6 +65,30 @@ export default function OwnerAppointmentDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
   const [openingChat, setOpeningChat] = useState(false);
+
+  // Whether the owner has already reviewed this vet (any past appointment,
+  // not just this one) — mirrors (owner)/vets/[id].tsx's canReview, one
+  // review per owner-vet relationship rather than per appointment.
+  const [alreadyReviewed, setAlreadyReviewed] = useState<boolean | null>(null);
+
+  // "Marcar como realizada" form (owner completing a vet appointment the
+  // vet never completed themselves)
+  const [showCompleteForm, setShowCompleteForm] = useState(false);
+  const [completeReason, setCompleteReason] = useState('');
+  const [showReasonDropdown, setShowReasonDropdown] = useState(false);
+  const [completeDiagnosis, setCompleteDiagnosis] = useState('');
+  const [completeTreatment, setCompleteTreatment] = useState('');
+  const [completePrescriptionUri, setCompletePrescriptionUri] = useState<string | null>(null);
+  const [completeRating, setCompleteRating] = useState(0);
+  const [completeComment, setCompleteComment] = useState('');
+  const [completing, setCompleting] = useState(false);
+
+  // "Calificar veterinario" form (appointment already completed, owner
+  // hasn't reviewed yet)
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
 
   useEffect(() => {
     if (!id || !user) return;
@@ -82,6 +126,18 @@ export default function OwnerAppointmentDetailScreen() {
         if (isWalkerAppt) setWalker({ id: providerSnap.id, ...providerSnap.data() } as Walker);
         else setVet({ id: providerSnap.id, ...providerSnap.data() } as Veterinarian);
       }
+
+      // REVIEWS.vetId is a generic provider-id field reused across vets and
+      // walkers (see (owner)/walkers/[id].tsx's canReview) — one review per
+      // owner-provider relationship, not per appointment, regardless of type.
+      if (appt.vetId) {
+        const reviewSnap = await getDocs(query(
+          collection(db, COLLECTIONS.REVIEWS),
+          where('vetId', '==', appt.vetId),
+          where('ownerId', '==', user!.uid),
+        )).catch(() => null);
+        setAlreadyReviewed(reviewSnap ? !reviewSnap.empty : null);
+      }
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -118,6 +174,120 @@ export default function OwnerAppointmentDetailScreen() {
     );
   }
 
+  function pickCompletePrescription() {
+    Alert.alert('Subir receta', '¿Cómo quieres agregar la foto?', [
+      {
+        text: 'Cámara', onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') return;
+          const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+          if (!result.canceled) setCompletePrescriptionUri(result.assets[0].uri);
+        },
+      },
+      {
+        text: 'Galería', onPress: async () => {
+          const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.8 });
+          if (!result.canceled) setCompletePrescriptionUri(result.assets[0].uri);
+        },
+      },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  }
+
+  // Owner marking a vet appointment as done themselves, for when the vet
+  // never completed it through JunglApp — writes the same `consultation`
+  // shape the vet-side flow writes (apps/mobile/app/(vet)/appointment/[id].tsx),
+  // so it shows up in the pet's medical history the same way
+  // (apps/mobile/app/(owner)/pets/[id].tsx already reads any completed
+  // appointment's consultation, regardless of who wrote it).
+  async function submitOwnerComplete() {
+    const provider = vet ?? walker;
+    // Walker completions skip the vet-specific reason/diagnosis fields —
+    // only the free-text note (completeTreatment) is required, and it's
+    // optional for a walk/care service.
+    if (!isWalkerAppt && !completeReason) { Alert.alert('Faltan datos', 'Selecciona el motivo de la visita.'); return; }
+    if (!isWalkerAppt && !completeTreatment.trim()) { Alert.alert('Faltan datos', 'Describe brevemente lo realizado en la consulta.'); return; }
+    const needsReview = alreadyReviewed === false;
+    if (needsReview && completeRating === 0) { Alert.alert('Faltan datos', `Por favor califica ${isWalkerAppt ? 'al paseador/cuidador' : 'al veterinario'}.`); return; }
+    if (needsReview && !completeComment.trim()) { Alert.alert('Faltan datos', 'Escribe un comentario sobre la atención.'); return; }
+
+    setCompleting(true);
+    try {
+      let prescriptionImageUrl: string | undefined;
+      if (!isWalkerAppt && completePrescriptionUri) prescriptionImageUrl = await uploadImage(completePrescriptionUri);
+
+      const consultation = isWalkerAppt
+        ? (completeTreatment.trim() ? { treatmentDone: completeTreatment.trim() } : undefined)
+        : {
+            visitReason: completeReason,
+            ...(completeDiagnosis.trim() ? { diagnosis: completeDiagnosis.trim() } : {}),
+            treatmentDone: completeTreatment.trim(),
+            ...(prescriptionImageUrl ? { prescriptionImageUrl } : {}),
+          };
+
+      await updateDoc(doc(db, COLLECTIONS.APPOINTMENTS, id!), {
+        status: 'completed',
+        // updateDoc rejects `undefined` field values outright — provider
+        // should always be loaded by the time this button is reachable, but
+        // guard it anyway rather than risk the write throwing.
+        ...(provider?.name ? { vetName: provider.name } : {}),
+        completedBy: 'owner',
+        ...(consultation ? { consultation } : {}),
+        updatedAt: new Date().toISOString(),
+      });
+
+      if (needsReview && user && provider) {
+        await addDoc(collection(db, COLLECTIONS.REVIEWS), {
+          vetId: provider.id,
+          ownerId: user.uid,
+          ownerName: user.name || 'Usuario',
+          rating: completeRating,
+          comment: completeComment.trim(),
+          createdAt: new Date().toISOString(),
+        });
+        setAlreadyReviewed(true);
+      }
+
+      setAppointment((p) => p ? {
+        ...p, status: 'completed' as any, completedBy: 'owner',
+        ...(consultation ? { consultation: { ...consultation, createdAt: new Date().toISOString() } as any } : {}),
+      } : null);
+      setShowCompleteForm(false);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setCompleting(false);
+    }
+  }
+
+  // Rating a vet whose appointment was already completed (by the vet
+  // themselves, or by the owner above) — writes only to reviews, same
+  // shape/dedup rule as (owner)/vets/[id].tsx's submitReview.
+  async function submitReviewOnly() {
+    const provider = vet ?? walker;
+    if (!user || !provider) return;
+    if (reviewRating === 0) { Alert.alert('Faltan datos', `Por favor califica ${isWalkerAppt ? 'al paseador/cuidador' : 'al veterinario'}.`); return; }
+    if (!reviewComment.trim()) { Alert.alert('Faltan datos', 'Escribe un comentario.'); return; }
+    setSubmittingReview(true);
+    try {
+      await addDoc(collection(db, COLLECTIONS.REVIEWS), {
+        vetId: provider.id,
+        ownerId: user.uid,
+        ownerName: user.name || 'Usuario',
+        rating: reviewRating,
+        comment: reviewComment.trim(),
+        createdAt: new Date().toISOString(),
+      });
+      setAlreadyReviewed(true);
+      setShowReviewForm(false);
+      Alert.alert('¡Gracias!', 'Tu evaluación fue enviada');
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSubmittingReview(false);
+    }
+  }
+
   async function openChat() {
     const provider = vet ?? walker;
     if (!user || !appointment || !provider) return;
@@ -150,9 +320,7 @@ export default function OwnerAppointmentDetailScreen() {
         chatId = newChat.id;
       }
 
-      // Register own entry first, then the other participant
-      await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${user.uid}`), true);
-      await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${provider.userId}`), true);
+      await joinChat(chatId).catch(() => {});
 
       router.push(`/(owner)/chat/${chatId}` as any);
     } catch {
@@ -179,6 +347,15 @@ export default function OwnerAppointmentDetailScreen() {
   const canCancel = !isCancelled && !isCompleted;
   const statusColor = STATUS_COLORS[status] ?? GRAY;
   const statusLabel = STATUS_LABELS[status] ?? status;
+  // Owner can mark a vet OR walker appointment as done once its date has
+  // arrived — for when the provider never completed it through JunglApp
+  // themselves. Symmetric with the provider's own completion screens
+  // ((vet)/appointment/[id].tsx, (walker)/appointment/[id].tsx) — whoever
+  // gets there first closes it out.
+  const todayStr = toLocalDateString(new Date());
+  const canCompleteAsOwner = (status === 'confirmed' || status === 'arrived') && appointment.date <= todayStr;
+  const canReviewNow = !!(vet ?? walker) && alreadyReviewed === false;
+  const consultation = appointment.consultation as any;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
@@ -229,12 +406,200 @@ export default function OwnerAppointmentDetailScreen() {
           {/* Completed notice */}
           {isCompleted && (
             <View style={{ backgroundColor: '#F0FDF4', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#BBF7D0' }}>
-              <Text style={{ color: GREEN, fontWeight: '700', fontSize: 15, marginBottom: 4 }}>
+              <Text style={{ color: GREEN, fontWeight: '700', fontSize: 15, marginBottom: consultation ? 10 : 4 }}>
                 {isWalkerAppt ? '✅ Servicio completado' : '✅ Consulta completada'}
               </Text>
-              <Text style={{ color: '#047857', fontSize: 13 }}>
-                {isWalkerAppt ? 'El paseo/cuidado fue realizado exitosamente.' : 'La consulta fue realizada exitosamente.'}
-              </Text>
+              {!isWalkerAppt && !consultation && (
+                <Text style={{ color: '#047857', fontSize: 13 }}>La consulta fue realizada exitosamente.</Text>
+              )}
+              {isWalkerAppt && (
+                <Text style={{ color: '#047857', fontSize: 13 }}>El paseo/cuidado fue realizado exitosamente.</Text>
+              )}
+              {consultation && (
+                <View style={{ borderTopWidth: 1, borderTopColor: '#BBF7D0', paddingTop: 10, gap: 8 }}>
+                  {consultation.visitReason && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ fontSize: 15 }}>{VISIT_REASON_ICONS[consultation.visitReason] ?? '📋'}</Text>
+                      <Text style={{ fontWeight: '700', color: DARK, fontSize: 13 }}>{consultation.visitReason}</Text>
+                    </View>
+                  )}
+                  {consultation.diagnosis && (
+                    <View>
+                      <Text style={{ color: GRAY, fontSize: 12 }}>Diagnóstico</Text>
+                      <Text style={{ color: DARK, fontSize: 13 }}>{consultation.diagnosis}</Text>
+                    </View>
+                  )}
+                  {(consultation.treatmentDone || consultation.treatment) ? (
+                    <View>
+                      <Text style={{ color: GRAY, fontSize: 12 }}>Tratamiento / notas</Text>
+                      <Text style={{ color: DARK, fontSize: 13 }}>{consultation.treatmentDone || consultation.treatment}</Text>
+                    </View>
+                  ) : null}
+                  {consultation.prescriptionImageUrl && (
+                    <TouchableOpacity onPress={() => Linking.openURL(consultation.prescriptionImageUrl)}>
+                      <Text style={{ color: PRIMARY, fontSize: 12, fontWeight: '600' }}>📄 Ver foto de receta</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Calificar veterinario — cita ya completada (por el vet o por el
+              dueño) pero sin reseña todavía */}
+          {isCompleted && canReviewNow && (
+            <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: BORDER }}>
+              {!showReviewForm ? (
+                <TouchableOpacity
+                  style={{ alignItems: 'center', paddingVertical: 4 }}
+                  onPress={() => { setShowReviewForm(true); setReviewRating(5); }}
+                >
+                  <Text style={{ fontSize: 22, marginBottom: 4 }}>⭐</Text>
+                  <Text style={{ color: PRIMARY, fontWeight: '700', fontSize: 14 }}>{isWalkerAppt ? 'Calificar paseador/cuidador' : 'Calificar veterinario'}</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={{ gap: 10 }}>
+                  <Text style={{ fontWeight: '700', color: DARK, fontSize: 14 }}>¿Cómo fue la atención de {(vet ?? walker)?.name}?</Text>
+                  <StarRating value={reviewRating} onChange={setReviewRating} />
+                  <TextInput
+                    style={{ backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: BORDER, borderRadius: 12, padding: 12, fontSize: 13, color: DARK, minHeight: 70, textAlignVertical: 'top' }}
+                    placeholder="Cuéntanos cómo fue la atención..."
+                    multiline
+                    value={reviewComment}
+                    onChangeText={setReviewComment}
+                  />
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TouchableOpacity
+                      style={{ flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center', backgroundColor: '#F1F5F9' }}
+                      onPress={() => setShowReviewForm(false)}
+                    >
+                      <Text style={{ color: GRAY, fontWeight: '700' }}>Cancelar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={{ flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center', backgroundColor: submittingReview ? '#93C5FD' : PRIMARY }}
+                      onPress={submitReviewOnly}
+                      disabled={submittingReview}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '700' }}>{submittingReview ? 'Enviando...' : 'Enviar evaluación'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Marcar como realizada — el dueño cierra la cita cuando el
+              veterinario no lo hizo por la app */}
+          {canCompleteAsOwner && (
+            <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: BORDER }}>
+              {!showCompleteForm ? (
+                <TouchableOpacity
+                  style={{ alignItems: 'center', paddingVertical: 4, flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+                  onPress={() => setShowCompleteForm(true)}
+                >
+                  <Text style={{ fontSize: 18 }}>✅</Text>
+                  <Text style={{ color: GREEN, fontWeight: '700', fontSize: 14 }}>Marcar como realizada</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={{ gap: 12 }}>
+                  <Text style={{ fontWeight: '700', color: DARK, fontSize: 14 }}>
+                    {isWalkerAppt ? '¿Cómo estuvo el servicio?' : '¿Qué se hizo en esta atención?'}
+                  </Text>
+
+                  {!isWalkerAppt && (
+                    <View>
+                      <Text style={{ color: GRAY, fontSize: 12, marginBottom: 6 }}>Motivo de la visita</Text>
+                      <TouchableOpacity
+                        style={{ borderWidth: 1, borderColor: completeReason ? GREEN : BORDER, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+                        onPress={() => setShowReasonDropdown((v) => !v)}
+                      >
+                        <Text style={{ color: completeReason ? DARK : '#94A3B8', fontSize: 13 }}>
+                          {completeReason || 'Seleccionar motivo...'}
+                        </Text>
+                        <Text style={{ color: GRAY }}>{showReasonDropdown ? '▲' : '▼'}</Text>
+                      </TouchableOpacity>
+                      {showReasonDropdown && (
+                        <View style={{ borderWidth: 1, borderColor: BORDER, borderRadius: 12, marginTop: 4, overflow: 'hidden' }}>
+                          {VISIT_REASONS.map((r) => (
+                            <TouchableOpacity
+                              key={r}
+                              style={{ paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}
+                              onPress={() => { setCompleteReason(r); setShowReasonDropdown(false); }}
+                            >
+                              <Text style={{ fontSize: 13, color: DARK }}>{VISIT_REASON_ICONS[r]} {r}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {!isWalkerAppt && (
+                    <View>
+                      <Text style={{ color: GRAY, fontSize: 12, marginBottom: 6 }}>Diagnóstico (opcional)</Text>
+                      <TextInput
+                        style={{ backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: BORDER, borderRadius: 12, padding: 12, fontSize: 13, color: DARK }}
+                        placeholder="Ej: Otitis leve"
+                        value={completeDiagnosis}
+                        onChangeText={setCompleteDiagnosis}
+                      />
+                    </View>
+                  )}
+
+                  <View>
+                    <Text style={{ color: GRAY, fontSize: 12, marginBottom: 6 }}>
+                      {isWalkerAppt ? 'Notas (opcional)' : 'Tratamiento / notas de la consulta'}
+                    </Text>
+                    <TextInput
+                      style={{ backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: BORDER, borderRadius: 12, padding: 12, fontSize: 13, color: DARK, minHeight: 70, textAlignVertical: 'top' }}
+                      placeholder={isWalkerAppt ? 'Cómo se portó, algo que el paseador deba saber...' : 'Qué se hizo, medicamentos recetados, indicaciones...'}
+                      multiline
+                      value={completeTreatment}
+                      onChangeText={setCompleteTreatment}
+                    />
+                  </View>
+
+                  {!isWalkerAppt && (
+                    <TouchableOpacity onPress={pickCompletePrescription}>
+                      <Text style={{ color: PRIMARY, fontSize: 12, fontWeight: '600' }}>
+                        {completePrescriptionUri ? '📄 Foto de receta agregada — cambiar' : '📄 Agregar foto de receta (opcional)'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {alreadyReviewed === false && (
+                    <>
+                      <View style={{ borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 12 }}>
+                        <Text style={{ fontWeight: '700', color: DARK, fontSize: 14, marginBottom: 8 }}>¿Cómo fue la atención de {(vet ?? walker)?.name}?</Text>
+                        <StarRating value={completeRating} onChange={setCompleteRating} />
+                      </View>
+                      <TextInput
+                        style={{ backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: BORDER, borderRadius: 12, padding: 12, fontSize: 13, color: DARK, minHeight: 70, textAlignVertical: 'top' }}
+                        placeholder="Cuéntanos cómo fue la atención..."
+                        multiline
+                        value={completeComment}
+                        onChangeText={setCompleteComment}
+                      />
+                    </>
+                  )}
+
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TouchableOpacity
+                      style={{ flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center', backgroundColor: '#F1F5F9' }}
+                      onPress={() => setShowCompleteForm(false)}
+                    >
+                      <Text style={{ color: GRAY, fontWeight: '700' }}>Cancelar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={{ flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center', backgroundColor: completing ? '#86EFAC' : GREEN }}
+                      onPress={submitOwnerComplete}
+                      disabled={completing}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '700' }}>{completing ? 'Guardando...' : 'Guardar'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
             </View>
           )}
 
@@ -300,6 +665,25 @@ export default function OwnerAppointmentDetailScreen() {
                     {openingChat ? 'Abriendo chat...' : 'Enviar mensaje al veterinario'}
                   </Text>
                 </TouchableOpacity>
+
+                {/* WhatsApp — alternative to the in-app chat above, vet-only.
+                    Opens the vet's own WhatsApp, not a JunglApp conversation
+                    (no history/notifications on our side for this channel). */}
+                {vet.phone ? (
+                  <TouchableOpacity
+                    style={{ marginTop: 8, backgroundColor: '#25D366', borderRadius: 12, paddingVertical: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+                    onPress={() => {
+                      const digits = vet.phone.replace(/\D/g, '');
+                      const text = `Hola${vet.name ? ` Dr./Dra. ${vet.name}` : ''}, te escribo desde JunglApp sobre mi cita del ${appointment?.date ?? ''}${appointment?.time ? ` a las ${appointment.time}` : ''}.`;
+                      Linking.openURL(`https://wa.me/${digits}?text=${encodeURIComponent(text)}`).catch(() =>
+                        Alert.alert('Error', 'No se pudo abrir WhatsApp. ¿Lo tienes instalado?')
+                      );
+                    }}
+                  >
+                    <Text style={{ fontSize: 16 }}>📱</Text>
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Escribir por WhatsApp</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             </>
           )}

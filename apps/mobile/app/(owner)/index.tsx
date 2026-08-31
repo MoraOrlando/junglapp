@@ -1,17 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { collection, query, where, onSnapshot, getDocs, addDoc } from 'firebase/firestore';
-import { ref, set } from 'firebase/database';
-import { initFirebase, COLLECTIONS, RTDB_PATHS } from '@junglapp/firebase';
+import { initFirebase, COLLECTIONS, joinChat } from '@junglapp/firebase';
 import { useAuth } from '../../context/AuthContext';
 import CompleteReminderModal from '../../components/CompleteReminderModal';
+import PendingReviewModal from '../../components/PendingReviewModal';
 import { getVisitSection, SECTION_META } from '../../lib/visitReasons';
 import type { Pet, Veterinarian, Walker, Reminder } from '@junglapp/types';
 
-const { db, rtdb } = initFirebase();
+const { db } = initFirebase();
 
 const ACTIVE_REMINDER_TYPES = ['vaccine', 'antiparasitic', 'vet_control'];
 
@@ -36,6 +36,14 @@ export default function OwnerHomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [activeReminder, setActiveReminder] = useState<Reminder | null>(null);
+  const [pendingReview, setPendingReview] = useState<{ providerId: string; providerName: string; kind: 'walker' | 'vet' } | null>(null);
+  // The appointments onSnapshot subscription below is long-lived — its
+  // callback closure only refreshes when the effect itself re-runs (user
+  // changes or a manual refresh), so checkPendingReview must read the guard
+  // through a ref rather than the `pendingReview` state directly, or it'd
+  // act on a stale (possibly already-null) value on a later snapshot event.
+  const pendingReviewRef = useRef<typeof pendingReview>(null);
+  useEffect(() => { pendingReviewRef.current = pendingReview; }, [pendingReview]);
 
   useEffect(() => {
     if (!user) return;
@@ -65,14 +73,52 @@ export default function OwnerHomeScreen() {
     const todayStr = new Date().toISOString().split('T')[0];
     const q = query(collection(db, COLLECTIONS.APPOINTMENTS), where('ownerId', '==', user.uid));
     const unsub = onSnapshot(q, (snap) => {
-      const upcoming = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as AppointmentSummary))
+      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
+      const upcoming = all
         .filter((a) => ['pending', 'confirmed'].includes(a.status) && a.date >= todayStr)
         .sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? ''));
       setAppointments(upcoming);
+      checkPendingReview(all.filter((a) => a.status === 'completed' && a.vetId));
     }, (err) => { if (__DEV__) console.log('appointments listener:', err.code); });
     return unsub;
   }, [user?.uid, refreshKey]);
+
+  // Surfaces a review prompt (via PendingReviewModal, rendered below) for any
+  // completed appointment — vet or walker/caregiver — the owner hasn't
+  // reviewed yet, including ones the PROVIDER closed out while the owner had
+  // the app closed. Runs off the appointments listener above (no extra
+  // read); only queries REVIEWS, and only when there's at least one
+  // completed appointment to check against.
+  async function checkPendingReview(completed: any[]) {
+    if (!user || completed.length === 0 || pendingReviewRef.current) return;
+    const reviewsSnap = await getDocs(query(collection(db, COLLECTIONS.REVIEWS), where('ownerId', '==', user.uid))).catch(() => null);
+    if (!reviewsSnap) return;
+    const reviewedProviderIds = new Set(reviewsSnap.docs.map((d) => d.data().vetId));
+    // Most-recently-completed first — if there are several pending, ask
+    // about the freshest one; the rest surface next time this re-runs.
+    const sorted = [...completed].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
+    const next = sorted.find((a) => !reviewedProviderIds.has(a.vetId));
+    if (next) {
+      setPendingReview({
+        providerId: next.vetId,
+        providerName: next.vetName || 'el profesional',
+        kind: (next.type === 'walk' || next.type === 'pet_care') ? 'walker' : 'vet',
+      });
+    }
+  }
+
+  async function submitPendingReview(rating: number, comment: string) {
+    if (!user || !pendingReview) return;
+    await addDoc(collection(db, COLLECTIONS.REVIEWS), {
+      vetId: pendingReview.providerId,
+      ownerId: user.uid,
+      ownerName: user.name || 'Usuario',
+      rating,
+      comment,
+      createdAt: new Date().toISOString(),
+    });
+    setPendingReview(null);
+  }
 
   const today = new Date().toISOString().split('T')[0];
   const weekAhead = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -132,10 +178,7 @@ export default function OwnerHomeScreen() {
           updatedAt: new Date().toISOString(),
         });
         chatId = newChat.id;
-        if (rtdb) {
-          await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${user.uid}`), true);
-          await set(ref(rtdb, `${RTDB_PATHS.CHAT_MEMBERS}/${chatId}/${provider.userId}`), true);
-        }
+        await joinChat(chatId).catch(() => {});
       }
       router.push(`/(owner)/chat/${chatId}` as any);
     } catch {
@@ -388,6 +431,16 @@ export default function OwnerHomeScreen() {
         onClose={() => setActiveReminder(null)}
         onCompleted={() => setActiveReminder(null)}
       />
+
+      {pendingReview && (
+        <PendingReviewModal
+          visible={!!pendingReview}
+          providerName={pendingReview.providerName}
+          kind={pendingReview.kind}
+          onSubmit={submitPendingReview}
+          onPostpone={() => setPendingReview(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }
